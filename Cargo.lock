@@ -990,9 +990,12 @@ version = "0.1.0"
 dependencies = [
  "rmcl-domain",
  "rmcl-minecraft",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
+ "url",
  "which",
 ]
 
