@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/rmcl",
+    "crates/rmcl-app",
     "crates/rmcl-archive",
     "crates/rmcl-auth",
     "crates/rmcl-domain",
@@ -28,6 +29,7 @@ hex = "0.4"
 md-5 = "0.10"
 regex = "1"
 relative-path = "2"
+rmcl-app = { path = "crates/rmcl-app" }
 rmcl-archive = { path = "crates/rmcl-archive" }
 rmcl-auth = { path = "crates/rmcl-auth" }
 rmcl-domain = { path = "crates/rmcl-domain" }

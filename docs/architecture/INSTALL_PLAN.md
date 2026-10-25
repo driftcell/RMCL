@@ -63,6 +63,6 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 - `inheritsFrom`、patches 和 `jar != id` 的 client 重定向。
 - 无 `assetIndex` 的旧版本内置回退表。
 - `virtual` / `map_to_resources` 资产名称重建。
-- 镜像选择、修复执行与应用层安装/启动编排；Java 管理和启动参数分别由对应核心 crate 提供。
+- 镜像选择、修复执行与应用层启动编排；[安装用例](APPLICATION.md)、Java 管理和启动参数分别由对应 crate 提供。
 
 这些非目标不能通过把计划生成成功解释为安装或启动成功。

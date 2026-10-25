@@ -933,6 +933,28 @@ name = "rmcl"
 version = "0.1.0"
 
 [[package]]
+name = "rmcl-app"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hex",
+ "rmcl-archive",
+ "rmcl-domain",
+ "rmcl-install",
+ "rmcl-instance",
+ "rmcl-minecraft",
+ "rmcl-net",
+ "serde_json",
+ "sha1",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "url",
+ "zip",
+]
+
+[[package]]
 name = "rmcl-archive"
 version = "0.1.0"
 dependencies = [

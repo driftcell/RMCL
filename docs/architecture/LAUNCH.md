@@ -14,7 +14,7 @@
 - 生成启动计划时，游戏目录、assets、natives、client JAR 和 libraries 统一转为绝对路径，避免切换工作目录后重复解析相对仓库前缀。
 - Java 的最低/最高 major、OS 和架构必须满足 `JavaRequirement`，否则在 spawn 前返回 `IncompatibleJava`。
 
-应用层仍需负责下载、native 解压、Java 获取和完整安装编排；单独构造 `LaunchPlan` 不证明这些文件已经存在。
+[应用层 Vanilla 安装](APPLICATION.md) 已组合下载与 native 解压；Java 获取和启动任务编排仍由后续应用层能力负责。单独构造 `LaunchPlan` 不证明这些文件已经存在。
 
 ## 参数生成
 
