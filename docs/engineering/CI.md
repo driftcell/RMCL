@@ -61,4 +61,8 @@ cargo test --workspace --doc --locked
 
 CI 编译和测试通过不等于图形界面或真实游戏启动验证通过；后者仍按平台单独验收。
 
+## 首次云端验证
+
+2026-10-25，提交 `f4b07b5eea6cc7a82a45a7c62934a7f5e95a1dd6` 的 [CI 运行 40158221319](https://github.com/driftcell/RMCL/actions/runs/40158221319) 已完成且结论为 success。静态检查、Ubuntu、macOS 和 Windows 四个 job 全部通过。
+
 参考：[nextest repository configuration](https://nexte.st/docs/configuration/)、[running tests](https://nexte.st/docs/running/)。

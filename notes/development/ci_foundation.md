@@ -2,7 +2,7 @@
 
 日期：2026-10-25
 
-状态：本地设计与验证完成，GitHub 云端运行待推送后确认
+状态：本地验证与首次 GitHub 云端运行均已通过
 
 ## 方案
 
@@ -26,4 +26,6 @@
 - 与 workflow 对应的格式、Clippy、nextest 和 doctest 命令已用于当前 workspace。
 - 当前 26 个 nextest 测试全部通过。
 
-GitHub 仓库 `git@github.com:driftcell/RMCL.git` 已配置为 origin。云端 Actions 结果必须在推送后另行确认，不能由本地 actionlint 或测试推断。
+GitHub 仓库 `git@github.com:driftcell/RMCL.git` 已配置为 origin。
+
+首次云端 [CI 运行 40158221319](https://github.com/driftcell/RMCL/actions/runs/40158221319) 已在提交 `f4b07b5eea6cc7a82a45a7c62934a7f5e95a1dd6` 上完成，四个 job 均为 success：静态检查 29 秒、Ubuntu 28 秒、macOS 30 秒、Windows 1 分钟。
