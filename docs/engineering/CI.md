@@ -62,6 +62,10 @@ cargo test --workspace --doc --locked
 
 CI 编译和测试通过不等于图形界面或真实游戏启动验证通过；后者仍按平台单独验收。
 
+## 发布工作流
+
+标签 `v*` 触发的 `.github/workflows/release.yml` 负责多平台发布构建，包含版本一致性校验、四平台原生构建、草稿 Release 和校验和；不会替代 CI 测试。发布流程、产物命名和签名边界见 [平台与分发](../release/DISTRIBUTION.md)。
+
 ## 首次云端验证
 
 2026-10-25，提交 `f4b07b5eea6cc7a82a45a7c62934a7f5e95a1dd6` 的 [CI 运行 40158221319](https://github.com/driftcell/RMCL/actions/runs/40158221319) 已完成且结论为 success。静态检查、Ubuntu、macOS 和 Windows 四个 job 全部通过。

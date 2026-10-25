@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Resolve release version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_release: ${{ steps.version.outputs.is_release }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches workspace version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            is_release=true
+          else
+            version="0.0.0-dev.${GITHUB_SHA::7}"
+            is_release=false
+          fi
+
+          cargo_version="$(awk '
+            /^\[workspace.package\]/ { in_section=1; next }
+            /^\[/ { in_section=0 }
+            in_section && /^version[[:space:]]*=/ {
+              gsub(/[",[:space:]]/, "", $3)
+              print $3
+              exit
+            }
+          ' Cargo.toml)"
+
+          if [[ "${is_release}" == "true" && "${version}" != "${cargo_version}" ]]; then
+            echo "tag v${version} does not match workspace version ${cargo_version}" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "is_release=${is_release}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${version}" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: ${{ matrix.artifact }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: linux-x86_64
+          - os: windows-latest
+            artifact: windows-x86_64
+          - os: macos-15-intel
+            artifact: macos-x86_64
+          - os: macos-15
+            artifact: macos-aarch64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install GPUI system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ clang libfontconfig-dev libwayland-dev \
+            libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libssl-dev libzstd-dev libvulkan1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked -p rmcl
+
+      - name: Package Linux archive
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          name="RMCL-${VERSION}-linux-x86_64"
+          dir="dist/${name}"
+          mkdir -p "${dir}"
+          cp target/release/rmcl "${dir}/rmcl"
+          cp packaging/linux/rmcl.desktop "${dir}/rmcl.desktop"
+          cp packaging/icons/png/rmcl-256.png "${dir}/rmcl.png"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          rm -rf "${dir}"
+
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $name = "RMCL-$env:VERSION-windows-x86_64"
+          $dir = Join-Path "dist" $name
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "target/release/rmcl.exe" (Join-Path $dir "rmcl.exe")
+          Copy-Item "packaging/icons/png/rmcl-256.png" (Join-Path $dir "rmcl.png")
+          Compress-Archive -Path $dir -DestinationPath "dist/$name.zip" -CompressionLevel Optimal -Force
+          Remove-Item -Recurse -Force $dir
+
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="dist/RMCL.app"
+          rm -rf "${app}"
+          mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources"
+          cp target/release/rmcl "${app}/Contents/MacOS/rmcl"
+          cp packaging/macos/Info.plist "${app}/Contents/Info.plist"
+          cp packaging/icons/rmcl.icns "${app}/Contents/Resources/rmcl.icns"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${app}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "${app}/Contents/Info.plist"
+          plutil -lint "${app}/Contents/Info.plist"
+          codesign --force --sign - "${app}"
+          codesign --verify --deep --strict "${app}"
+          ditto -c -k --norsrc --keepParent "${app}" "dist/RMCL-${VERSION}-${{ matrix.artifact }}.zip"
+          rm -rf "${app}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmcl-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: needs.prepare.outputs.is_release == 'true'
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rmcl-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum RMCL-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: RMCL ${{ needs.prepare.outputs.version }}
+          files: dist/*
+          generate_release_notes: true
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false

@@ -50,6 +50,41 @@ RMCL 使用 GitHub Actions 构建并分发各平台原生二进制。首批目�
 - Windows：`rmcl.ico` 需要嵌入可执行文件资源，窗口图标不能代替 exe 图标。
 - Linux：PNG 安装到 `hicolor/<size>x<size>/apps/rmcl.png`，运行时同时设置 X11 窗口图标。
 
+## 自动发布
+
+`.github/workflows/release.yml` 负责 GitHub Release：
+
+- 推送 `v*` 标签时触发完整发布；手动触发只构建并保留工作流 artifact，不创建 Release。
+- `prepare` job 校验标签版本（去掉前导 `v`）与 `Cargo.toml` 的 `[workspace.package].version` 一致，避免二进制版本和发布版本脱节。
+- 四个原生构建 job 并行运行：
+
+| Runner | 产物 |
+| --- | --- |
+| `ubuntu-24.04` | `RMCL-<version>-linux-x86_64.tar.gz` |
+| `windows-latest` | `RMCL-<version>-windows-x86_64.zip` |
+| `macos-15-intel` | `RMCL-<version>-macos-x86_64.zip` |
+| `macos-15` | `RMCL-<version>-macos-aarch64.zip` |
+
+- Linux 包包含 `rmcl`、`rmcl.desktop` 和 `rmcl.png`；Windows 包包含 `rmcl.exe` 和 `rmcl.png`，exe 通过 `build.rs` 嵌入 `rmcl.ico`；macOS 包是带 `Info.plist` 和 `rmcl.icns` 的 `RMCL.app`。
+- 所有构建成功后，发布 job 下载四个 artifact，生成 `SHA256SUMS`，先创建草稿 Release，上传全部资产后再取消草稿。任一平台失败时不会发布半成品。
+- Release 资产保留 GitHub 自动生成的源码归档；构建 artifact 保留 7 天。
+- 工作流只使用内置 `GITHUB_TOKEN`，发布 job 才申请 `contents: write`；不需要额外 secrets。
+
+macOS 当前只做 ad-hoc 签名，未做 Developer ID 签名和公证；Windows 可执行文件未做 Authenticode 签名。下载后的 macOS 应用可能需要在 Finder 中右键“打开”，Windows 可能显示 SmartScreen 提示。签名和公证在取得凭据后单独加入。
+
+Runner 标签会随 GitHub 镜像退役而变化：`macos-15-intel` 是当前可用的 Intel 镜像，预计 2027 年退役；后续需要同步更新矩阵和本文。
+
+## 发布步骤
+
+1. 确认目标提交的 CI 已通过；Release workflow 负责构建和分发，不替代 lint、测试和真实运行验收。
+2. 更新 `Cargo.toml` 的 workspace 版本并提交。
+3. 创建与版本一致的标签，例如 `git tag -a v0.1.0 -m "RMCL 0.1.0"`。
+4. 推送标签：`git push origin v0.1.0`。
+5. 在 Actions 中确认 `Release` workflow 的四个构建 job 全部成功；发布 job 会自动生成 `SHA256SUMS` 并发布草稿。
+6. 下载至少一个平台的产物做启动 smoke，再确认 Release 已发布。
+
+Linux 构建使用 Ubuntu 24.04，产物面向较新的 glibc 和 GPUI Kit 所需图形库；当前 tar.gz 不捆绑 WebKitGTK、GTK、Vulkan 等系统依赖。需要覆盖旧发行版时，应增加容器化构建或 AppImage，而不是把 Ubuntu 24.04 产物描述成通用二进制。
+
 ## GPUI Kit 平台约束
 
 RMCL 当前已引入 GPUI Kit 0.8.0 / gpui-pre 0.3.9。其文档列出 macOS 15+、Windows 10+，Linux 图形环境需要 Wayland/X11 与可用 Vulkan 驱动，并将 Ubuntu 24.04 作为验证环境。CI 按该依赖列表安装 Linux 开发库；实际最低系统要求和打包依赖仍需逐平台运行验证，不能提前宣称与 HMCL 相同。

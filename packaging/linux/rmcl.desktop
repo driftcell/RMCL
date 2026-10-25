@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=RMCL
+GenericName=Minecraft Launcher
+Comment=Launch and manage Minecraft
+Exec=rmcl
+Icon=rmcl
+Terminal=false
+Categories=Game;
+Keywords=minecraft;launcher;
+StartupWMClass=rmcl
