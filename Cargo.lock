@@ -942,6 +942,7 @@ dependencies = [
  "rmcl-domain",
  "rmcl-install",
  "rmcl-instance",
+ "rmcl-java",
  "rmcl-minecraft",
  "rmcl-net",
  "serde_json",

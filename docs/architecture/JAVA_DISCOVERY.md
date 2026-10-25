@@ -19,7 +19,7 @@
 
 当前按以下顺序发现并去重：
 
-1. 显式 managed roots：根目录的 `bin/java`、子目录的 `bin/java` 和 `Contents/Home/bin/java`。
+1. 显式 managed roots：根目录的 `bin/java`、子目录的 `bin/java` 和 `Contents/Home/bin/java`；同时识别 Mojang store 的 `<platform>/<component>/bin/java` 与 `<platform>/<component>/jre.bundle/Contents/Home/bin/java`。
 2. `JAVA_HOME/bin/java`。
 3. PATH 中的 `java`，通过 `which` 解析。
 

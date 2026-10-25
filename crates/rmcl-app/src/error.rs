@@ -15,6 +15,13 @@ pub enum AppError {
     Cancelled,
     #[error("task {existing} is already installing this repository version")]
     TaskAlreadyRunning { existing: TaskId },
+    #[error("game launch requires a configured Java service")]
+    JavaNotConfigured,
+    #[error("no compatible Java runtime for {requirement:?}; probe failures: {failures:?}")]
+    JavaNotFound {
+        requirement: rmcl_java::JavaRequirement,
+        failures: Vec<String>,
+    },
     #[error("invalid application request: {0}")]
     InvalidRequest(String),
     #[error("version `{0}` was not found in the version manifest")]
@@ -65,4 +72,6 @@ pub enum AppError {
     DownloadConfiguration(#[from] rmcl_net::DownloadError),
     #[error(transparent)]
     SourceUrl(#[from] url::ParseError),
+    #[error(transparent)]
+    Java(#[from] rmcl_java::JavaError),
 }

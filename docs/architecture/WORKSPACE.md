@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-app` 提供 headless Vanilla 安装用例、稳定安装任务 ID、快照、互斥与取消；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
+RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-app` 提供 headless Vanilla 安装用例、稳定安装任务 ID、快照、互斥、取消和 Java ensure；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 

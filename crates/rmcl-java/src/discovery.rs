@@ -139,6 +139,36 @@ fn discover_managed_root(root: &std::path::Path, candidates: &mut Vec<JavaCandid
             home.join("Contents/Home/bin").join(java_binary_name()),
             JavaRuntimeSource::Managed,
         );
+        discover_mojang_components(&home, candidates);
+    }
+}
+
+fn discover_mojang_components(
+    platform_root: &std::path::Path,
+    candidates: &mut Vec<JavaCandidate>,
+) {
+    let Ok(entries) = std::fs::read_dir(platform_root) else {
+        return;
+    };
+    let mut components: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    components.sort();
+    for component in components {
+        push_candidate(
+            candidates,
+            component.join("bin").join(java_binary_name()),
+            JavaRuntimeSource::Managed,
+        );
+        push_candidate(
+            candidates,
+            component
+                .join("jre.bundle/Contents/Home/bin")
+                .join(java_binary_name()),
+            JavaRuntimeSource::Managed,
+        );
     }
 }
 
@@ -205,6 +235,38 @@ mod tests {
             candidate
                 .executable
                 .ends_with(format!("Contents/Home/bin/{java}"))
+        }));
+    }
+
+    #[test]
+    fn discovers_mojang_store_component_layouts() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let java = java_binary_name();
+        for relative in [
+            format!("linux/java-runtime-delta/bin/{java}"),
+            format!("mac-os-arm64/java-runtime-delta/jre.bundle/Contents/Home/bin/{java}"),
+        ] {
+            let path = root.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"java").unwrap();
+        }
+        let detector = JavaDetector::new(vec![root.to_path_buf()])
+            .with_java_home(false)
+            .with_path(false);
+
+        let candidates = detector.candidates();
+
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.iter().any(|candidate| {
+            candidate
+                .executable
+                .ends_with(format!("linux/java-runtime-delta/bin/{java}"))
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.executable.ends_with(format!(
+                "mac-os-arm64/java-runtime-delta/jre.bundle/Contents/Home/bin/{java}"
+            ))
         }));
     }
 

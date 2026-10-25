@@ -1,6 +1,6 @@
 # 应用层 Vanilla 安装
 
-状态：`rmcl-app` 安装用例与安装任务管理已实现；Java 和启动编排尚未实现
+状态：`rmcl-app` 安装用例、安装任务管理和 Java ensure 已实现；启动编排尚未实现
 
 日期：2026-10-25
 
@@ -66,9 +66,21 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 当前互斥不解决不同版本之间的所有共享 asset/library 并发写入，也不处理外部进程或符号链接别名指向同一仓库的情况。
 
+## Java ensure
+
+`JavaService` 组合现有 Java API，不重新推导默认 major、component 或回退顺序：
+
+1. `JavaDetector` 对显式 managed roots、RMCL store、`JAVA_HOME` 和 PATH 做真实 probe。
+2. `select_java` 返回满足 `JavaRequirement` 的候选时，结果为 `Detected`，不发起安装。
+3. 没有候选且 `auto_install` 关闭时返回 `JavaNotFound` 和逐候选探测错误。
+4. 允许自动安装时发出 `Installing` 事件，并调用 `MojangRuntimeInstaller`；返回的 runtime 已经过下载、校验、发布和 probe。
+5. 后续 ensure 能通过修正后的 detector 直接发现 store 中的 runtime，不要求再次请求 index。
+
+`JavaServiceConfig` 要求显式 store 根，生产默认只允许官方 runtime URL；测试可使用本地 index 和 `AnyHttp`。Java 安装当前只有阶段事件，没有字节级进度。探测和 runtime 元数据获取不是完全可取消的，取消可能在当前操作返回后才被观察，调用方不能把请求取消当成已经停止。
+
 ## 当前不包含
 
-- Java 检测后自动获取、启动任务和游戏日志环形缓冲
+- 启动任务和游戏日志环形缓冲
 - 实例隔离、配置与账号持久化
 - 版本继承、特殊资产名称重建、ModLoader 和镜像策略
 - 完整修复、native 清理、内容寻址缓存和断点续传
