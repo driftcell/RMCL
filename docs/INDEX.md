@@ -21,6 +21,7 @@
 
 - [HMCL 参考基线](compatibility/HMCL_BASELINE.md)：固定参考版本、使用方式和参考边界。
 - [离线账号行为](compatibility/OFFLINE_ACCOUNTS.md)：用户名、UUID 与自定义身份语义。
+- [版本元数据行为](compatibility/VERSION_METADATA.md)：清单、规则、参数与当前解析边界。
 
 ## 工程
 

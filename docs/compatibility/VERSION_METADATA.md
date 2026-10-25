@@ -1,0 +1,64 @@
+# Minecraft 版本元数据行为
+
+状态：当前核心行为已实现
+
+日期：2026-10-25
+
+## 当前模型
+
+`rmcl-minecraft` 提供以下只读模型和求值逻辑：
+
+- 远程版本列表：`latest`、`versions[]` 和按精确 ID 查找。
+- 具体版本 JSON：ID、继承相关字段、主类、下载信息、asset index、Java 版本、libraries 和时间字段。
+- modern `arguments.game` / `arguments.jvm` 与 legacy `minecraftArguments` 的分别保留。
+- library 的 artifact、classifiers、natives、rules 和 extract 元数据。
+- OS、架构、feature 规则求值，以及 modern 参数按顺序筛选与展开。
+
+时间戳目前保留原始字符串，不引入不必要的日期转换。未知 JSON 字段被忽略；当前模型用于读取，不承诺原样写回或保留未知字段。
+
+## 规则语义
+
+- 缺失或空 `rules`：允许。
+- 非空 `rules`：从拒绝开始，按声明顺序求值，最后一个匹配规则决定结果。
+- 缺失 `action`：视为 `allow`。
+- `os.name`：接受明确的 `windows`、`osx`、`linux`；未知名称不匹配。
+- `os.version` 与 `os.arch`：使用 `regex`，要求正则覆盖整个值。
+- 非法正则：返回结构化错误，不静默当作允许。
+- features：所有键值都必须匹配；缺失 feature 按 `false` 处理。
+
+OS 版本与架构字符串由调用方显式提供。未来平台层必须统一这些标识，不能直接在不同模块中混用 `amd64`、`x86_64`、`arm64`、`aarch64` 等名称。
+
+## 参数语义
+
+modern 参数支持：
+
+- 直接字符串元素。
+- 带 rules 的对象。
+- `value` 为字符串或字符串数组。
+- `values` 为字符串或字符串数组。
+
+同时提供 `value` 与 `values`、两者都缺失、或使用数字/布尔代替字符串时，解析失败。`evaluate_arguments` 保持声明顺序，只筛选规则和展开数组，不处理 `${...}` 占位符。
+
+legacy 字符串当前只保留原始内容，不在解析阶段进行 shell 切分。legacy tokenizer、占位符替换、默认 JVM 参数和最终启动参数拼接属于后续启动计划工作。
+
+## 与 HMCL 容错行为的有意差异
+
+RMCL 追求功能兼容，不复制所有容错异常：
+
+- 已知字段类型错误时使用 serde 解析错误，不静默把错误类型改成空值。
+- feature 缺失按 `false`，不采用“缺失与显式 false 不同”的映射方式。
+- 未识别的 OS 名称不匹配，不把未知限制当作无限制。
+- 非法 OS 正则返回错误，不根据字段选择静默允许或拒绝。
+- 暂不实现 TLauncher、MultiMC、HMCL patches 等扩展字段的私有兼容逻辑。
+
+如果真实元数据证明某项差异影响受支持版本，必须在 notes 记录案例后再修改行为与测试。
+
+## 尚未实现
+
+- `inheritsFrom` 递归解析、循环检测和 patch 合并。
+- Maven 坐标到路径/URL 的解析与路径安全检查。
+- natives classifier 选择、`${arch}` 替换和实际解压。
+- 真实文件下载、校验、缓存和修复。
+- legacy 参数切分、占位符替换和最终 `LaunchPlan`。
+
+因此，当前 crate 是元数据与规则核心，不是完整的 Vanilla 安装器或启动器。
