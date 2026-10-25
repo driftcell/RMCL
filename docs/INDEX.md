@@ -20,6 +20,7 @@
 ## 兼容性
 
 - [HMCL 参考基线](compatibility/HMCL_BASELINE.md)：固定参考版本、使用方式和参考边界。
+- [离线账号行为](compatibility/OFFLINE_ACCOUNTS.md)：用户名、UUID 与自定义身份语义。
 
 ## 工程
 

@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 目前仍是单一 Cargo package，只有 `src/main.rs` 中的占位入口，没有 GPUI 或启动器核心依赖。本文件描述演进方向，不表示下述 crate 已经存在。
+RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`，首个 headless crate `rmcl-auth` 提供离线账号能力。`rmcl-minecraft` 等其他边界按实现进度加入；本文件其余部分描述目标结构，不表示对应 crate 已经存在。
 
 ## 目标结构
 
