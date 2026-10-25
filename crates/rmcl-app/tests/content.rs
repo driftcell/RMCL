@@ -539,6 +539,74 @@ async fn dependency_install_task_reports_batch_progress() {
 }
 
 #[tokio::test]
+async fn cancelling_dependency_resolution_marks_the_task_cancelled() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let router = Router::new().route(
+        "/v2/version/slow-v",
+        get(|| async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Json(json!({}))
+        }),
+    );
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let primary = remote_version(
+        "primary-v",
+        "primary-project",
+        "Primary Mod",
+        "primary.jar",
+        b"primary",
+        base.join("files/primary.jar").unwrap(),
+        vec![RemoteDependency {
+            version_id: Some("slow-v".to_owned()),
+            project_id: None,
+            file_name: None,
+            kind: RemoteDependencyKind::Required,
+        }],
+    );
+    let request = ContentGraphInstallRequest {
+        instance,
+        kind: ContentKind::Mod,
+        version: primary,
+        display_name: "Primary Mod 1.0".to_owned(),
+        conflict: ConflictPolicy::Rename,
+        game_version: "1.21.1".to_owned(),
+        loader: Some("fabric".to_owned()),
+    };
+    let manager = TaskManager::with_content_and_modrinth(
+        VanillaInstaller::official(DownloadConfig::default()).unwrap(),
+        ContentInstaller::official(DownloadConfig::default()).unwrap(),
+        graph_client(base),
+        64,
+    );
+    let id = manager
+        .start_content_install_with_dependencies(request)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(manager.cancel(id).await);
+
+    let snapshot = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let snapshot = manager.snapshot(id).await.unwrap();
+            if snapshot.status.is_terminal() {
+                break snapshot;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(snapshot.status, TaskStatus::Cancelled);
+    handle.abort();
+}
+
+#[tokio::test]
 async fn content_task_exposes_subject_and_completes() {
     let bytes = b"remote mod".to_vec();
     let (base, server) = mod_server(bytes.clone()).await;

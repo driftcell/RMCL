@@ -56,7 +56,7 @@ RMCL 追求功能兼容，不复制所有容错异常：
 
 ## 尚未实现
 
-- `inheritsFrom` 递归解析、循环检测和 patch 合并。
+- `rmcl-minecraft` 本身不做 `inheritsFrom` 递归合并；该逻辑由 `rmcl-install::resolve_version` 实现，见 [版本继承、加载器安装与实例创建](../architecture/LOADERS.md)。
 - TAR 等其他归档格式；natives 的 ZIP/JAR 解压已在 [ZIP 安全解压](../architecture/ARCHIVE_EXTRACTION.md) 实现，classifier 选择、`${arch}` 替换与提取计划已在 [Vanilla 安装计划](../architecture/INSTALL_PLAN.md) 实现。
 - 内容寻址缓存与修复执行；通用下载和 SHA-1/size 校验已在 [下载执行器](../architecture/DOWNLOAD_EXECUTOR.md) 实现。
 

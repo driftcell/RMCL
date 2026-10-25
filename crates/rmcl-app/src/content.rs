@@ -193,7 +193,7 @@ pub async fn resolve_content_install_batch(
             kind: request.kind,
             file,
             display_name,
-            conflict: ConflictPolicy::Rename,
+            conflict: request.conflict,
         });
     }
     Ok(requests)

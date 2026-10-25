@@ -1,6 +1,6 @@
 # 本地内容管理
 
-状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；Modrinth 远程下载见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、依赖和整合包尚未实现
+状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；Modrinth 远程下载和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖和整合包尚未实现
 
 日期：2026-10-25
 

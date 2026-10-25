@@ -668,6 +668,13 @@ impl TaskManager {
             result.map(|_| ())
         }
         .await;
+        // Resolution uses the remote metadata client, whose cancellation is a
+        // distinct error type. Normalize it so the task ends as Cancelled.
+        let result = if cancellation.is_cancelled() {
+            Err(AppError::Cancelled)
+        } else {
+            result
+        };
         self.finish_content(id, result).await;
     }
 
