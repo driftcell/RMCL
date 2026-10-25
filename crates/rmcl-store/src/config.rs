@@ -21,6 +21,8 @@ pub struct LauncherConfig {
     pub selected_version: Option<String>,
     pub selected_account: Option<String>,
     pub accounts: Vec<StoredOfflineAccount>,
+    pub auto_install_java: bool,
+    pub launcher_visibility: LauncherVisibility,
     pub appearance: AppearanceConfig,
 }
 
@@ -33,6 +35,8 @@ impl Default for LauncherConfig {
             selected_version: None,
             selected_account: None,
             accounts: Vec::new(),
+            auto_install_java: true,
+            launcher_visibility: LauncherVisibility::default(),
             appearance: AppearanceConfig::default(),
         }
     }
@@ -64,7 +68,15 @@ pub enum AccentColor {
     Rose,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LauncherVisibility {
+    #[default]
+    KeepVisible,
+    HideWhileRunning,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceConfig {
     pub theme: ThemePreference,
@@ -102,8 +114,8 @@ impl ConfigStore {
     /// A malformed or newer file is reported as an error and left untouched so a
     /// transient read failure cannot silently discard user settings.
     pub fn load(&self) -> Result<LauncherConfig, StoreError> {
-        let bytes = match fs::read(&self.path) {
-            Ok(bytes) => bytes,
+        let text = match fs::read_to_string(&self.path) {
+            Ok(text) => text,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(LauncherConfig::default());
             }
@@ -115,11 +127,10 @@ impl ConfigStore {
                 });
             }
         };
-        let config: LauncherConfig =
-            serde_json::from_slice(&bytes).map_err(|source| StoreError::Json {
-                path: self.path.clone(),
-                source,
-            })?;
+        let config: LauncherConfig = toml::from_str(&text).map_err(|source| StoreError::Toml {
+            path: self.path.clone(),
+            source,
+        })?;
         if config.schema_version == 0 || config.schema_version > CONFIG_SCHEMA_VERSION {
             return Err(StoreError::UnsupportedSchema {
                 found: config.schema_version,
@@ -144,19 +155,17 @@ impl ConfigStore {
             path: parent.to_path_buf(),
             source,
         })?;
+        let text = toml::to_string_pretty(config).map_err(|source| StoreError::TomlSerialize {
+            path: self.path.clone(),
+            source,
+        })?;
         let mut temporary = NamedTempFile::new_in(parent).map_err(|source| StoreError::Io {
             operation: "create configuration temporary file",
             path: parent.to_path_buf(),
             source,
         })?;
-        serde_json::to_writer_pretty(&mut temporary, config).map_err(|source| {
-            StoreError::Json {
-                path: self.path.clone(),
-                source,
-            }
-        })?;
         temporary
-            .write_all(b"\n")
+            .write_all(text.as_bytes())
             .map_err(|source| StoreError::Io {
                 operation: "write configuration temporary file",
                 path: temporary.path().to_path_buf(),
@@ -191,6 +200,24 @@ pub fn home_directory() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
+pub fn default_config_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home_directory().join("AppData").join("Roaming"))
+            .join("rmcl")
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home_directory().join(".config"))
+            .join("rmcl")
+    }
+}
+
 pub fn default_minecraft_root() -> PathBuf {
     home_directory().join(".minecraft")
 }
@@ -200,7 +227,7 @@ pub fn default_java_store() -> PathBuf {
 }
 
 pub fn default_config_path() -> PathBuf {
-    home_directory().join(".rmcl").join("config.json")
+    default_config_dir().join("config.toml")
 }
 
 #[cfg(test)]
@@ -217,7 +244,10 @@ mod tests {
 
     #[test]
     fn defaults_keep_rmcl_state_out_of_hmcl_configuration() {
-        assert!(default_config_path().ends_with(".rmcl/config.json"));
+        let config = default_config_path();
+        assert_eq!(config.file_name().unwrap(), "config.toml");
+        assert_eq!(config.parent().unwrap().file_name().unwrap(), "rmcl");
+        assert!(!config.to_string_lossy().to_lowercase().contains("hmcl"));
         assert!(default_minecraft_root().ends_with(".minecraft"));
         assert!(default_java_store().ends_with(".rmcl/java"));
         assert_eq!(
@@ -229,7 +259,7 @@ mod tests {
     #[test]
     fn missing_file_returns_defaults() {
         let temporary = TempDir::new().unwrap();
-        let store = ConfigStore::new(temporary.path().join("config.json"));
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
 
         assert_eq!(store.load().unwrap(), LauncherConfig::default());
     }
@@ -237,11 +267,13 @@ mod tests {
     #[test]
     fn round_trips_accounts_and_appearance() {
         let temporary = TempDir::new().unwrap();
-        let store = ConfigStore::new(temporary.path().join("rmcl/config.json"));
+        let store = ConfigStore::new(temporary.path().join("rmcl/config.toml"));
         let mut config = LauncherConfig {
             selected_version: Some("1.21.1".to_owned()),
             selected_account: Some("Steve".to_owned()),
             accounts: vec![account("Steve", "5627dd98-e6be-3c21-b8a8-e92344183641")],
+            auto_install_java: false,
+            launcher_visibility: LauncherVisibility::HideWhileRunning,
             ..LauncherConfig::default()
         };
         config.appearance.theme = ThemePreference::Dark;
@@ -257,24 +289,20 @@ mod tests {
     #[test]
     fn malformed_configuration_is_reported_and_preserved() {
         let temporary = TempDir::new().unwrap();
-        let path = temporary.path().join("config.json");
+        let path = temporary.path().join("config.toml");
         let store = ConfigStore::new(&path);
-        fs::write(&path, b"{ not json").unwrap();
+        fs::write(&path, b"schema_version = ").unwrap();
 
-        assert!(matches!(store.load(), Err(StoreError::Json { .. })));
-        assert_eq!(fs::read(&path).unwrap(), b"{ not json");
+        assert!(matches!(store.load(), Err(StoreError::Toml { .. })));
+        assert_eq!(fs::read(&path).unwrap(), b"schema_version = ");
     }
 
     #[test]
     fn newer_schema_is_rejected_without_rewriting() {
         let temporary = TempDir::new().unwrap();
-        let path = temporary.path().join("config.json");
+        let path = temporary.path().join("config.toml");
         let store = ConfigStore::new(&path);
-        fs::write(
-            &path,
-            br#"{"schema_version": 99, "accounts": [{"username": "Steve", "uuid": "x"}]}"#,
-        )
-        .unwrap();
+        fs::write(&path, b"schema_version = 99\n").unwrap();
 
         assert!(matches!(
             store.load(),
@@ -289,9 +317,9 @@ mod tests {
     #[test]
     fn empty_schema_is_rejected() {
         let temporary = TempDir::new().unwrap();
-        let path = temporary.path().join("config.json");
+        let path = temporary.path().join("config.toml");
         let store = ConfigStore::new(&path);
-        fs::write(&path, br#"{"schema_version": 0}"#).unwrap();
+        fs::write(&path, b"schema_version = 0\n").unwrap();
 
         assert!(matches!(
             store.load(),
@@ -302,7 +330,7 @@ mod tests {
     #[test]
     fn save_overwrites_a_previous_file() {
         let temporary = TempDir::new().unwrap();
-        let store = ConfigStore::new(temporary.path().join("config.json"));
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
         let first = LauncherConfig {
             selected_version: Some("first".to_owned()),
             ..LauncherConfig::default()

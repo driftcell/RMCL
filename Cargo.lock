@@ -5388,13 +5388,18 @@ name = "rmcl"
 version = "0.1.0"
 dependencies = [
  "gpui-kit",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
  "rmcl-app",
  "rmcl-auth",
  "rmcl-domain",
  "rmcl-launch",
  "rmcl-net",
+ "rmcl-store",
  "sysinfo 0.39.6",
  "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -5548,9 +5553,9 @@ name = "rmcl-store"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "toml 0.8.23",
 ]
 
 [[package]]

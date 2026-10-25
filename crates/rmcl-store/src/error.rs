@@ -12,10 +12,16 @@ pub enum StoreError {
         source: std::io::Error,
     },
     #[error("invalid launcher configuration `{path}`: {source}")]
-    Json {
+    Toml {
         path: PathBuf,
         #[source]
-        source: serde_json::Error,
+        source: toml::de::Error,
+    },
+    #[error("failed to serialize launcher configuration `{path}`: {source}")]
+    TomlSerialize {
+        path: PathBuf,
+        #[source]
+        source: toml::ser::Error,
     },
     #[error("unsupported configuration schema {found}; this build supports schema {supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
