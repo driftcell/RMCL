@@ -1,0 +1,280 @@
+use gpui_kit::{
+    assets::IconName,
+    component::{
+        ActiveTheme, Icon, Sizable, Size, StyledExt, TitleBar,
+        button::{Button, ButtonVariants},
+        h_flex,
+        progress::Progress as ProgressBar,
+        sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuItem},
+        spinner::Spinner,
+        status_bar::StatusBar,
+        tag::Tag,
+        v_flex,
+    },
+    prelude::FluentBuilder,
+    *,
+};
+
+use super::super::{
+    LauncherApp, Page, task_current_item, task_phase_label, task_progress, task_status_label,
+};
+
+impl LauncherApp {
+    pub fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let snapshot = self.log_state.snapshot.as_ref();
+        let running = snapshot.is_some_and(|snapshot| {
+            matches!(
+                snapshot.status,
+                rmcl_app::TaskStatus::Running | rmcl_app::TaskStatus::Cancelling
+            )
+        });
+        let dark = cx.theme().mode.is_dark();
+        TitleBar::new().child(
+            h_flex()
+                .w_full()
+                .gap_3()
+                .pr_2()
+                .child(brand_mark(cx))
+                .child(div().text_sm().font_semibold().child("RMCL"))
+                .child(
+                    Tag::new()
+                        .outline()
+                        .child(env!("CARGO_PKG_VERSION"))
+                        .small(),
+                )
+                .child(div().flex_1())
+                .when(running, |this| {
+                    this.child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Spinner::new()
+                                    .with_size(Size::XSmall)
+                                    .color(cx.theme().primary),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(task_phase_label(snapshot)),
+                            ),
+                    )
+                })
+                .child(
+                    Button::new("theme-toggle")
+                        .ghost()
+                        .small()
+                        .icon(if dark { IconName::Sun } else { IconName::Moon })
+                        .tooltip("切换明暗主题")
+                        .accessibility_label("切换明暗主题")
+                        .on_click(cx.listener(|this, _, window, cx| this.toggle_theme(window, cx))),
+                ),
+        )
+    }
+
+    pub fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let account_name = self
+            .selected_account()
+            .map(|account| account.username().to_owned())
+            .unwrap_or_else(|| "添加离线账户".to_owned());
+        let initial = account_name
+            .chars()
+            .next()
+            .map(|character| character.to_uppercase().to_string())
+            .unwrap_or_else(|| "?".to_owned());
+        let account_subtitle = if self.selected_account().is_some() {
+            "离线账户"
+        } else {
+            "尚未添加账户"
+        };
+
+        Sidebar::new("main-sidebar")
+            .collapsible(false)
+            .w(px(232.))
+            .child(
+                SidebarGroup::new("游戏").child(
+                    SidebarMenu::new()
+                        .child(self.nav_item(Page::Home, cx))
+                        .child(self.nav_item(Page::Versions, cx))
+                        .child(self.nav_item(Page::Downloads, cx)),
+                ),
+            )
+            .child(
+                SidebarGroup::new("应用")
+                    .child(SidebarMenu::new().child(self.nav_item(Page::Settings, cx))),
+            )
+            .footer(
+                SidebarFooter::new().w_full().child(
+                    div()
+                        .id("account-chip")
+                        .w_full()
+                        .rounded(cx.theme().radius)
+                        .border_1()
+                        .border_color(cx.theme().sidebar_border)
+                        .bg(cx.theme().sidebar_accent.opacity(0.45))
+                        .p_2()
+                        .hover(|style| style.bg(cx.theme().sidebar_accent))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_account_dialog(window, cx)),
+                        )
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .size_8()
+                                        .flex_shrink_0()
+                                        .rounded_full()
+                                        .bg(cx.theme().primary.opacity(0.15))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_semibold()
+                                                .text_color(cx.theme().primary)
+                                                .child(initial),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .gap_0p5()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_medium()
+                                                .truncate()
+                                                .child(account_name),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(account_subtitle),
+                                        ),
+                                )
+                                .child(
+                                    Button::new("account-edit")
+                                        .ghost()
+                                        .xsmall()
+                                        .icon(IconName::Pencil)
+                                        .tooltip("编辑离线账户")
+                                        .accessibility_label("编辑离线账户")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            cx.stop_propagation();
+                                            this.open_account_dialog(window, cx);
+                                        })),
+                                ),
+                        ),
+                ),
+            )
+    }
+
+    fn nav_item(&self, page: Page, cx: &mut Context<Self>) -> SidebarMenuItem {
+        SidebarMenuItem::new(page.title())
+            .icon(page.icon())
+            .active(self.page == page)
+            .on_click(cx.listener(move |this, _, window, cx| this.navigate(page, window, cx)))
+    }
+
+    pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let snapshot = self.log_state.snapshot.as_ref();
+        let running = snapshot.is_some_and(|snapshot| {
+            matches!(
+                snapshot.status,
+                rmcl_app::TaskStatus::Running | rmcl_app::TaskStatus::Cancelling
+            )
+        });
+        let can_cancel = self.log_state.can_cancel();
+        let (value, loading) = task_progress(snapshot);
+        let version_count = self.installed_versions.len();
+        let state = if running {
+            task_phase_label(snapshot)
+        } else {
+            task_status_label(snapshot)
+        };
+        let show_logs = snapshot.is_some_and(|snapshot| {
+            matches!(snapshot.status, rmcl_app::TaskStatus::Failed)
+                || (snapshot.status == rmcl_app::TaskStatus::Exited
+                    && !snapshot.stop_requested
+                    && !snapshot.exit.as_ref().is_some_and(|exit| exit.success))
+        });
+
+        let mut bar = StatusBar::new().left(
+            h_flex()
+                .gap_2()
+                .when(running, |this| {
+                    this.child(
+                        Spinner::new()
+                            .with_size(Size::XSmall)
+                            .color(cx.theme().primary),
+                    )
+                })
+                .child(state),
+        );
+        let current = task_current_item(snapshot);
+        if !current.is_empty() {
+            bar = bar.child(
+                div()
+                    .max_w(px(520.))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .child(current),
+            );
+        } else {
+            bar = bar.child(format!("{version_count} 个已安装版本"));
+        }
+        if running {
+            bar = bar.right(
+                ProgressBar::new("status-progress")
+                    .value(value)
+                    .loading(loading)
+                    .w(px(120.)),
+            );
+            if can_cancel {
+                bar = bar.right(
+                    Button::new("status-stop")
+                        .danger()
+                        .xsmall()
+                        .label("停止")
+                        .on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))),
+                );
+            }
+        } else if show_logs {
+            bar = bar.right(
+                Button::new("status-open-logs")
+                    .danger()
+                    .xsmall()
+                    .label("查看日志")
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.navigate(Page::Logs, window, cx)),
+                    ),
+            );
+        }
+        bar.right(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(super::super::platform_label(&self.services.platform)),
+        )
+    }
+}
+
+fn brand_mark(cx: &App) -> impl IntoElement {
+    div()
+        .size_8()
+        .flex_shrink_0()
+        .rounded(px(10.))
+        .bg(cx.theme().primary)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            Icon::new(IconName::Boxes)
+                .small()
+                .text_color(cx.theme().primary_foreground),
+        )
+}

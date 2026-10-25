@@ -13,6 +13,7 @@ pub struct LauncherState {
     pub command_pending: bool,
     pub command_error: Option<String>,
     pub recovered_after_lag: bool,
+    terminal_notified: Option<TaskId>,
 }
 
 impl LauncherState {
@@ -25,6 +26,7 @@ impl LauncherState {
             command_pending: false,
             command_error: None,
             recovered_after_lag: false,
+            terminal_notified: None,
         }
     }
 
@@ -131,6 +133,16 @@ impl LauncherState {
         self.logs = logs.into();
         self.recovered_after_lag = true;
     }
+
+    /// Returns true only for the first terminal observation of a task.
+    pub fn mark_terminal_notified(&mut self, id: TaskId) -> bool {
+        if self.terminal_notified == Some(id) {
+            false
+        } else {
+            self.terminal_notified = Some(id);
+            true
+        }
+    }
 }
 
 #[cfg(test)]
@@ -209,5 +221,15 @@ mod tests {
 
         assert_eq!(state.logs.len(), UI_LOG_CAPACITY);
         assert_eq!(state.logs.front().unwrap().text, "line-20");
+    }
+
+    #[test]
+    fn terminal_notification_is_emitted_once_per_task() {
+        let mut state = LauncherState::new();
+        let id = TaskId::from_raw(7);
+
+        assert!(state.mark_terminal_notified(id));
+        assert!(!state.mark_terminal_notified(id));
+        assert!(state.mark_terminal_notified(TaskId::from_raw(8)));
     }
 }

@@ -22,6 +22,7 @@ pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,
 };
+pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
