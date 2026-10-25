@@ -1,5 +1,12 @@
 //! Headless authentication primitives for RMCL.
 
+mod microsoft;
 mod offline;
 
+pub use microsoft::{
+    Account, AccountKind, AuthenticatedMicrosoft, DEFAULT_MICROSOFT_CLIENT_ID, DeviceCode,
+    DeviceCodePoll, DeviceLogin, MICROSOFT_SCOPE, MINECRAFT_TOKEN_REFRESH_MARGIN_SECS,
+    MicrosoftAccount, MicrosoftAccountError, MicrosoftAuth, MicrosoftAuthError,
+    MicrosoftCredentials, MicrosoftEndpoints, MicrosoftOAuthTokens, XboxToken,
+};
 pub use offline::{OfflineAccount, OfflineAccountError, offline_player_uuid};

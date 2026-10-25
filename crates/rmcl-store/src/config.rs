@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 1;
+pub const CONFIG_SCHEMA_VERSION: u32 = 2;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,7 +20,9 @@ pub struct LauncherConfig {
     pub java_store: PathBuf,
     pub selected_version: Option<String>,
     pub selected_account: Option<String>,
+    pub selected_account_kind: StoredAccountKind,
     pub accounts: Vec<StoredOfflineAccount>,
+    pub microsoft_accounts: Vec<StoredMicrosoftAccount>,
     pub auto_install_java: bool,
     pub launcher_visibility: LauncherVisibility,
     pub appearance: AppearanceConfig,
@@ -34,7 +36,9 @@ impl Default for LauncherConfig {
             java_store: default_java_store(),
             selected_version: None,
             selected_account: None,
+            selected_account_kind: StoredAccountKind::Offline,
             accounts: Vec::new(),
+            microsoft_accounts: Vec::new(),
             auto_install_java: true,
             launcher_visibility: LauncherVisibility::default(),
             appearance: AppearanceConfig::default(),
@@ -46,6 +50,23 @@ impl Default for LauncherConfig {
 pub struct StoredOfflineAccount {
     pub username: String,
     pub uuid: String,
+}
+
+/// Account metadata that never contains tokens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredMicrosoftAccount {
+    pub username: String,
+    pub uuid: String,
+    #[serde(default)]
+    pub skin_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StoredAccountKind {
+    #[default]
+    Offline,
+    Microsoft,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -136,6 +157,12 @@ impl ConfigStore {
                 found: config.schema_version,
                 supported: CONFIG_SCHEMA_VERSION,
             });
+        }
+        let mut config = config;
+        // Schema 1 predates Microsoft account metadata. Its selected account is
+        // always an offline profile and every new field has a safe default.
+        if config.schema_version == 1 {
+            config.schema_version = CONFIG_SCHEMA_VERSION;
         }
         Ok(config)
     }
@@ -242,6 +269,14 @@ mod tests {
         }
     }
 
+    fn microsoft_account(username: &str, uuid: &str) -> StoredMicrosoftAccount {
+        StoredMicrosoftAccount {
+            username: username.to_owned(),
+            uuid: uuid.to_owned(),
+            skin_url: Some("http://textures.minecraft.net/texture/abc".to_owned()),
+        }
+    }
+
     #[test]
     fn defaults_keep_rmcl_state_out_of_hmcl_configuration() {
         let config = default_config_path();
@@ -270,8 +305,13 @@ mod tests {
         let store = ConfigStore::new(temporary.path().join("rmcl/config.toml"));
         let mut config = LauncherConfig {
             selected_version: Some("1.21.1".to_owned()),
-            selected_account: Some("Steve".to_owned()),
+            selected_account: Some("HowDoesAuthWork".to_owned()),
+            selected_account_kind: StoredAccountKind::Microsoft,
             accounts: vec![account("Steve", "5627dd98-e6be-3c21-b8a8-e92344183641")],
+            microsoft_accounts: vec![microsoft_account(
+                "HowDoesAuthWork",
+                "986dec87-b7ec-47ff-89ff-033fdb95c4b5",
+            )],
             auto_install_java: false,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
             ..LauncherConfig::default()
@@ -284,6 +324,41 @@ mod tests {
         assert_eq!(store.load().unwrap(), config);
         assert!(store.path().exists());
         assert!(store.logs_dir().ends_with("rmcl/logs"));
+    }
+
+    #[test]
+    fn schema_one_is_upgraded_with_offline_account_defaults() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 1
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+selected_version = "1.21.1"
+selected_account = "Steve"
+auto_install_java = true
+launcher_visibility = "keep_visible"
+
+[[accounts]]
+username = "Steve"
+uuid = "5627dd98-e6be-3c21-b8a8-e92344183641"
+
+[appearance]
+theme = "system"
+accent = "emerald"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert_eq!(config.selected_account_kind, StoredAccountKind::Offline);
+        assert_eq!(config.accounts.len(), 1);
+        assert_eq!(config.accounts[0].username, "Steve");
+        assert!(config.microsoft_accounts.is_empty());
     }
 
     #[test]

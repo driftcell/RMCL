@@ -11,6 +11,7 @@ members = [
     "crates/rmcl-launch",
     "crates/rmcl-minecraft",
     "crates/rmcl-net",
+    "crates/rmcl-platform",
     "crates/rmcl-store",
 ]
 default-members = ["apps/rmcl"]
@@ -28,6 +29,7 @@ fastrand = "2"
 futures = "0.3"
 gpui-kit = "0.8.0"
 hex = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
 md-5 = "0.10"
 regex = "1"
 relative-path = "2"
@@ -41,8 +43,9 @@ rmcl-java = { path = "crates/rmcl-java" }
 rmcl-launch = { path = "crates/rmcl-launch" }
 rmcl-minecraft = { path = "crates/rmcl-minecraft" }
 rmcl-net = { path = "crates/rmcl-net" }
+rmcl-platform = { path = "crates/rmcl-platform" }
 rmcl-store = { path = "crates/rmcl-store" }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"

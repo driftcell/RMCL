@@ -14,16 +14,20 @@ rmcl-java.workspace = true
 rmcl-launch.workspace = true
 rmcl-minecraft.workspace = true
 rmcl-net.workspace = true
+rmcl-platform.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 url.workspace = true
+reqwest.workspace = true
+hex.workspace = true
+image.workspace = true
+sha1.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
-hex.workspace = true
-serde_json.workspace = true
-sha1.workspace = true
 tokio = { workspace = true, features = ["net"] }
+uuid.workspace = true
 zip.workspace = true

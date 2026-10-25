@@ -5,14 +5,16 @@ use std::{
 };
 
 use rmcl_app::{
-    AppError, JavaService, JavaServiceConfig, TaskManager, VanillaInstaller, VersionCatalog,
+    AppError, JavaService, JavaServiceConfig, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService,
+    SkinCache, TaskManager, VanillaInstaller, VersionCatalog,
 };
-use rmcl_auth::OfflineAccount;
+use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
 use rmcl_net::DownloadConfig;
+use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
-    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredOfflineAccount, default_config_path,
-    default_java_store, default_minecraft_root,
+    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
+    StoredOfflineAccount, default_config_path, default_java_store, default_minecraft_root,
 };
 use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
@@ -23,6 +25,8 @@ pub struct Services {
     pub platform: Platform,
     pub catalog: VersionCatalog,
     pub config_store: ConfigStore,
+    pub microsoft_accounts: MicrosoftAccountService,
+    pub skins: SkinCache,
 }
 
 impl Services {
@@ -42,12 +46,23 @@ impl Services {
         let java = JavaService::new(java_config)?;
         let tasks = TaskManager::with_java(installer, java, 256);
         let catalog = VersionCatalog::official(DownloadConfig::default())?;
+        let secrets = std::sync::Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
+        let microsoft_accounts = MicrosoftAccountService::new(secrets)?;
+        let skin_cache_dir = config_store
+            .path()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("cache")
+            .join("skins");
+        let skins = SkinCache::new(skin_cache_dir);
         Ok(Rc::new(Self {
             runtime,
             tasks,
             platform: current_platform(),
             catalog,
             config_store,
+            microsoft_accounts,
+            skins,
         }))
     }
 }
@@ -120,8 +135,8 @@ impl Bootstrap {
         };
         config.schema_version = CONFIG_SCHEMA_VERSION;
 
-        if !config_existed && config.accounts.is_empty() {
-            select_account(
+        if !config_existed && config.accounts.is_empty() && config.microsoft_accounts.is_empty() {
+            select_offline_account(
                 &mut config,
                 OfflineAccount::new("Steve").map_err(|e| e.to_string())?,
             );
@@ -136,17 +151,12 @@ impl Bootstrap {
             config.selected_version = Some(version);
         }
         if let Some(player) = player {
-            select_account(
+            select_offline_account(
                 &mut config,
                 OfflineAccount::new(player).map_err(|e| e.to_string())?,
             );
         }
-        if config.selected_account.is_none() {
-            config.selected_account = config
-                .accounts
-                .first()
-                .map(|account| account.username.clone());
-        }
+        ensure_selected_account(&mut config);
         if config.minecraft_root.as_os_str().is_empty() {
             config.minecraft_root = default_minecraft_root();
         }
@@ -186,12 +196,59 @@ pub fn load_account(stored: &StoredOfflineAccount) -> Option<OfflineAccount> {
     }
 }
 
-fn select_account(config: &mut LauncherConfig, account: OfflineAccount) {
+pub fn stored_microsoft_account(account: &MicrosoftAccount) -> StoredMicrosoftAccount {
+    StoredMicrosoftAccount {
+        username: account.username().to_owned(),
+        uuid: account.uuid().to_string(),
+        skin_url: account.skin_url().map(str::to_owned),
+    }
+}
+
+pub fn load_microsoft_account(stored: &StoredMicrosoftAccount) -> Option<MicrosoftAccount> {
+    Uuid::parse_str(&stored.uuid).ok().and_then(|uuid| {
+        MicrosoftAccount::new(stored.username.clone(), uuid)
+            .ok()
+            .map(|account| account.with_skin_url(stored.skin_url.clone()))
+    })
+}
+
+fn select_offline_account(config: &mut LauncherConfig, account: OfflineAccount) {
     config
         .accounts
         .retain(|stored| stored.username != account.username());
     config.accounts.push(stored_account(&account));
     config.selected_account = Some(account.username().to_owned());
+    config.selected_account_kind = StoredAccountKind::Offline;
+}
+
+fn ensure_selected_account(config: &mut LauncherConfig) {
+    let exists = match config.selected_account_kind {
+        StoredAccountKind::Offline => config.selected_account.as_ref().is_some_and(|selected| {
+            config
+                .accounts
+                .iter()
+                .any(|account| account.username == *selected)
+        }),
+        StoredAccountKind::Microsoft => config.selected_account.as_ref().is_some_and(|selected| {
+            config
+                .microsoft_accounts
+                .iter()
+                .any(|account| account.username == *selected)
+        }),
+    };
+    if exists {
+        return;
+    }
+    if let Some(account) = config.accounts.first() {
+        config.selected_account = Some(account.username.clone());
+        config.selected_account_kind = StoredAccountKind::Offline;
+    } else if let Some(account) = config.microsoft_accounts.first() {
+        config.selected_account = Some(account.username.clone());
+        config.selected_account_kind = StoredAccountKind::Microsoft;
+    } else {
+        config.selected_account = None;
+        config.selected_account_kind = StoredAccountKind::Offline;
+    }
 }
 
 fn should_save_on_start(config_existed: bool, has_overrides: bool, warning: Option<&str>) -> bool {
@@ -273,5 +330,42 @@ mod tests {
             load_account(&stored).unwrap().uuid(),
             OfflineAccount::new("Alex").unwrap().uuid()
         );
+    }
+
+    #[test]
+    fn microsoft_accounts_round_trip_their_profile_uuid() {
+        let uuid = Uuid::parse_str("986dec87-b7ec-47ff-89ff-033fdb95c4b5").unwrap();
+        let account = MicrosoftAccount::new("HowDoesAuthWork", uuid).unwrap();
+        let stored = stored_microsoft_account(&account);
+        let loaded = load_microsoft_account(&stored).unwrap();
+
+        assert_eq!(loaded.username(), account.username());
+        assert_eq!(loaded.uuid(), account.uuid());
+    }
+
+    #[test]
+    fn damaged_microsoft_uuid_disables_the_account() {
+        let stored = StoredMicrosoftAccount {
+            username: "HowDoesAuthWork".to_owned(),
+            uuid: "not-a-uuid".to_owned(),
+            skin_url: None,
+        };
+
+        assert!(load_microsoft_account(&stored).is_none());
+    }
+
+    #[test]
+    fn missing_selection_falls_back_to_an_available_account() {
+        let mut config = LauncherConfig::default();
+        config.microsoft_accounts.push(StoredMicrosoftAccount {
+            username: "HowDoesAuthWork".to_owned(),
+            uuid: "986dec87-b7ec-47ff-89ff-033fdb95c4b5".to_owned(),
+            skin_url: None,
+        });
+
+        ensure_selected_account(&mut config);
+
+        assert_eq!(config.selected_account.as_deref(), Some("HowDoesAuthWork"));
+        assert_eq!(config.selected_account_kind, StoredAccountKind::Microsoft);
     }
 }

@@ -29,6 +29,6 @@
 ## 后续功能调研
 
 - 完整 HMCL 功能台账尚未建立，不能把 M1 参考源码清单当成完整功能列表。
-- Microsoft 登录需要单独确认应用注册、授权流程和令牌存储。
+- Microsoft 正版登录、令牌刷新、系统凭据存储和官方皮肤头像已实现，见 [正版账号、令牌与皮肤](../../docs/architecture/AUTHENTICATION.md)；自有 Azure 应用注册、披风和 authlib-injector 仍未确定。
 - CurseForge、Modrinth、镜像站及其他第三方服务需要分别确认 API、凭据和分发条款。
 - HMCL 配置导入的格式范围和失败恢复策略留到对应附加功能阶段。

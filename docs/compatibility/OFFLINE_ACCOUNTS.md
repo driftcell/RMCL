@@ -37,4 +37,8 @@
 
 最小核心不包含离线皮肤、本地 Yggdrasil 服务、authlib-injector 或额外 JVM agent 参数。
 
+## 与正版账户共存
+
+启动器可以同时保存离线账户和 Microsoft 正版账户。两者使用相同玩家名时，`selected_account_kind` 区分选中项；账户下拉显示同名条目，但内部使用稳定账户键。删除离线账户只移除配置记录，不触碰正版钥匙串或 Minecraft 文件。正版账户行为见 [正版账号、令牌与皮肤](../architecture/AUTHENTICATION.md)。
+
 行为依据：[HMCL 固定基线](HMCL_BASELINE.md)。实现使用独立编写的测试值，没有复制 HMCL 测试数据。

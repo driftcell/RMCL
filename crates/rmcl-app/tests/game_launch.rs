@@ -10,6 +10,7 @@ use rmcl_app::{
 };
 use rmcl_auth::OfflineAccount;
 use rmcl_domain::{OperatingSystem, Platform};
+use rmcl_launch::LaunchAccount;
 use rmcl_net::DownloadConfig;
 use serde_json::json;
 use sha1::{Digest, Sha1};
@@ -62,7 +63,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
     };
     let request = GameLaunchRequest {
         install,
-        account: OfflineAccount::new("Steve").unwrap(),
+        account: LaunchAccount::from_offline(&OfflineAccount::new("Steve").unwrap()),
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
         resolution: None,

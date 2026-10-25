@@ -35,4 +35,18 @@ impl LaunchAccount {
             user_properties: "{}".to_owned(),
         }
     }
+
+    /// Creates a launch identity from a verified Microsoft profile and token.
+    pub fn from_microsoft(
+        account: &rmcl_auth::MicrosoftAccount,
+        access_token: impl Into<String>,
+    ) -> Self {
+        Self {
+            username: account.username().to_owned(),
+            uuid: account.uuid(),
+            access_token: access_token.into(),
+            user_type: "msa".to_owned(),
+            user_properties: "{}".to_owned(),
+        }
+    }
 }

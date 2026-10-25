@@ -1,14 +1,20 @@
 //! Headless application use cases and task orchestration.
 
+mod accounts;
 mod catalog;
 mod error;
 mod game;
 mod install;
 mod java;
 mod model;
+mod skins;
 mod task;
 mod versions;
 
+pub use accounts::{
+    MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, MicrosoftAccountServiceError,
+    ResolvedMicrosoftAccount,
+};
 pub use catalog::VersionCatalog;
 pub use error::{AppError, InstallDownloadFailure};
 pub use game::{
@@ -24,6 +30,7 @@ pub use model::{
 };
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
+pub use skins::{SkinCache, SkinError};
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
 };

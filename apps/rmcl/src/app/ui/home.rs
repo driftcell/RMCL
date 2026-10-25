@@ -260,9 +260,18 @@ impl LauncherApp {
                                         .primary()
                                         .large()
                                         .icon(IconName::Play)
-                                        .label("启动游戏")
+                                        .label(if self.launch_resolving {
+                                            "正在验证账户…"
+                                        } else {
+                                            "启动游戏"
+                                        })
                                         .w_full()
-                                        .disabled(!can_start || !has_account || selected.is_none())
+                                        .disabled(
+                                            !can_start
+                                                || !has_account
+                                                || selected.is_none()
+                                                || self.launch_resolving,
+                                        )
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             if let Some(version) = this.selected_version() {
                                                 let id = version.id.as_str().to_owned();
@@ -276,10 +285,10 @@ impl LauncherApp {
                                     Button::new("home-account")
                                         .outline()
                                         .icon(IconName::CircleUser)
-                                        .label("添加离线账户")
+                                        .label("添加账户")
                                         .w_full()
                                         .on_click(cx.listener(|this, _, window, cx| {
-                                            this.open_account_dialog(window, cx)
+                                            this.open_accounts_dialog(window, cx)
                                         })),
                                 )
                             })
@@ -396,16 +405,6 @@ impl LauncherApp {
                     .label("打开游戏目录")
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| this.open_game_folder(window, cx))),
-            )
-            .child(
-                Button::new("quick-account")
-                    .outline()
-                    .icon(IconName::CircleUser)
-                    .label("管理离线账户")
-                    .w_full()
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.open_account_dialog(window, cx)),
-                    ),
             )
             .child(
                 v_flex()

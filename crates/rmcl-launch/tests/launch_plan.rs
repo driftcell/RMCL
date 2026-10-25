@@ -370,6 +370,20 @@ fn offline_account_factory_produces_launch_identity() {
 }
 
 #[test]
+fn microsoft_account_factory_preserves_token_and_profile() {
+    let uuid = uuid::Uuid::parse_str("986dec87b7ec47ff89ff033fdb95c4b5").unwrap();
+    let profile = rmcl_auth::MicrosoftAccount::new("HowDoesAuthWork", uuid).unwrap();
+    let account = LaunchAccount::from_microsoft(&profile, "minecraft-access");
+
+    assert_eq!(account.username, "HowDoesAuthWork");
+    assert_eq!(account.uuid, uuid);
+    assert_eq!(account.access_token, "minecraft-access");
+    assert_eq!(account.user_type, "msa");
+    assert_eq!(account.user_properties, "{}");
+    assert!(!format!("{account:?}").contains("minecraft-access"));
+}
+
+#[test]
 fn legacy_tokenizer_handles_quotes_and_empty_arguments() {
     let arguments =
         rmcl_launch::tokenize_legacy_arguments("--name 'Steve Smith' --empty \"\"").unwrap();

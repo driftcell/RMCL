@@ -34,9 +34,15 @@ manifest 存在但 `arguments.jvm` 为空列表时保持空列表，不隐式恢
 
 占位符覆盖账号、版本、目录、asset index、classpath、路径分隔符和 launcher 信息。未知 `${...}` 保留原文，不静默替换为空。`demo` 和分辨率通过 feature map 控制 modern ruled arguments；legacy 分辨率由启动层追加。
 
-## 离线账号与秘密处理
+## 账户与秘密处理
 
-`LaunchAccount::from_offline` 保留离线玩家名和 profile UUID，并在每次调用时生成新的随机 UUID v4 紧凑 token。`auth_access_token` 与 `auth_session` 使用该 token，`user_type` 为 `msa`，`user_properties` 为 `{}`。
+`LaunchAccount` 是启动层唯一消费的账户身份：
+
+- 离线账户通过 `from_offline` 保留玩家名和 profile UUID，并在每次调用时生成新的随机 UUID v4 紧凑 token。
+- 正版账户通过 `from_microsoft` 使用已解析的 Minecraft access token、profile UUID 和玩家名。
+- 正版和离线账户的 `user_type` 当前均为 `msa`，`user_properties` 为 `{}`。
+
+Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app` 管理，`rmcl-launch` 不读取配置或系统钥匙串。正版 token 刷新和失败语义见 [正版账号、令牌与皮肤](AUTHENTICATION.md)。
 
 - `command_line()` 是真实执行参数，包含秘密，不得用于诊断输出。
 - `diagnostic_command_line()` 将 token 替换为 `<redacted>`。
@@ -64,4 +70,4 @@ manifest 存在但 `arguments.jvm` 为空列表时保持空列表，不隐式恢
 - Vanilla `1.7.10` 的 34 个游戏文件、674 个 asset objects 和 3 个 native JAR 完成下载与合并，进程进入真实主类并正确报告退出；其官方 LWJGL 2 native 只有 i386/x86_64，因缺少 ARM64 架构而无法完成启动。这不视为旧版本 ARM64 兼容已经实现。
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
 
-当前不包含 Microsoft 登录、版本继承和 ModLoader 参数合并、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。
+当前不包含版本继承和 ModLoader 参数合并、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。

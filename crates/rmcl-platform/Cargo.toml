@@ -1,0 +1,17 @@
+[package]
+name = "rmcl-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }

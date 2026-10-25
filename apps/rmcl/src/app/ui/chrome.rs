@@ -15,7 +15,8 @@ use gpui_kit::{
 };
 
 use super::super::{
-    LauncherApp, Page, task_current_item, task_phase_label, task_progress, task_status_label,
+    LauncherApp, Page, account_avatar, task_current_item, task_phase_label, task_progress,
+    task_status_label,
 };
 
 impl LauncherApp {
@@ -78,20 +79,17 @@ impl LauncherApp {
                 rmcl_app::TaskStatus::Running | rmcl_app::TaskStatus::Cancelling
             )
         });
-        let account_name = self
-            .selected_account()
+        let account = self.selected_account();
+        let account_name = account
             .map(|account| account.username().to_owned())
-            .unwrap_or_else(|| "添加离线账户".to_owned());
-        let initial = account_name
-            .chars()
-            .next()
-            .map(|character| character.to_uppercase().to_string())
-            .unwrap_or_else(|| "?".to_owned());
-        let account_subtitle = if self.selected_account().is_some() {
-            "离线账户"
-        } else {
-            "尚未添加账户"
+            .unwrap_or_else(|| "添加账户".to_owned());
+        let account_head = account.and_then(|account| self.account_heads.get(&account.uuid()));
+        let account_subtitle = match account.map(|account| account.kind()) {
+            Some(rmcl_auth::AccountKind::Microsoft) => "正版账户",
+            Some(rmcl_auth::AccountKind::Offline) => "离线账户",
+            None => "尚未添加账户",
         };
+        let selected_is_offline = matches!(account, Some(rmcl_auth::Account::Offline(_)));
 
         Sidebar::new("main-sidebar")
             .collapsible(false)
@@ -144,28 +142,14 @@ impl LauncherApp {
                         .p_2()
                         .hover(|style| style.bg(cx.theme().sidebar_accent))
                         .on_click(
-                            cx.listener(|this, _, window, cx| this.open_account_dialog(window, cx)),
+                            cx.listener(|this, _, window, cx| {
+                                this.open_accounts_dialog(window, cx)
+                            }),
                         )
                         .child(
                             h_flex()
                                 .gap_2()
-                                .child(
-                                    div()
-                                        .size_8()
-                                        .flex_shrink_0()
-                                        .rounded_full()
-                                        .bg(cx.theme().primary.opacity(0.15))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_semibold()
-                                                .text_color(cx.theme().primary)
-                                                .child(initial),
-                                        ),
-                                )
+                                .child(account_avatar(account, account_head, 32., cx))
                                 .child(
                                     v_flex()
                                         .flex_1()
@@ -190,11 +174,23 @@ impl LauncherApp {
                                         .ghost()
                                         .xsmall()
                                         .icon(IconName::Pencil)
-                                        .tooltip("编辑离线账户")
-                                        .accessibility_label("编辑离线账户")
-                                        .on_click(cx.listener(|this, _, window, cx| {
+                                        .tooltip(if selected_is_offline {
+                                            "编辑离线账户"
+                                        } else {
+                                            "账户"
+                                        })
+                                        .accessibility_label(if selected_is_offline {
+                                            "编辑离线账户"
+                                        } else {
+                                            "账户"
+                                        })
+                                        .on_click(cx.listener(move |this, _, window, cx| {
                                             cx.stop_propagation();
-                                            this.open_account_dialog(window, cx);
+                                            if selected_is_offline {
+                                                this.open_offline_account_dialog(true, window, cx);
+                                            } else {
+                                                this.open_accounts_dialog(window, cx);
+                                            }
                                         })),
                                 ),
                         ),

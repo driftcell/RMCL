@@ -1,4 +1,3 @@
-use rmcl_auth::OfflineAccount;
 use rmcl_java::JavaRequirement;
 use rmcl_launch::{
     GameEvent, GameExit, GameLog, GameProcess, LaunchAccount, LaunchError, LaunchOptions,
@@ -15,7 +14,7 @@ use crate::{
 #[derive(Clone)]
 pub struct GameLaunchRequest {
     pub install: VanillaInstallRequest,
-    pub account: OfflineAccount,
+    pub account: LaunchAccount,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
     pub resolution: Option<(u32, u32)>,
@@ -140,7 +139,7 @@ impl GameLauncher {
     async fn finish_launch(
         &self,
         install: InstallOutcome,
-        account: OfflineAccount,
+        account: LaunchAccount,
         additional_jvm_arguments: Vec<String>,
         additional_game_arguments: Vec<String>,
         resolution: Option<(u32, u32)>,
@@ -166,7 +165,6 @@ impl GameLauncher {
         };
 
         emit(&events, GameLaunchEvent::Preparing).await;
-        let account = LaunchAccount::from_offline(&account);
         let mut options = LaunchOptions::from_install_plan(
             &install.layout,
             java.runtime.clone(),

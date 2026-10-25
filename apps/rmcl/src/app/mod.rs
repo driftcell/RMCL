@@ -1,6 +1,6 @@
 mod ui;
 
-use std::{cell::Cell, path::PathBuf, rc::Rc, sync::Arc};
+use std::{cell::Cell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
 use gpui_kit::{
     assets::IconName,
@@ -11,27 +11,37 @@ use gpui_kit::{
         h_flex,
         input::{Input, InputEvent, InputState},
         notification::Notification,
+        scroll::ScrollableElement,
+        searchable_list::SearchableListItem,
         select::{SearchableVec, SelectEvent, SelectState},
+        spinner::Spinner,
         v_flex,
     },
+    prelude::FluentBuilder,
     *,
 };
 use rmcl_app::{
-    AppError, GameLaunchRequest, InstallPhase, InstalledVersion, TaskEvent, TaskKind, TaskPhase,
-    TaskProgress, TaskSnapshot, TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource,
-    VersionSummary, delete_installed_version, discover_installed_versions,
+    AppError, GameLaunchRequest, InstallPhase, InstalledVersion, MicrosoftAccountServiceError,
+    ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
+    TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
+    delete_installed_version, discover_installed_versions,
 };
-use rmcl_auth::OfflineAccount;
+use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
-use rmcl_launch::{GameLog, LogStream};
+use rmcl_launch::{GameLog, LaunchAccount, LogStream};
 use rmcl_store::{
-    AccentColor, CONFIG_SCHEMA_VERSION, LauncherConfig, LauncherVisibility, ThemePreference,
+    AccentColor, CONFIG_SCHEMA_VERSION, LauncherConfig, LauncherVisibility, StoredAccountKind,
+    ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::{
-    services::{Bootstrap, Services, load_account, open_path, stored_account},
+    services::{
+        Bootstrap, Services, load_account, load_microsoft_account, open_path, stored_account,
+        stored_microsoft_account,
+    },
     state::LauncherState,
     theme,
 };
@@ -151,6 +161,46 @@ enum Command {
     Launch(GameLaunchRequest),
 }
 
+#[derive(Clone)]
+enum MicrosoftLoginUi {
+    Requesting,
+    Waiting {
+        user_code: String,
+        verification_uri: String,
+    },
+    Completing,
+    Failed {
+        message: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct AccountSelectItem {
+    key: String,
+    username: String,
+}
+
+impl AccountSelectItem {
+    fn new(account: &Account) -> Self {
+        Self {
+            key: account_key(account),
+            username: account.username().to_owned(),
+        }
+    }
+}
+
+impl SearchableListItem for AccountSelectItem {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.username.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.key
+    }
+}
+
 pub struct LauncherApp {
     services: Rc<Services>,
     page: Page,
@@ -159,10 +209,11 @@ pub struct LauncherApp {
     config_save_error: Option<String>,
     installed_versions: Vec<InstalledVersion>,
     versions_error: Option<String>,
-    accounts: Vec<OfflineAccount>,
+    accounts: Vec<Account>,
+    account_heads: HashMap<Uuid, PathBuf>,
     editing_account: Option<String>,
     version_select: Entity<SelectState<SearchableVec<String>>>,
-    account_select: Entity<SelectState<SearchableVec<String>>>,
+    account_select: Entity<SelectState<SearchableVec<AccountSelectItem>>>,
     theme_select: Entity<SelectState<SearchableVec<String>>>,
     accent_select: Entity<SelectState<SearchableVec<String>>>,
     visibility_select: Entity<SelectState<SearchableVec<String>>>,
@@ -179,10 +230,20 @@ pub struct LauncherApp {
     active_task_version: Option<String>,
     launcher_hidden: bool,
     logs_attention: bool,
+    launch_resolving: bool,
+    microsoft_login: Option<MicrosoftLoginUi>,
+    login_cancel: Option<CancellationToken>,
+    login_code_copied: bool,
     _event_task: Task<()>,
     _command_task: Option<Task<()>>,
     _prompt_task: Option<Task<()>>,
     _catalog_task: Option<Task<()>>,
+    _launch_task: Option<Task<()>>,
+    _login_task: Option<Task<()>>,
+    _copy_feedback_task: Option<Task<()>>,
+    _skin_task: Option<Task<()>>,
+    _profile_task: Option<Task<()>>,
+    _account_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
     _appearance_subscription: Subscription,
 }
@@ -197,15 +258,32 @@ impl LauncherApp {
         let save_on_start = bootstrap.save_on_start;
         let mut config = bootstrap.config;
         let config_warning = bootstrap.config_warning;
-        let accounts: Vec<OfflineAccount> =
-            config.accounts.iter().filter_map(load_account).collect();
-        if !accounts
-            .iter()
-            .any(|account| Some(account.username()) == config.selected_account.as_deref())
-        {
+        let mut accounts = Vec::new();
+        accounts.extend(
+            config
+                .accounts
+                .iter()
+                .filter_map(load_account)
+                .map(Account::Offline),
+        );
+        accounts.extend(
+            config
+                .microsoft_accounts
+                .iter()
+                .filter_map(load_microsoft_account)
+                .map(Account::Microsoft),
+        );
+        if !accounts.iter().any(|account| {
+            config.selected_account.as_deref() == Some(account.username())
+                && stored_account_kind(account) == config.selected_account_kind
+        }) {
             config.selected_account = accounts
                 .first()
                 .map(|account| account.username().to_owned());
+            config.selected_account_kind = accounts
+                .first()
+                .map(stored_account_kind)
+                .unwrap_or(StoredAccountKind::Offline);
         }
 
         let mut versions_error = None;
@@ -246,13 +324,16 @@ impl LauncherApp {
         let account_items = SearchableVec::new(
             accounts
                 .iter()
-                .map(|account| account.username().to_owned())
+                .map(AccountSelectItem::new)
                 .collect::<Vec<_>>(),
         );
         let account_index = config.selected_account.as_ref().and_then(|selected| {
             accounts
                 .iter()
-                .position(|account| account.username() == selected)
+                .position(|account| {
+                    account.username() == selected
+                        && stored_account_kind(account) == config.selected_account_kind
+                })
                 .map(|row| IndexPath::default().row(row))
         });
         let account_select = cx
@@ -314,7 +395,7 @@ impl LauncherApp {
         ));
         subscriptions.push(cx.subscribe(
             &account_select,
-            |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
+            |this, _, event: &SelectEvent<SearchableVec<AccountSelectItem>>, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
                     this.select_account(value.clone(), cx);
                 }
@@ -356,7 +437,7 @@ impl LauncherApp {
             });
         });
 
-        Self {
+        let mut app = Self {
             services,
             page: Page::Home,
             config,
@@ -365,6 +446,7 @@ impl LauncherApp {
             installed_versions,
             versions_error,
             accounts,
+            account_heads: HashMap::new(),
             editing_account: None,
             version_select,
             account_select,
@@ -384,13 +466,26 @@ impl LauncherApp {
             active_task_version: None,
             launcher_hidden: false,
             logs_attention: false,
+            launch_resolving: false,
+            microsoft_login: None,
+            login_cancel: None,
+            login_code_copied: false,
             _event_task: event_task,
             _command_task: None,
             _prompt_task: None,
             _catalog_task: None,
+            _launch_task: None,
+            _login_task: None,
+            _copy_feedback_task: None,
+            _skin_task: None,
+            _profile_task: None,
+            _account_task: None,
             _subscriptions: subscriptions,
             _appearance_subscription: appearance_subscription,
-        }
+        };
+        app.refresh_account_heads(window, cx);
+        app.refresh_microsoft_profiles(window, cx);
+        app
     }
 
     fn spawn_event_bridge(
@@ -481,11 +576,49 @@ impl LauncherApp {
     }
 
     fn select_account(&mut self, value: String, cx: &mut Context<Self>) {
-        if self.config.selected_account.as_deref() == Some(value.as_str()) {
+        let Some(account) = self
+            .accounts
+            .iter()
+            .find(|account| account_key(account) == value)
+            .cloned()
+        else {
+            return;
+        };
+        let kind = stored_account_kind(&account);
+        if self.config.selected_account.as_deref() == Some(account.username())
+            && self.config.selected_account_kind == kind
+        {
             return;
         }
-        self.config.selected_account = Some(value);
+        self.config.selected_account = Some(account.username().to_owned());
+        self.config.selected_account_kind = kind;
         self.save_config();
+        cx.notify();
+    }
+
+    fn select_account_key(
+        &mut self,
+        username: &str,
+        kind: StoredAccountKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.config.selected_account.as_deref() == Some(username)
+            && self.config.selected_account_kind == kind
+        {
+            return;
+        }
+        if !self
+            .accounts
+            .iter()
+            .any(|account| account.username() == username && stored_account_kind(account) == kind)
+        {
+            return;
+        }
+        self.config.selected_account = Some(username.to_owned());
+        self.config.selected_account_kind = kind;
+        self.save_config();
+        self.sync_account_select(window, cx);
         cx.notify();
     }
 
@@ -558,9 +691,36 @@ impl LauncherApp {
 
     fn save_config(&mut self) {
         self.config.schema_version = CONFIG_SCHEMA_VERSION;
-        self.config.accounts = self.accounts.iter().map(stored_account).collect();
-        if self.config.selected_account.is_none() {
-            self.config.selected_account = self.accounts.first().map(|a| a.username().to_owned());
+        self.config.accounts = self
+            .accounts
+            .iter()
+            .filter_map(|account| match account {
+                Account::Offline(account) => Some(stored_account(account)),
+                Account::Microsoft(_) => None,
+            })
+            .collect();
+        self.config.microsoft_accounts = self
+            .accounts
+            .iter()
+            .filter_map(|account| match account {
+                Account::Microsoft(account) => Some(stored_microsoft_account(account)),
+                Account::Offline(_) => None,
+            })
+            .collect();
+        let selected_exists = self.accounts.iter().any(|account| {
+            self.config.selected_account.as_deref() == Some(account.username())
+                && stored_account_kind(account) == self.config.selected_account_kind
+        });
+        if !selected_exists {
+            self.config.selected_account = self
+                .accounts
+                .first()
+                .map(|account| account.username().to_owned());
+            self.config.selected_account_kind = self
+                .accounts
+                .first()
+                .map(stored_account_kind)
+                .unwrap_or(StoredAccountKind::Offline);
         }
         match self.services.config_store.save(&self.config) {
             Ok(()) => self.config_save_error = None,
@@ -611,13 +771,16 @@ impl LauncherApp {
         let items = SearchableVec::new(
             self.accounts
                 .iter()
-                .map(|account| account.username().to_owned())
+                .map(AccountSelectItem::new)
                 .collect::<Vec<_>>(),
         );
         let selected = self.config.selected_account.as_ref().and_then(|selected| {
             self.accounts
                 .iter()
-                .position(|account| account.username() == selected)
+                .position(|account| {
+                    account.username() == selected
+                        && stored_account_kind(account) == self.config.selected_account_kind
+                })
                 .map(|row| IndexPath::default().row(row))
         });
         self.account_select.update(cx, |state, cx| {
@@ -633,11 +796,12 @@ impl LauncherApp {
             .find(|version| version.id.as_str() == selected)
     }
 
-    fn selected_account(&self) -> Option<&OfflineAccount> {
+    fn selected_account(&self) -> Option<&Account> {
         let selected = self.config.selected_account.as_deref()?;
-        self.accounts
-            .iter()
-            .find(|account| account.username() == selected)
+        self.accounts.iter().find(|account| {
+            account.username() == selected
+                && stored_account_kind(account) == self.config.selected_account_kind
+        })
     }
 
     fn is_installed(&self, version_id: &str) -> bool {
@@ -752,6 +916,9 @@ impl LauncherApp {
     }
 
     fn start_launch(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.launch_resolving {
+            return;
+        }
         if !self.log_state.can_start() {
             window.push_notification(
                 Notification::warning("已有任务正在运行，请等待完成或先停止它。")
@@ -762,11 +929,94 @@ impl LauncherApp {
         }
         let Some(account) = self.selected_account().cloned() else {
             window.push_notification(
-                Notification::error("请先添加一个离线账户。").title("无法启动游戏"),
+                Notification::error("请先添加一个账户。").title("无法启动游戏"),
                 cx,
             );
             return;
         };
+        match account {
+            Account::Offline(account) => {
+                self.spawn_launch(
+                    LaunchAccount::from_offline(&account),
+                    version_id,
+                    window,
+                    cx,
+                );
+            }
+            Account::Microsoft(account) => {
+                self.launch_resolving = true;
+                cx.notify();
+                let service = self.services.microsoft_accounts.clone();
+                let runtime = self.services.runtime.handle().clone();
+                let cancellation = CancellationToken::new();
+                self._launch_task = Some(cx.spawn_in(window, async move |this, cx| {
+                    let result = runtime
+                        .spawn(async move {
+                            service
+                                .resolve_launch_account(&account, &cancellation)
+                                .await
+                        })
+                        .await;
+                    let _ = this.update_in(cx, move |view, window, cx| {
+                        view.launch_resolving = false;
+                        match result {
+                            Ok(Ok(resolved)) => {
+                                view.update_resolved_microsoft(&resolved, window, cx);
+                                if let Some(warning) = resolved.persistence_warning.as_ref() {
+                                    window.push_notification(
+                                        Notification::warning(warning.clone()).title("账户"),
+                                        cx,
+                                    );
+                                }
+                                if !view.log_state.can_start() {
+                                    window.push_notification(
+                                        Notification::warning(
+                                            "已有任务正在运行，请等待完成或先停止它。",
+                                        )
+                                        .title("无法启动游戏"),
+                                        cx,
+                                    );
+                                } else {
+                                    view.spawn_launch(resolved.launch, version_id, window, cx);
+                                }
+                            }
+                            Ok(Err(error)) => {
+                                window.push_notification(
+                                    Notification::error(microsoft_error_message(&error))
+                                        .title("无法启动游戏"),
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                window.push_notification(
+                                    Notification::error(format!("后台任务失败: {error}"))
+                                        .title("无法启动游戏"),
+                                    cx,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    });
+                }));
+            }
+        }
+    }
+
+    fn spawn_launch(
+        &mut self,
+        account: LaunchAccount,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.log_state.can_start() {
+            window.push_notification(
+                Notification::warning("已有任务正在运行，请等待完成或先停止它。")
+                    .title("无法启动游戏"),
+                cx,
+            );
+            return;
+        }
         let request = GameLaunchRequest {
             install: VanillaInstallRequest {
                 minecraft_root: self.config.minecraft_root.clone(),
@@ -781,6 +1031,15 @@ impl LauncherApp {
             demo: false,
         };
         self.spawn_command(Command::Launch(request), version_id, window, cx);
+    }
+
+    fn update_resolved_microsoft(
+        &mut self,
+        resolved: &ResolvedMicrosoftAccount,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_microsoft_profile(resolved.profile.clone(), window, cx);
     }
 
     fn spawn_command(
@@ -1077,12 +1336,174 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn open_account_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let editing = self.config.selected_account.clone().or_else(|| {
-            self.accounts
-                .first()
-                .map(|account| account.username().to_owned())
+    fn open_accounts_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let (accounts, heads, selected, selected_kind) = view
+                .upgrade()
+                .map(|view| {
+                    let this = view.read(cx);
+                    (
+                        this.accounts.clone(),
+                        this.account_heads.clone(),
+                        this.config.selected_account.clone(),
+                        this.config.selected_account_kind,
+                    )
+                })
+                .unwrap_or_default();
+
+            let mut list = v_flex()
+                .w_full()
+                .gap_1()
+                .max_h(px(320.))
+                .overflow_y_scrollbar();
+            for (index, account) in accounts.iter().enumerate() {
+                let username = account.username().to_owned();
+                let kind = stored_account_kind(account);
+                let is_selected =
+                    selected.as_deref() == Some(username.as_str()) && selected_kind == kind;
+                let subtitle = if kind == StoredAccountKind::Microsoft {
+                    "正版账户"
+                } else {
+                    "离线账户"
+                };
+                let head = heads.get(&account.uuid());
+                let row_view = view.clone();
+                let row_username = username.clone();
+                let delete_view = view.clone();
+                let delete_account = account.clone();
+                list = list.child(
+                    h_flex()
+                        .id(format!("account-row-{index}"))
+                        .w_full()
+                        .p_2()
+                        .gap_3()
+                        .rounded(cx.theme().radius)
+                        .when(is_selected, |this| {
+                            this.bg(cx.theme().primary.opacity(0.10))
+                        })
+                        .hover(|style| style.bg(cx.theme().accent.opacity(0.45)))
+                        .on_click(move |_, window, cx| {
+                            if let Some(view) = row_view.upgrade() {
+                                view.update(cx, |this, cx| {
+                                    this.select_account_key(&row_username, kind, window, cx);
+                                    window.close_dialog(cx);
+                                    cx.notify();
+                                });
+                            }
+                        })
+                        .child(account_avatar(Some(account), head, 32., cx))
+                        .child(
+                            v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .gap_0p5()
+                                .child(div().text_sm().font_medium().truncate().child(username))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(subtitle),
+                                ),
+                        )
+                        .child(
+                            Button::new(format!("account-delete-{index}"))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Trash)
+                                .tooltip("删除账户")
+                                .accessibility_label("删除账户")
+                                .on_click(move |_, window, cx| {
+                                    cx.stop_propagation();
+                                    if let Some(view) = delete_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.open_delete_account_dialog(
+                                                delete_account.clone(),
+                                                window,
+                                                cx,
+                                            )
+                                        });
+                                    }
+                                }),
+                        )
+                        .when(is_selected, |this| {
+                            this.child(
+                                Icon::new(IconName::CircleCheck)
+                                    .with_size(Size::Small)
+                                    .text_color(cx.theme().primary),
+                            )
+                        }),
+                );
+            }
+            if accounts.is_empty() {
+                list = list.child(
+                    div()
+                        .w_full()
+                        .py_8()
+                        .text_center()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("还没有账户"),
+                );
+            }
+
+            let login_view = view.clone();
+            let offline_view = view.clone();
+            dialog.title("账户").width(px(468.)).child(list).footer(
+                DialogFooter::new()
+                    .child(
+                        Button::new("accounts-close")
+                            .ghost()
+                            .label("关闭")
+                            .on_click(|_, window, cx| window.close_dialog(cx)),
+                    )
+                    .child(
+                        Button::new("offline-add")
+                            .outline()
+                            .label("添加离线账户")
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                if let Some(view) = offline_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.open_offline_account_dialog(false, window, cx)
+                                    });
+                                }
+                            }),
+                    )
+                    .child(
+                        Button::new("microsoft-login")
+                            .primary()
+                            .label("正版登录")
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                if let Some(view) = login_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.begin_microsoft_login(window, cx)
+                                    });
+                                }
+                            }),
+                    ),
+            )
         });
+    }
+
+    fn open_offline_account_dialog(
+        &mut self,
+        editing_existing: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let editing = if editing_existing {
+            match self.selected_account() {
+                Some(Account::Offline(account)) => Some(account.username().to_owned()),
+                _ => self.accounts.iter().find_map(|account| match account {
+                    Account::Offline(account) => Some(account.username().to_owned()),
+                    Account::Microsoft(_) => None,
+                }),
+            }
+        } else {
+            None
+        };
         let initial = editing.clone().unwrap_or_default();
         self.editing_account = editing.clone();
         self.account_input.update(cx, |state, cx| {
@@ -1104,20 +1525,12 @@ impl LauncherApp {
             dialog
                 .title(title)
                 .child(
-                    v_flex()
-                        .gap_3()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("UUID 由玩家名生成，不连接 Mojang 登录。"),
-                        )
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .child(div().text_sm().font_medium().child("玩家名"))
-                                .child(div().p_1().child(Input::new(&input).w_full())),
-                        ),
+                    v_flex().gap_3().child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().text_sm().font_medium().child("玩家名"))
+                            .child(div().p_1().child(Input::new(&input).w_full())),
+                    ),
                 )
                 .footer(
                     DialogFooter::new()
@@ -1143,6 +1556,670 @@ impl LauncherApp {
         });
     }
 
+    fn begin_microsoft_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_microsoft_login();
+        self.microsoft_login = Some(MicrosoftLoginUi::Requesting);
+        self.login_code_copied = false;
+        let cancellation = CancellationToken::new();
+        self.login_cancel = Some(cancellation.clone());
+        self.spawn_microsoft_login(cancellation, window, cx);
+        self.open_microsoft_login_dialog(window, cx);
+        cx.notify();
+    }
+
+    fn spawn_microsoft_login(
+        &mut self,
+        cancellation: CancellationToken,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let service = self.services.microsoft_accounts.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._login_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let start = runtime
+                .spawn({
+                    let service = service.clone();
+                    async move { service.start_device_login().await }
+                })
+                .await;
+            let login = match start {
+                Ok(Ok(login)) => login,
+                Ok(Err(error)) => {
+                    let message =
+                        microsoft_error_message(&MicrosoftAccountServiceError::Auth(error));
+                    let _ = this.update_in(cx, move |view, _, cx| {
+                        view.fail_microsoft_login(message);
+                        cx.notify();
+                    });
+                    return;
+                }
+                Err(error) => {
+                    let message = format!("后台任务失败: {error}");
+                    let _ = this.update_in(cx, move |view, _, cx| {
+                        view.fail_microsoft_login(message);
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            let user_code = login.user_code().to_owned();
+            let verification_uri = login.verification_uri().to_owned();
+            let started = this.update_in(cx, |view, _, cx| {
+                if !matches!(view.microsoft_login, Some(MicrosoftLoginUi::Requesting)) {
+                    return;
+                }
+                view.microsoft_login = Some(MicrosoftLoginUi::Waiting {
+                    user_code,
+                    verification_uri: verification_uri.clone(),
+                });
+                cx.open_url(&verification_uri);
+                cx.notify();
+            });
+            if started.is_err() {
+                return;
+            }
+
+            let wait = runtime
+                .spawn(async move { login.wait(&cancellation).await })
+                .await;
+            match wait {
+                Ok(Ok(authenticated)) => {
+                    let completing = this.update_in(cx, |view, _, cx| {
+                        if view.microsoft_login.is_none() {
+                            return;
+                        }
+                        view.microsoft_login = Some(MicrosoftLoginUi::Completing);
+                        cx.notify();
+                    });
+                    if completing.is_err() {
+                        return;
+                    }
+                    let stored = runtime
+                        .spawn({
+                            let service = service.clone();
+                            let authenticated = authenticated.clone();
+                            async move { service.store_login(&authenticated).await }
+                        })
+                        .await;
+                    match stored {
+                        Ok(Ok(())) => {
+                            let _ = this.update_in(cx, move |view, window, cx| {
+                                if view.microsoft_login.is_none() {
+                                    return;
+                                }
+                                view.microsoft_login = None;
+                                view.login_cancel = None;
+                                view.add_microsoft_account(authenticated.account, window, cx);
+                                window.close_dialog(cx);
+                                window.push_notification(
+                                    Notification::success("正版账户已登录。").title("账户"),
+                                    cx,
+                                );
+                                cx.notify();
+                            });
+                        }
+                        Ok(Err(error)) => {
+                            let message = microsoft_error_message(&error);
+                            let _ = this.update_in(cx, move |view, _, cx| {
+                                view.fail_microsoft_login(message);
+                                cx.notify();
+                            });
+                        }
+                        Err(error) => {
+                            let message = format!("后台任务失败: {error}");
+                            let _ = this.update_in(cx, move |view, _, cx| {
+                                view.fail_microsoft_login(message);
+                                cx.notify();
+                            });
+                        }
+                    }
+                }
+                Ok(Err(error)) => {
+                    if matches!(error, MicrosoftAuthError::Cancelled) {
+                        return;
+                    }
+                    let message =
+                        microsoft_error_message(&MicrosoftAccountServiceError::Auth(error));
+                    let _ = this.update_in(cx, move |view, _, cx| {
+                        view.fail_microsoft_login(message);
+                        cx.notify();
+                    });
+                }
+                Err(error) => {
+                    let message = format!("后台任务失败: {error}");
+                    let _ = this.update_in(cx, move |view, _, cx| {
+                        view.fail_microsoft_login(message);
+                        cx.notify();
+                    });
+                }
+            }
+        }));
+    }
+
+    fn open_microsoft_login_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let (state, code_copied) = view
+                .upgrade()
+                .map(|view| {
+                    let this = view.read(cx);
+                    (this.microsoft_login.clone(), this.login_code_copied)
+                })
+                .unwrap_or((None, false));
+            let state = state.unwrap_or(MicrosoftLoginUi::Requesting);
+            let close_view = view.clone();
+            let retry_view = view.clone();
+            let failed = matches!(state, MicrosoftLoginUi::Failed { .. });
+            let content = match state.clone() {
+                MicrosoftLoginUi::Requesting => v_flex()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Spinner::new()
+                                    .with_size(Size::Small)
+                                    .color(cx.theme().primary),
+                            )
+                            .child(div().text_sm().child("正在获取登录代码…")),
+                    )
+                    .into_any_element(),
+                MicrosoftLoginUi::Waiting {
+                    user_code,
+                    verification_uri,
+                } => {
+                    let copy_code = user_code.clone();
+                    let copy_view = view.clone();
+                    let open_uri = verification_uri.clone();
+                    let verification_label = verification_uri
+                        .trim_start_matches("https://")
+                        .trim_start_matches("http://")
+                        .trim_end_matches('/')
+                        .to_owned();
+                    v_flex()
+                        .gap_4()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!(
+                                    "在浏览器中打开 {verification_label}，输入下方代码。"
+                                )),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_medium()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("登录代码"),
+                                )
+                                .child(
+                                    h_flex()
+                                        .w_full()
+                                        .gap_3()
+                                        .p_3()
+                                        .rounded(cx.theme().radius)
+                                        .border_1()
+                                        .border_color(cx.theme().border)
+                                        .bg(cx.theme().group_box)
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .text_2xl()
+                                                .font_semibold()
+                                                .font_family(cx.theme().mono_font_family.clone())
+                                                .child(user_code),
+                                        )
+                                        .child({
+                                            let button = Button::new("copy-login-code")
+                                                .small()
+                                                .icon(if code_copied {
+                                                    IconName::CircleCheck
+                                                } else {
+                                                    IconName::Copy
+                                                })
+                                                .tooltip(if code_copied {
+                                                    "已复制"
+                                                } else {
+                                                    "复制登录代码"
+                                                })
+                                                .accessibility_label(if code_copied {
+                                                    "已复制"
+                                                } else {
+                                                    "复制登录代码"
+                                                })
+                                                .on_click(move |_, window, cx| {
+                                                    cx.write_to_clipboard(
+                                                        ClipboardItem::new_string(
+                                                            copy_code.clone(),
+                                                        ),
+                                                    );
+                                                    if let Some(view) = copy_view.upgrade() {
+                                                        view.update(cx, |this, cx| {
+                                                            this.show_login_code_copied(window, cx)
+                                                        });
+                                                    }
+                                                });
+                                            if code_copied {
+                                                button.success()
+                                            } else {
+                                                button.ghost()
+                                            }
+                                        }),
+                                ),
+                        )
+                        .child(
+                            Button::new("open-login-page")
+                                .primary()
+                                .icon(IconName::ExternalLink)
+                                .label("打开浏览器")
+                                .w_full()
+                                .on_click(move |_, _, cx| {
+                                    cx.open_url(&open_uri);
+                                }),
+                        )
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    Spinner::new()
+                                        .with_size(Size::XSmall)
+                                        .color(cx.theme().muted_foreground),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("等待登录完成，完成后会自动继续。"),
+                                ),
+                        )
+                        .into_any_element()
+                }
+                MicrosoftLoginUi::Completing => v_flex()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                Spinner::new()
+                                    .with_size(Size::Small)
+                                    .color(cx.theme().primary),
+                            )
+                            .child(div().text_sm().child("正在获取 Minecraft 账户…")),
+                    )
+                    .into_any_element(),
+                MicrosoftLoginUi::Failed { message } => v_flex()
+                    .gap_2()
+                    .child(div().text_sm().text_color(cx.theme().danger).child(message))
+                    .into_any_element(),
+            };
+
+            let footer = if failed {
+                DialogFooter::new()
+                    .child(
+                        Button::new("close-microsoft-login")
+                            .ghost()
+                            .label("关闭")
+                            .on_click({
+                                let view = view.clone();
+                                move |_, window, cx| {
+                                    if let Some(view) = view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.cancel_microsoft_login(window, cx)
+                                        });
+                                    }
+                                }
+                            }),
+                    )
+                    .child(
+                        Button::new("retry-microsoft-login")
+                            .primary()
+                            .label("重试")
+                            .on_click(move |_, window, cx| {
+                                if let Some(view) = retry_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.clear_microsoft_login();
+                                        window.close_dialog(cx);
+                                        this.begin_microsoft_login(window, cx);
+                                    });
+                                }
+                            }),
+                    )
+            } else {
+                DialogFooter::new().child(
+                    Button::new("cancel-microsoft-login")
+                        .ghost()
+                        .label("取消")
+                        .on_click({
+                            let view = view.clone();
+                            move |_, window, cx| {
+                                if let Some(view) = view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.cancel_microsoft_login(window, cx)
+                                    });
+                                }
+                            }
+                        }),
+                )
+            };
+
+            dialog
+                .title("正版登录")
+                .width(px(468.))
+                .child(content)
+                .footer(footer)
+                .on_close(move |_, _, cx| {
+                    if let Some(view) = close_view.upgrade() {
+                        view.update(cx, |this, _| this.clear_microsoft_login());
+                    }
+                })
+        });
+    }
+
+    fn clear_microsoft_login(&mut self) {
+        self.microsoft_login = None;
+        self.login_code_copied = false;
+        self._copy_feedback_task = None;
+        if let Some(cancellation) = self.login_cancel.take() {
+            cancellation.cancel();
+        }
+    }
+
+    fn refresh_account_heads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pending = self
+            .accounts
+            .iter()
+            .filter_map(|account| match account {
+                Account::Microsoft(account) => account
+                    .skin_url()
+                    .map(|url| (account.uuid(), url.to_owned())),
+                Account::Offline(_) => None,
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return;
+        }
+        let skins = self.services.skins.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._skin_task = Some(cx.spawn_in(window, async move |this, cx| {
+            for (uuid, url) in pending {
+                let result = runtime
+                    .spawn({
+                        let skins = skins.clone();
+                        async move { skins.ensure_head(&url).await }
+                    })
+                    .await;
+                if let Ok(Ok(path)) = result {
+                    let _ = this.update_in(cx, move |view, _, cx| {
+                        view.account_heads.insert(uuid, path);
+                        cx.notify();
+                    });
+                }
+            }
+        }));
+    }
+
+    /// Refreshes profiles for accounts that predate stored skin metadata.
+    fn refresh_microsoft_profiles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pending = self
+            .accounts
+            .iter()
+            .filter_map(|account| match account {
+                Account::Microsoft(account) if account.skin_url().is_none() => {
+                    Some(account.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return;
+        }
+        let service = self.services.microsoft_accounts.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._profile_task = Some(cx.spawn_in(window, async move |this, cx| {
+            for account in pending {
+                let cancellation = CancellationToken::new();
+                let result = runtime
+                    .spawn({
+                        let service = service.clone();
+                        async move { service.refresh_profile(&account, &cancellation).await }
+                    })
+                    .await;
+                if let Ok(Ok(profile)) = result {
+                    let _ = this.update_in(cx, move |view, window, cx| {
+                        view.apply_microsoft_profile(profile, window, cx);
+                    });
+                }
+            }
+        }));
+    }
+
+    fn apply_microsoft_profile(
+        &mut self,
+        profile: MicrosoftAccount,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let uuid = profile.uuid();
+        let previous = self.accounts.iter().find_map(|account| match account {
+            Account::Microsoft(account) if account.uuid() == uuid => Some((
+                account.username().to_owned(),
+                account.skin_url().map(str::to_owned),
+            )),
+            _ => None,
+        });
+        let previous_name = previous.as_ref().map(|(name, _)| name.clone());
+        let previous_skin_url = previous.and_then(|(_, skin_url)| skin_url);
+        if let Some(account) = self.accounts.iter_mut().find(
+            |account| matches!(account, Account::Microsoft(account) if account.uuid() == uuid),
+        ) {
+            *account = Account::Microsoft(profile.clone());
+        } else {
+            self.accounts.push(Account::Microsoft(profile.clone()));
+        }
+        if previous_skin_url.as_deref() != profile.skin_url() {
+            self.account_heads.remove(&uuid);
+        }
+        if self.config.selected_account_kind == StoredAccountKind::Microsoft
+            && self.config.selected_account == previous_name
+        {
+            self.config.selected_account = Some(profile.username().to_owned());
+        }
+        self.save_config();
+        self.sync_account_select(window, cx);
+        self.refresh_account_heads(window, cx);
+        cx.notify();
+    }
+
+    fn show_login_code_copied(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.login_code_copied = true;
+        self._copy_feedback_task = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(1600))
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                view.login_code_copied = false;
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn cancel_microsoft_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_microsoft_login();
+        window.close_dialog(cx);
+        cx.notify();
+    }
+
+    fn fail_microsoft_login(&mut self, message: String) {
+        if self.microsoft_login.is_none() {
+            return;
+        }
+        self.microsoft_login = Some(MicrosoftLoginUi::Failed { message });
+        self.login_cancel = None;
+    }
+
+    fn add_microsoft_account(
+        &mut self,
+        account: MicrosoftAccount,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let uuid = account.uuid();
+        let previous_skin_url = self.accounts.iter().find_map(|existing| match existing {
+            Account::Microsoft(existing) if existing.uuid() == uuid => {
+                existing.skin_url().map(str::to_owned)
+            }
+            _ => None,
+        });
+        self.accounts.retain(
+            |existing| !matches!(existing, Account::Microsoft(existing) if existing.uuid() == uuid),
+        );
+        if previous_skin_url.as_deref() != account.skin_url() {
+            self.account_heads.remove(&uuid);
+        }
+        self.accounts.push(Account::Microsoft(account.clone()));
+        self.config.selected_account = Some(account.username().to_owned());
+        self.config.selected_account_kind = StoredAccountKind::Microsoft;
+        self.save_config();
+        self.sync_account_select(window, cx);
+        self.refresh_account_heads(window, cx);
+        cx.notify();
+    }
+
+    fn open_delete_account_dialog(
+        &mut self,
+        account: Account,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = account.username().to_owned();
+        let is_microsoft = account.kind() == AccountKind::Microsoft;
+        let view = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let clicked_account = account.clone();
+            let confirm_view = view.clone();
+            dialog
+                .title("删除账户")
+                .width(px(420.))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .child(format!("确定要删除账户「{name}」吗？")),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(if is_microsoft {
+                                    "删除后会同时退出该正版账户。"
+                                } else {
+                                    "此操作不会删除游戏文件。"
+                                }),
+                        ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            Button::new("cancel-delete-account")
+                                .ghost()
+                                .label("取消")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("confirm-delete-account")
+                                .danger()
+                                .label("删除")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    if let Some(view) = confirm_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.delete_account(clicked_account.clone(), window, cx)
+                                        });
+                                    }
+                                }),
+                        ),
+                )
+        });
+    }
+
+    fn delete_account(&mut self, account: Account, window: &mut Window, cx: &mut Context<Self>) {
+        let Account::Microsoft(account) = &account else {
+            self.finish_delete_account(account, window, cx);
+            return;
+        };
+        let account = account.clone();
+        let service = self.services.microsoft_accounts.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._account_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn({
+                    let service = service.clone();
+                    let account = account.clone();
+                    async move { service.remove_credentials(&account).await }
+                })
+                .await;
+            let _ = this.update_in(cx, move |view, window, cx| {
+                match result {
+                    Ok(Ok(())) => {
+                        view.finish_delete_account(Account::Microsoft(account), window, cx)
+                    }
+                    Ok(Err(error)) => {
+                        window.push_notification(
+                            Notification::error(format!("无法删除系统钥匙串中的登录凭据: {error}"))
+                                .title("无法删除账户"),
+                            cx,
+                        );
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("无法删除账户"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn finish_delete_account(
+        &mut self,
+        account: Account,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let key = account_key(&account);
+        let deleting_selected = self
+            .selected_account()
+            .is_some_and(|selected| account_key(selected) == key);
+        self.accounts
+            .retain(|existing| account_key(existing) != key);
+        self.account_heads.remove(&account.uuid());
+        if deleting_selected {
+            self.config.selected_account = self
+                .accounts
+                .first()
+                .map(|account| account.username().to_owned());
+            self.config.selected_account_kind = self
+                .accounts
+                .first()
+                .map(stored_account_kind)
+                .unwrap_or(StoredAccountKind::Offline);
+        }
+        self.save_config();
+        self.sync_account_select(window, cx);
+        window.push_notification(Notification::success("账户已删除。").title("账户"), cx);
+        cx.notify();
+    }
+
     fn save_account(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let username = value.trim().to_owned();
         if username.is_empty() {
@@ -1165,13 +2242,16 @@ impl LauncherApp {
         if let Some(previous) = self.editing_account.take()
             && previous != username
         {
-            self.accounts
-                .retain(|account| account.username() != previous);
+            self.accounts.retain(
+                |account| !matches!(account, Account::Offline(account) if account.username() == previous),
+            );
         }
-        self.accounts
-            .retain(|account| account.username() != username);
-        self.accounts.push(account);
+        self.accounts.retain(
+            |account| !matches!(account, Account::Offline(account) if account.username() == username),
+        );
+        self.accounts.push(Account::Offline(account));
         self.config.selected_account = Some(username);
+        self.config.selected_account_kind = StoredAccountKind::Offline;
         self.sync_account_select(window, cx);
         self.save_config();
         window.push_notification(Notification::success("离线账户已保存。").title("账户"), cx);
@@ -1541,6 +2621,103 @@ pub fn platform_label(platform: &Platform) -> String {
         Architecture::Other(ref other) => other.as_str(),
     };
     format!("{os} · {arch}")
+}
+
+fn account_key(account: &Account) -> String {
+    match account {
+        Account::Offline(account) => format!("offline:{}", account.uuid()),
+        Account::Microsoft(account) => format!("microsoft:{}", account.uuid()),
+    }
+}
+
+fn account_avatar(
+    account: Option<&Account>,
+    head: Option<&PathBuf>,
+    size: f32,
+    cx: &App,
+) -> AnyElement {
+    if let Some(head) = head {
+        return div()
+            .size(px(size))
+            .flex_shrink_0()
+            .rounded_full()
+            .overflow_hidden()
+            .bg(cx.theme().primary.opacity(0.15))
+            .child(img(head.clone()).size_full().object_fit(ObjectFit::Cover))
+            .into_any_element();
+    }
+    let initial = account
+        .and_then(|account| account.username().chars().next())
+        .map(|character| character.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_owned());
+    div()
+        .size(px(size))
+        .flex_shrink_0()
+        .rounded_full()
+        .bg(cx.theme().primary.opacity(0.15))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .text_sm()
+                .font_semibold()
+                .text_color(cx.theme().primary)
+                .child(initial),
+        )
+        .into_any_element()
+}
+
+fn stored_account_kind(account: &Account) -> StoredAccountKind {
+    match account.kind() {
+        AccountKind::Offline => StoredAccountKind::Offline,
+        AccountKind::Microsoft => StoredAccountKind::Microsoft,
+    }
+}
+
+fn microsoft_error_message(error: &MicrosoftAccountServiceError) -> String {
+    match error {
+        MicrosoftAccountServiceError::CredentialsMissing
+        | MicrosoftAccountServiceError::Auth(MicrosoftAuthError::ReauthenticationRequired)
+        | MicrosoftAccountServiceError::Auth(MicrosoftAuthError::MinecraftTokenRejected) => {
+            "正版账户登录已失效，请重新登录。".to_owned()
+        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::NoMinecraftEntitlement) => {
+            "该 Microsoft 账户未拥有 Minecraft: Java Edition。".to_owned()
+        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::ProfileNotFound) => {
+            "该账户还没有 Minecraft 玩家档案，请先在官方启动器登录一次。".to_owned()
+        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
+            code: Some(2148916233),
+            ..
+        }) => "该账户还没有 Xbox 档案，请先在 minecraft.net 登录一次。".to_owned(),
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
+            code: Some(2148916238),
+            ..
+        }) => "该账户是儿童账户，需要先加入 Microsoft 家庭组。".to_owned(),
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
+            code: Some(2148916235),
+            ..
+        }) => "该账户所在地区不支持 Xbox Live。".to_owned(),
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
+            code: Some(2148916227),
+            ..
+        }) => "该账户已被 Xbox Live 封禁。".to_owned(),
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::DeviceCodeExpired) => {
+            "登录代码已过期，请重新开始。".to_owned()
+        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::DeviceCodeDeclined) => {
+            "Microsoft 登录已取消。".to_owned()
+        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Cancelled) => {
+            "Microsoft 登录已取消。".to_owned()
+        }
+        MicrosoftAccountServiceError::SecretStore(error) => {
+            format!("无法访问系统钥匙串: {error}")
+        }
+        _ => error.to_string(),
+    }
 }
 
 fn theme_index(theme: ThemePreference) -> usize {

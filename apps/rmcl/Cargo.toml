@@ -11,6 +11,7 @@ rmcl-auth.workspace = true
 rmcl-domain.workspace = true
 rmcl-launch.workspace = true
 rmcl-net.workspace = true
+rmcl-platform.workspace = true
 rmcl-store.workspace = true
 sysinfo.workspace = true
 tokio.workspace = true

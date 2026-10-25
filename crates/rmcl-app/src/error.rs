@@ -84,4 +84,8 @@ pub enum AppError {
     Java(#[from] rmcl_java::JavaError),
     #[error(transparent)]
     Launch(#[from] rmcl_launch::LaunchError),
+    #[error("Microsoft authentication is unavailable: {0}")]
+    MicrosoftAuth(#[from] rmcl_auth::MicrosoftAuthError),
+    #[error("system credential storage is unavailable: {0}")]
+    SecretStore(#[from] rmcl_platform::SecretStoreError),
 }
