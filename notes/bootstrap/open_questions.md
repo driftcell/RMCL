@@ -14,7 +14,7 @@
 - 各平台自动下载 Java 的供应、归档格式、校验与许可如何记录？
 - `.minecraft` 的实例隔离首版支持哪些模式？RMCL 自己新增的实例配置放在哪里，如何避免污染标准版本 JSON？
 - 修复范围中，client JAR、libraries、assets 和版本 JSON 分别采用存在性、大小、哈希还是容器完整性检查？
-- 启动器日志只在失败或异常退出时展示，是否需要单独的崩溃报告页和诊断包？
+- 日志在侧栏有独立入口，异常时显示红点；是否需要单独的崩溃报告页、日志级别过滤和诊断包？
 - GPUI Kit 已选定 0.8.0 / gpui-pre 0.3.9，页面、配置和隐藏行为见 [桌面界面与 GPUI 桥接](../../docs/architecture/USER_INTERFACE.md) 与 [启动器配置](../../docs/architecture/CONFIGURATION.md)；发布最低系统版本仍需逐平台运行和打包验证。
 - 游戏运行时最小化启动器、退出后恢复，在 Windows 和 Linux 上分别是什么窗口语义？macOS 使用 `deminiaturize`，其他平台需要真实运行验收。
 
