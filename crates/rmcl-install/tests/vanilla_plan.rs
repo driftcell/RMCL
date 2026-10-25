@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use rmcl_install::{
-    InstallPlan, InstallPlanError, PlannedFile, PlannedFileKind, plan_asset_objects, plan_vanilla,
+    InstallPlan, InstallPlanError, PlannedFile, PlannedFileKind, plan_asset_objects,
+    plan_asset_objects_with_base, plan_vanilla,
 };
 use rmcl_instance::MinecraftLayout;
 use rmcl_minecraft::{AssetCatalog, GameVersion, OperatingSystem, Platform};
@@ -250,6 +251,17 @@ fn rejects_unresolved_native_placeholder() {
 }
 
 #[test]
+fn rejects_inherited_versions_instead_of_planning_an_incomplete_client() {
+    let mut inherited = base_version(json!([]));
+    inherited["inheritsFrom"] = json!("parent");
+
+    assert!(matches!(
+        plan_vanilla(&layout(), &version(inherited), &linux()),
+        Err(InstallPlanError::UnsupportedInheritance { .. })
+    ));
+}
+
+#[test]
 fn rejects_client_redirect_and_missing_required_downloads() {
     let mut redirect = base_version(json!([]));
     redirect["jar"] = json!("other");
@@ -432,6 +444,48 @@ fn plans_and_deduplicates_asset_objects_by_hash() {
         first.sources[0].as_str(),
         format!("https://resources.download.minecraft.net/01/{HASH_A}")
     );
+}
+
+#[test]
+fn plans_asset_objects_with_an_explicit_source_root() {
+    let catalog = AssetCatalog::from_json(
+        &json!({"objects": {"a.txt": {"hash": HASH_A, "size": 10}}}).to_string(),
+    )
+    .unwrap();
+    let base = url::Url::parse("http://127.0.0.1:8080/assets/objects/").unwrap();
+
+    let result = plan_asset_objects_with_base(&layout(), &catalog, &base).unwrap();
+
+    assert_eq!(
+        result.files[0].sources[0].as_str(),
+        format!("http://127.0.0.1:8080/assets/objects/01/{HASH_A}")
+    );
+    assert_eq!(result.files[0].sha1, Some(HASH_A.parse().unwrap()));
+}
+
+#[test]
+fn rejects_unsupported_asset_layouts_and_unsafe_source_roots() {
+    let virtual_catalog =
+        AssetCatalog::from_json(&json!({"virtual": true, "objects": {}}).to_string()).unwrap();
+    assert!(matches!(
+        plan_asset_objects(&layout(), &virtual_catalog),
+        Err(InstallPlanError::UnsupportedVirtualAssets)
+    ));
+
+    let mapped_catalog =
+        AssetCatalog::from_json(&json!({"map_to_resources": true, "objects": {}}).to_string())
+            .unwrap();
+    assert!(matches!(
+        plan_asset_objects(&layout(), &mapped_catalog),
+        Err(InstallPlanError::UnsupportedMappedAssets)
+    ));
+
+    let catalog = AssetCatalog::default();
+    let signed = url::Url::parse("https://example.invalid/assets/?token=secret").unwrap();
+    assert!(matches!(
+        plan_asset_objects_with_base(&layout(), &catalog, &signed),
+        Err(InstallPlanError::InvalidAssetObjectBase { .. })
+    ));
 }
 
 #[test]

@@ -8,7 +8,7 @@
 
 `rmcl-minecraft` 提供以下只读模型和求值逻辑：
 
-- 远程版本列表：`latest`、`versions[]` 和按精确 ID 查找。
+- 远程版本列表：`latest`、`versions[]`、版本 JSON URL、可选 SHA-1 和按精确 ID 查找。
 - 具体版本 JSON：ID、继承相关字段、主类、下载信息、asset index、Java 版本、libraries 和时间字段。
 - modern `arguments.game` / `arguments.jvm` 与 legacy `minecraftArguments` 的分别保留。
 - library 的 artifact、classifiers、natives、rules 和 extract 元数据。

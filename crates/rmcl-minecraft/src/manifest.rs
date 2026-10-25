@@ -35,6 +35,8 @@ pub struct VersionSummary {
     pub version_type: Option<String>,
     pub url: String,
     #[serde(default)]
+    pub sha1: Option<String>,
+    #[serde(default)]
     pub time: Option<String>,
     #[serde(default)]
     pub release_time: Option<String>,
@@ -54,6 +56,7 @@ mod tests {
                         "id": "1.21.1",
                         "type": "release",
                         "url": "https://example.invalid/1.21.1.json",
+                        "sha1": "0123456789abcdef0123456789abcdef01234567",
                         "time": "2024-08-08T08:00:00+00:00",
                         "releaseTime": "2024-08-08T08:00:00+00:00"
                     },
@@ -68,7 +71,12 @@ mod tests {
             manifest.find("1.21.1").unwrap().url,
             "https://example.invalid/1.21.1.json"
         );
+        assert_eq!(
+            manifest.find("1.21.1").unwrap().sha1.as_deref(),
+            Some("0123456789abcdef0123456789abcdef01234567")
+        );
         assert_eq!(manifest.find("local").unwrap().version_type, None);
+        assert_eq!(manifest.find("local").unwrap().sha1, None);
         assert!(manifest.find("1.21").is_none());
         assert_eq!(manifest.latest.unwrap().release.as_deref(), Some("1.21.1"));
     }

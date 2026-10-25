@@ -20,6 +20,12 @@ pub fn plan_vanilla(
     platform: &Platform,
 ) -> Result<InstallPlan, InstallPlanError> {
     let id = VersionId::new(version.id.clone())?;
+    if let Some(inherits_from) = &version.inherits_from {
+        return Err(InstallPlanError::UnsupportedInheritance {
+            id: version.id.clone(),
+            inherits_from: inherits_from.clone(),
+        });
+    }
     if let Some(jar) = &version.jar {
         let jar_id = VersionId::new(jar.clone())?;
         if jar_id != id {
@@ -73,14 +79,39 @@ pub fn plan_asset_objects(
     layout: &MinecraftLayout,
     catalog: &AssetCatalog,
 ) -> Result<InstallPlan, InstallPlanError> {
+    let base = parse_url(ASSET_OBJECT_BASE, "asset object base")?;
+    plan_asset_objects_with_base(layout, catalog, &base)
+}
+
+/// Plans asset objects against an explicit source root without changing their integrity checks.
+pub fn plan_asset_objects_with_base(
+    layout: &MinecraftLayout,
+    catalog: &AssetCatalog,
+    base: &Url,
+) -> Result<InstallPlan, InstallPlanError> {
+    if catalog.is_virtual == Some(true) {
+        return Err(InstallPlanError::UnsupportedVirtualAssets);
+    }
+    if catalog.map_to_resources == Some(true) {
+        return Err(InstallPlanError::UnsupportedMappedAssets);
+    }
+    if !matches!(base.scheme(), "http" | "https") {
+        return Err(InstallPlanError::UnsupportedUrlScheme {
+            artifact: "asset object base".to_owned(),
+            scheme: base.scheme().to_owned(),
+        });
+    }
+    if base.query().is_some() || base.fragment().is_some() {
+        return Err(InstallPlanError::InvalidAssetObjectBase {
+            url: base.to_string(),
+        });
+    }
+
     let mut builder = InstallPlanBuilder::default();
     for object in catalog.objects.values() {
         let hash: Sha1Hash = object.hash.parse()?;
         let hash_text = hash.to_string();
-        let url = parse_url(
-            &format!("{ASSET_OBJECT_BASE}{}/{hash_text}", &hash_text[..2]),
-            &format!("asset object {hash_text}"),
-        )?;
+        let url = asset_object_url(base, &hash_text)?;
         builder.push_file(PlannedFile {
             kind: PlannedFileKind::AssetObject,
             destination: layout.asset_object_path(hash),
@@ -90,6 +121,22 @@ pub fn plan_asset_objects(
         })?;
     }
     Ok(builder.finish())
+}
+
+fn asset_object_url(base: &Url, hash: &str) -> Result<Url, InstallPlanError> {
+    let mut url = base.clone();
+    {
+        let mut segments =
+            url.path_segments_mut()
+                .map_err(|_| InstallPlanError::UrlCannotBeBase {
+                    artifact: format!("asset object {hash}"),
+                    url: base.to_string(),
+                })?;
+        segments.pop_if_empty();
+        segments.push(&hash[..2]);
+        segments.push(hash);
+    }
+    Ok(url)
 }
 
 fn plan_library(

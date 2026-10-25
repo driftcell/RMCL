@@ -14,8 +14,14 @@ pub enum InstallPlanError {
     Coordinate(#[from] MavenCoordinateError),
     #[error(transparent)]
     Rule(#[from] RuleError),
+    #[error("version `{id}` inherits from unsupported parent `{inherits_from}`")]
+    UnsupportedInheritance { id: String, inherits_from: String },
     #[error("version `{id}` redirects its client JAR to unsupported version `{jar}`")]
     UnsupportedClientJarRedirect { id: String, jar: String },
+    #[error("virtual asset indexes are not supported")]
+    UnsupportedVirtualAssets,
+    #[error("asset indexes with map_to_resources are not supported")]
+    UnsupportedMappedAssets,
     #[error("version `{0}` has no client download")]
     MissingClientDownload(String),
     #[error("version `{0}` has no asset index")]
@@ -41,6 +47,8 @@ pub enum InstallPlanError {
     },
     #[error("download URL `{url}` for `{artifact}` cannot be used as a base URL")]
     UrlCannotBeBase { artifact: String, url: String },
+    #[error("asset object base URL `{url}` must not contain a query or fragment")]
+    InvalidAssetObjectBase { url: String },
     #[error("unsupported download URL scheme `{scheme}` for `{artifact}`")]
     UnsupportedUrlScheme { artifact: String, scheme: String },
     #[error("conflicting download requirements for `{path}`")]

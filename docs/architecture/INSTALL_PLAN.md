@@ -10,8 +10,11 @@
 
 - `plan_vanilla`：client JAR、普通 libraries、native libraries 和 asset index。
 - `plan_asset_objects`：下载并解析 asset index 后，根据 `AssetCatalog` 生成 content-addressed objects 计划。
+- `plan_asset_objects_with_base`：使用显式 asset object 来源根路径，保持相同 SHA-1/size 校验，供本地执行与未来的来源策略复用。
 
-两阶段分离允许执行器先取得 asset index，再规划其中的对象。计划本身不会读写文件、访问网络、修改版本 JSON 或执行解压；实际下载由 [下载执行器](DOWNLOAD_EXECUTOR.md) 提供。
+两阶段分离允许执行器先取得 asset index，再规划其中的对象。计划本身不会读写文件、访问网络、修改版本 JSON 或执行解压；实际下载由 [下载执行器](DOWNLOAD_EXECUTOR.md) 提供。显式 asset base 不接受 query 或 fragment，避免把来源根配置误当成对象级签名 URL。
+
+`inheritsFrom` 版本会返回 `UnsupportedInheritance`，不会按不完整子清单生成 Vanilla 计划。`virtual: true` 和 `map_to_resources: true` 的 asset index 也明确报错；在对应名称重建实现前不静默生成不完整安装。
 
 `InstallPlan` 包含：
 
