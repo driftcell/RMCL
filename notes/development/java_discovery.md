@@ -33,3 +33,7 @@
 首次 Java CI 的 Windows managed-layout 测试失败，因为测试数据在 Windows 仍使用 `java` 而不是 `java.exe`。已改为按平台选择真实文件名，不改变生产逻辑。
 
 HMCL 进一步梳理后，RMCL 又补充了 `os.name` 必需验证、未知 OS/arch 拒绝、中立工作目录、Java 环境变量清理、禁用列表和 Linux x64 旧版上限。声明 major 的既有候选判断从“精确匹配”修正为“最低版本”，自动安装仍需按目标 major 精确选择组件。
+
+## 实例级 Java 覆盖
+
+实例 manifest 增加可选 `java` 路径，保持 schema 1。界面通过 `JavaService::discover` 展示已探测的 managed、JAVA_HOME 和 PATH runtime，选择后只更新当前实例。启动时对显式路径重新 `probe`，不符合游戏版本、平台或架构时返回 `JavaOverrideIncompatible`，不会静默回退到自动选择。该行为避免路径被替换或 runtime 升级后继续使用不兼容 Java，同时不改变自动选择策略。

@@ -20,6 +20,8 @@ pub struct InstalledVersion {
     pub game_dir: PathBuf,
     pub isolation: IsolationMode,
     pub loader: Option<InstanceLoader>,
+    /// Explicit Java executable from the manifest; `None` means automatic.
+    pub java: Option<PathBuf>,
     pub manifest_present: bool,
     pub manifest_error: Option<String>,
     pub client_jar_present: bool,
@@ -125,7 +127,10 @@ pub fn discover_installed_versions(
             || id.as_str().to_owned(),
             |manifest| manifest.resolved_minecraft_version(&id).to_owned(),
         );
-        let loader = manifest.and_then(|manifest| manifest.loader);
+        let loader = manifest
+            .as_ref()
+            .and_then(|manifest| manifest.loader.clone());
+        let java = manifest.and_then(|manifest| manifest.java);
         let resolved = version
             .inherits_from
             .as_ref()
@@ -156,6 +161,7 @@ pub fn discover_installed_versions(
             game_dir: instance.game_dir(),
             isolation,
             loader,
+            java,
             manifest_present,
             manifest_error,
             client_jar_present: layout.client_jar_path(&jar_id).is_file(),
@@ -320,6 +326,7 @@ mod tests {
             kind: rmcl_instance::LoaderKind::Fabric,
             version: "0.16.10".to_owned(),
         });
+        manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
         instance.write_manifest(&manifest).unwrap();
 
         let versions = discover_installed_versions(temporary.path()).unwrap();
@@ -337,6 +344,10 @@ mod tests {
         assert_eq!(
             version.loader.as_ref().map(|loader| loader.kind.as_str()),
             Some("fabric")
+        );
+        assert_eq!(
+            version.java.as_deref(),
+            Some(Path::new("/opt/java/bin/java"))
         );
     }
 

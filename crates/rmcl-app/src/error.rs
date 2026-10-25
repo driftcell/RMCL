@@ -19,8 +19,16 @@ pub enum AppError {
     JavaNotConfigured,
     #[error("no compatible Java runtime for {requirement:?}; probe failures: {failures:?}")]
     JavaNotFound {
-        requirement: rmcl_java::JavaRequirement,
+        requirement: Box<rmcl_java::JavaRequirement>,
         failures: Vec<String>,
+    },
+    #[error(
+        "configured Java `{path}` reports version {version}, which does not satisfy {requirement:?}"
+    )]
+    JavaOverrideIncompatible {
+        path: PathBuf,
+        version: String,
+        requirement: Box<rmcl_java::JavaRequirement>,
     },
     #[error("invalid application request: {0}")]
     InvalidRequest(String),

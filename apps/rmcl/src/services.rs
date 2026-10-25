@@ -23,6 +23,7 @@ use uuid::Uuid;
 pub struct Services {
     pub runtime: Runtime,
     pub tasks: TaskManager,
+    pub java: JavaService,
     pub platform: Platform,
     pub catalog: VersionCatalog,
     pub modrinth: ModrinthClient,
@@ -52,7 +53,7 @@ impl Services {
         let forge = ForgeInstaller::new(DownloadConfig::default())?;
         let creator = InstanceCreator::new(installer.clone(), loaders.clone())
             .with_forge(forge, java.clone());
-        let tasks = TaskManager::with_full(installer, java, content, creator, 256);
+        let tasks = TaskManager::with_full(installer, java.clone(), content, creator, 256);
         let catalog = VersionCatalog::official(DownloadConfig::default())?;
         let modrinth = ModrinthClient::official()?;
         let secrets = std::sync::Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
@@ -67,6 +68,7 @@ impl Services {
         Ok(Rc::new(Self {
             runtime,
             tasks,
+            java,
             platform: current_platform(),
             catalog,
             modrinth,

@@ -36,7 +36,7 @@ pub use instance_create::{
     CreateInstanceRequest, InstanceCreateEvent, InstanceCreateEventSender, InstanceCreateOutcome,
     InstanceCreatePhase, InstanceCreator, LoaderSelection,
 };
-pub use instances::migrate_instance_to_isolated;
+pub use instances::{migrate_instance_to_isolated, set_instance_java};
 pub use java::{
     JavaEvent, JavaEventSender, JavaSelection, JavaSelectionOrigin, JavaService, JavaServiceConfig,
 };
@@ -53,6 +53,7 @@ pub use rmcl_content::{
 pub use rmcl_instance::{
     InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,
 };
+pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
 pub use skins::{SkinCache, SkinError};

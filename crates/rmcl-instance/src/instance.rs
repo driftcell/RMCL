@@ -72,6 +72,10 @@ pub struct InstanceManifest {
     pub minecraft_version: String,
     pub isolation: IsolationMode,
     pub loader: Option<InstanceLoader>,
+    /// Explicit Java executable for this instance. `None` keeps automatic
+    /// discovery and selection based on the game version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub java: Option<PathBuf>,
 }
 
 impl Default for InstanceManifest {
@@ -82,6 +86,7 @@ impl Default for InstanceManifest {
             minecraft_version: String::new(),
             isolation: IsolationMode::Isolated,
             loader: None,
+            java: None,
         }
     }
 }
@@ -96,6 +101,7 @@ impl InstanceManifest {
             minecraft_version: id.as_str().to_owned(),
             isolation,
             loader: None,
+            java: None,
         }
     }
 
@@ -424,6 +430,7 @@ mod tests {
             kind: LoaderKind::Fabric,
             version: "0.16.10".to_owned(),
         });
+        manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
 
         instance.write_manifest(&manifest).unwrap();
 

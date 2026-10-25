@@ -48,7 +48,8 @@ Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实
 - 操作系统与架构必须匹配目标 Java，而不是只看启动器宿主架构。
 - 同一 major 下优先 RMCL managed runtime，然后才是 JAVA_HOME、系统 PATH 和其他自定义来源。
 - 自动扫描禁用列表只影响自动发现；显式路径仍由独立 probe 验证。
-- 显式 Java 覆盖属于实例配置职责，不能通过调整全局排序暗中覆盖。
+- 实例 manifest 的 `java` 字段提供显式覆盖。启动前用 `probe` 重新读取真实版本、系统和架构，并通过 `JavaRequirement::accepts` 校验；不满足时返回 `JavaOverrideIncompatible`，不会回退到自动选择。
+- 实例 Java 选择器通过 `JavaService::discover` 展示 managed、`JAVA_HOME` 和 PATH 候选；选择结果只写入当前实例 manifest。
 
 没有可用候选时，`select_java` 返回 `None`，由上层进入自动下载或展示错误。
 
@@ -56,3 +57,4 @@ Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实
 
 - LZMA 压缩形式的 runtime 文件；raw 安装见 [Mojang runtime 元数据与安装](MOJANG_RUNTIME.md)
 - 启动参数、游戏进程与日志
+- 实例级内存、窗口和 JVM 参数覆盖；当前只覆盖 Java 可执行文件

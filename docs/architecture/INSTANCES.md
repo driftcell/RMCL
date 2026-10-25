@@ -40,10 +40,10 @@ schema_version = 1
 name = "Fabric 生存"
 minecraft_version = "1.21.1"
 isolation = "isolated"
-# loader 预留给后续加载器安装
 # [loader]
 # kind = "fabric"
 # version = "0.16.10"
+# java = "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java"
 ```
 
 字段：
@@ -52,8 +52,9 @@ isolation = "isolated"
 - `minecraft_version`：实例基于的游戏版本；空白时回退到实例 ID。
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
 - `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；Forge/NeoForge 在写入前先运行现代 installer processors。
+- `java`：可选的 Java 可执行文件绝对路径。缺省时按游戏版本自动发现、选择或下载；显式路径在启动前重新探测，不满足版本、系统或架构要求时拒绝启动，不静默回退。
 
-manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。
+manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。`java` 是向后兼容的可选字段，不改变 schema 版本；旧版 RMCL 会忽略它。
 
 ## 隔离语义
 

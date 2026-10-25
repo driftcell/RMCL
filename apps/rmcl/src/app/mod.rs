@@ -5,7 +5,8 @@ use std::{cell::Cell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, ti
 use gpui_kit::{
     assets::IconName,
     component::{
-        ActiveTheme, Icon, IndexPath, Sizable, Size, StyledExt, VirtualListScrollHandle, WindowExt,
+        ActiveTheme, Disableable, Icon, IndexPath, Sizable, Size, StyledExt,
+        VirtualListScrollHandle, WindowExt,
         button::{Button, ButtonVariant, ButtonVariants},
         dialog::{DialogAction, DialogClose, DialogFooter},
         h_flex,
@@ -23,13 +24,14 @@ use gpui_kit::{
 use rmcl_app::{
     AppError, ConflictPolicy, ContentInstallPhase, ContentInstallRequest, ContentKind,
     ContentLibrary, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
-    InstalledVersion, InstanceCreatePhase, LoaderKind, LoaderSelection, LoaderVersion,
-    LocalContent, MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort,
-    RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase,
-    TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest, VersionManifest,
-    VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
-    discover_installed_versions, import_instance_content, migrate_instance_to_isolated,
-    scan_instance_content, set_instance_content_enabled,
+    InstalledVersion, InstanceCreatePhase, JavaRuntime, JavaRuntimeSource, LoaderKind,
+    LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
+    RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount,
+    TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject,
+    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
+    delete_installed_version, delete_instance_content, discover_installed_versions,
+    import_instance_content, migrate_instance_to_isolated, scan_instance_content,
+    set_instance_content_enabled, set_instance_java,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -309,6 +311,11 @@ pub struct LauncherApp {
     create_loader_error: Option<String>,
     create_loader_cancel: Option<CancellationToken>,
     create_loader_request: u64,
+    java_dialog_loading: bool,
+    java_dialog_error: Option<String>,
+    java_dialog_runtimes: Vec<JavaRuntime>,
+    java_dialog_target: Option<String>,
+    _java_task: Option<Task<()>>,
     _create_task: Option<Task<()>>,
     _content_task: Option<Task<()>>,
     accounts: Vec<Account>,
@@ -621,6 +628,11 @@ impl LauncherApp {
             create_loader_error: None,
             create_loader_cancel: None,
             create_loader_request: 0,
+            java_dialog_loading: false,
+            java_dialog_error: None,
+            java_dialog_runtimes: Vec::new(),
+            java_dialog_target: None,
+            _java_task: None,
             _create_task: None,
             _content_task: None,
             accounts,
@@ -1222,6 +1234,11 @@ impl LauncherApp {
             );
             return;
         }
+        let java_executable = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .and_then(|version| version.java.clone());
         let request = GameLaunchRequest {
             install: VanillaInstallRequest {
                 minecraft_root: self.config.minecraft_root.clone(),
@@ -1230,6 +1247,7 @@ impl LauncherApp {
                 source: VersionSource::Existing,
             },
             account,
+            java_executable,
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
             resolution: None,
@@ -2933,6 +2951,290 @@ impl LauncherApp {
         self.load_instance_content(window, cx);
     }
 
+    fn open_java_dialog(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .installed_versions
+            .iter()
+            .all(|version| version.id.as_str() != version_id)
+        {
+            return;
+        }
+        self.java_dialog_target = Some(version_id);
+        self.java_dialog_runtimes.clear();
+        self.java_dialog_error = None;
+        self.spawn_java_discovery(window, cx);
+
+        let view = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let Some(view) = view.upgrade() else {
+                return dialog.title("选择 Java");
+            };
+            let this = view.read(cx);
+            let loading = this.java_dialog_loading;
+            let error = this.java_dialog_error.clone();
+            let runtimes = this.java_dialog_runtimes.clone();
+            let target = this.java_dialog_target.clone().unwrap_or_default();
+            let current = this
+                .installed_versions
+                .iter()
+                .find(|version| version.id.as_str() == target)
+                .and_then(|version| version.java.clone());
+
+            let mut list = v_flex().gap_1();
+            let auto_view = view.downgrade();
+            let auto_target = target.clone();
+            let auto_selected = current.is_none();
+            list = list.child(
+                h_flex()
+                    .id("java-runtime-auto")
+                    .w_full()
+                    .p_2()
+                    .gap_3()
+                    .rounded(cx.theme().radius)
+                    .when(auto_selected, |this| {
+                        this.bg(cx.theme().primary.opacity(0.10))
+                    })
+                    .hover(|style| style.bg(cx.theme().accent.opacity(0.45)))
+                    .on_click(move |_, window, cx| {
+                        if let Some(view) = auto_view.upgrade() {
+                            view.update(cx, |this, cx| {
+                                this.apply_instance_java(auto_target.clone(), None, window, cx);
+                            });
+                            window.close_dialog(cx);
+                        }
+                    })
+                    .child(
+                        div()
+                            .size(px(32.))
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().primary.opacity(0.12))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Icon::new(IconName::Sparkles)
+                                    .with_size(Size::Small)
+                                    .text_color(cx.theme().primary),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(div().text_sm().font_medium().child("自动选择"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("按游戏版本选择兼容 runtime，缺失时自动获取"),
+                            ),
+                    )
+                    .when(auto_selected, |this| {
+                        this.child(
+                            Icon::new(IconName::CircleCheck)
+                                .with_size(Size::Small)
+                                .text_color(cx.theme().primary),
+                        )
+                    }),
+            );
+
+            for (index, runtime) in runtimes.into_iter().enumerate() {
+                let selected = current.as_ref() == Some(&runtime.executable);
+                let executable = runtime.executable.clone();
+                let row_view = view.downgrade();
+                let row_target = target.clone();
+                let source = java_source_label(runtime.source);
+                list = list.child(
+                    h_flex()
+                        .id(format!("java-runtime-{index}"))
+                        .w_full()
+                        .p_2()
+                        .gap_3()
+                        .rounded(cx.theme().radius)
+                        .when(selected, |this| this.bg(cx.theme().primary.opacity(0.10)))
+                        .hover(|style| style.bg(cx.theme().accent.opacity(0.45)))
+                        .on_click(move |_, window, cx| {
+                            if let Some(view) = row_view.upgrade() {
+                                view.update(cx, |this, cx| {
+                                    this.apply_instance_java(
+                                        row_target.clone(),
+                                        Some(executable.clone()),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                                window.close_dialog(cx);
+                            }
+                        })
+                        .child(
+                            div()
+                                .size(px(32.))
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().primary.opacity(0.12))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    Icon::new(IconName::Package)
+                                        .with_size(Size::Small)
+                                        .text_color(cx.theme().primary),
+                                ),
+                        )
+                        .child(
+                            v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .gap_0p5()
+                                .child(div().text_sm().font_medium().truncate().child(format!(
+                                    "Java {} · {}",
+                                    runtime.major_version, runtime.version
+                                )))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .truncate()
+                                        .child(format!(
+                                            "{source} · {}",
+                                            runtime.executable.display()
+                                        )),
+                                ),
+                        )
+                        .when(selected, |this| {
+                            this.child(
+                                Icon::new(IconName::CircleCheck)
+                                    .with_size(Size::Small)
+                                    .text_color(cx.theme().primary),
+                            )
+                        }),
+                );
+            }
+
+            let body = v_flex()
+                .gap_3()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("仅影响当前实例。自动选择会跟随游戏版本和 Java 自动获取设置。"),
+                )
+                .when(loading, |this| {
+                    this.child(
+                        h_flex()
+                            .gap_2()
+                            .py_4()
+                            .child(
+                                Spinner::new()
+                                    .with_size(Size::Small)
+                                    .color(cx.theme().primary),
+                            )
+                            .child(div().text_sm().child("正在探测本机 Java…")),
+                    )
+                })
+                .when_some(error, |this, error: String| {
+                    this.child(div().text_sm().text_color(cx.theme().danger).child(error))
+                })
+                .child(list);
+
+            let retry_view = view.downgrade();
+            dialog
+                .title("选择 Java")
+                .width(px(520.))
+                .child(body)
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            Button::new("java-dialog-close")
+                                .ghost()
+                                .label("关闭")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("java-dialog-retry")
+                                .outline()
+                                .label("重新检测")
+                                .disabled(loading)
+                                .on_click(move |_, window, cx| {
+                                    if let Some(view) = retry_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.spawn_java_discovery(window, cx)
+                                        });
+                                    }
+                                }),
+                        ),
+                )
+        });
+    }
+
+    fn spawn_java_discovery(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.java_dialog_loading = true;
+        self.java_dialog_error = None;
+        self.java_dialog_runtimes.clear();
+        cx.notify();
+        let java = self.services.java.clone();
+        let view = cx.entity().downgrade();
+        self._java_task = Some(cx.spawn_in(window, async move |_, cx| {
+            let discovery = java.discover().await;
+            let runtimes = discovery.runtimes;
+            let failure_count = discovery.failures.len();
+            let _ = view.update_in(cx, |this, _, cx| {
+                this.java_dialog_loading = false;
+                this.java_dialog_runtimes = runtimes;
+                if this.java_dialog_runtimes.is_empty() {
+                    this.java_dialog_error = Some(if failure_count == 0 {
+                        "没有找到 Java。请检查 JAVA_HOME、PATH 或 RMCL 管理的 runtime。".to_owned()
+                    } else {
+                        format!("没有可用 Java；{failure_count} 个候选探测失败。")
+                    });
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn apply_instance_java(
+        &mut self,
+        version_id: String,
+        java: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .cloned()
+        else {
+            window.push_notification(
+                Notification::error("实例不存在或已被删除。").title("无法保存 Java 设置"),
+                cx,
+            );
+            return;
+        };
+        let layout = version.instance_layout(self.config.minecraft_root.clone());
+        match set_instance_java(&layout, java.clone()) {
+            Ok(()) => {
+                self.java_dialog_target = None;
+                self.reload_versions(window, cx);
+                let label =
+                    java.map_or_else(|| "自动选择".to_owned(), |path| path.display().to_string());
+                window.push_notification(Notification::info(label).title("实例 Java 已更新"), cx);
+            }
+            Err(error) => {
+                window.push_notification(
+                    Notification::error(error.to_string()).title("无法保存 Java 设置"),
+                    cx,
+                );
+            }
+        }
+    }
+
     fn open_create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(cancellation) = self.create_loader_cancel.take() {
             cancellation.cancel();
@@ -3902,6 +4204,15 @@ impl Render for LauncherApp {
                             .child(self.render_status_bar(cx)),
                     ),
             )
+    }
+}
+
+fn java_source_label(source: JavaRuntimeSource) -> &'static str {
+    match source {
+        JavaRuntimeSource::Managed => "RMCL 管理",
+        JavaRuntimeSource::JavaHome => "JAVA_HOME",
+        JavaRuntimeSource::System => "系统 PATH",
+        JavaRuntimeSource::Custom => "自定义",
     }
 }
 

@@ -1,4 +1,6 @@
-use rmcl_java::JavaRequirement;
+use std::path::PathBuf;
+
+use rmcl_java::{JavaRequirement, JavaRuntimeSource};
 use rmcl_launch::{
     GameEvent, GameExit, GameLog, GameProcess, LaunchAccount, LaunchError, LaunchOptions,
     LaunchPlan,
@@ -7,14 +9,17 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    AppError, InstallEvent, InstallOutcome, JavaEvent, JavaSelection, JavaService,
-    VanillaInstallRequest, VanillaInstaller,
+    AppError, InstallEvent, InstallOutcome, JavaEvent, JavaSelection, JavaSelectionOrigin,
+    JavaService, VanillaInstallRequest, VanillaInstaller,
 };
 
 #[derive(Clone)]
 pub struct GameLaunchRequest {
     pub install: VanillaInstallRequest,
     pub account: LaunchAccount,
+    /// Explicit Java executable from the instance manifest. `None` uses
+    /// automatic discovery and Mojang runtime installation.
+    pub java_executable: Option<PathBuf>,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
     pub resolution: Option<(u32, u32)>,
@@ -64,6 +69,7 @@ impl GameLauncher {
         let GameLaunchRequest {
             install,
             account,
+            java_executable,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -88,6 +94,7 @@ impl GameLauncher {
         self.finish_launch(
             install,
             account,
+            java_executable,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -112,6 +119,7 @@ impl GameLauncher {
         let GameLaunchRequest {
             install,
             account,
+            java_executable,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -125,6 +133,7 @@ impl GameLauncher {
         self.finish_launch(
             install,
             account,
+            java_executable,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -140,6 +149,7 @@ impl GameLauncher {
         &self,
         install: InstallOutcome,
         account: LaunchAccount,
+        java_executable: Option<PathBuf>,
         additional_jvm_arguments: Vec<String>,
         additional_game_arguments: Vec<String>,
         resolution: Option<(u32, u32)>,
@@ -148,7 +158,23 @@ impl GameLauncher {
         events: Option<GameLaunchEventSender>,
     ) -> Result<GameLaunchOutcome, AppError> {
         let requirement = JavaRequirement::for_version(&install.version, &install.platform);
-        let java = {
+        let java = if let Some(executable) = java_executable {
+            emit(&events, GameLaunchEvent::Java(JavaEvent::Checking)).await;
+            check_cancelled(&cancellation)?;
+            let runtime = rmcl_java::probe(executable.clone(), JavaRuntimeSource::Custom).await?;
+            check_cancelled(&cancellation)?;
+            if !requirement.accepts(&runtime) {
+                return Err(AppError::JavaOverrideIncompatible {
+                    path: executable,
+                    version: runtime.version,
+                    requirement: Box::new(requirement),
+                });
+            }
+            JavaSelection {
+                runtime,
+                origin: JavaSelectionOrigin::Custom,
+            }
+        } else {
             let (sender, mut receiver) = mpsc::channel(8);
             let ensure = Box::pin(self.java.ensure(
                 &requirement,

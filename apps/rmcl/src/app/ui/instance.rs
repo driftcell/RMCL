@@ -344,29 +344,75 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let instance = version.instance_layout(self.config.minecraft_root.clone());
-        card(cx).child(
-            h_flex()
-                .w_full()
-                .items_start()
-                .gap_6()
-                .child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("游戏目录"),
+        let java_target = version.id.as_str().to_owned();
+        let auto_target = java_target.clone();
+        let java_custom = version.java.is_some();
+        let java_label = version.java.as_ref().map_or_else(
+            || "自动选择兼容 runtime".to_owned(),
+            |path| path.display().to_string(),
+        );
+        card(cx)
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_start()
+                    .gap_6()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("游戏目录"),
+                            )
+                            .child(mono(instance.game_dir().display().to_string(), cx)),
+                    )
+                    .children(ContentTab::ALL.into_iter().map(|tab| {
+                        let (total, enabled) = counts[tab.index()];
+                        content_stat(tab.label(), total, enabled, cx)
+                    })),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("Java"),
+                            )
+                            .child(mono(java_label, cx)),
+                    )
+                    .child(
+                        Button::new("instance-java-select")
+                            .outline()
+                            .icon(IconName::Package)
+                            .label("选择 Java")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_java_dialog(java_target.clone(), window, cx)
+                            })),
+                    )
+                    .when(java_custom, |this| {
+                        this.child(
+                            Button::new("instance-java-auto")
+                                .ghost()
+                                .label("改回自动")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.apply_instance_java(auto_target.clone(), None, window, cx)
+                                })),
                         )
-                        .child(mono(instance.game_dir().display().to_string(), cx)),
-                )
-                .children(ContentTab::ALL.into_iter().map(|tab| {
-                    let (total, enabled) = counts[tab.index()];
-                    content_stat(tab.label(), total, enabled, cx)
-                })),
-        )
+                    }),
+            )
     }
 
     fn render_content_row(

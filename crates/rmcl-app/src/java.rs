@@ -53,6 +53,7 @@ pub type JavaEventSender = mpsc::Sender<JavaEvent>;
 pub enum JavaSelectionOrigin {
     Detected,
     Installed,
+    Custom,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,13 @@ impl JavaService {
         })
     }
 
+    /// Probes every configured candidate. Used by the instance Java picker and
+    /// by diagnostics; callers that need a launch-ready runtime should use
+    /// [`Self::ensure`] instead.
+    pub async fn discover(&self) -> rmcl_java::JavaDiscovery {
+        self.detector.discover().await
+    }
+
     pub async fn ensure(
         &self,
         requirement: &JavaRequirement,
@@ -105,7 +113,7 @@ impl JavaService {
         }
         if !self.auto_install {
             return Err(AppError::JavaNotFound {
-                requirement: requirement.clone(),
+                requirement: Box::new(requirement.clone()),
                 failures: discovery
                     .failures
                     .iter()

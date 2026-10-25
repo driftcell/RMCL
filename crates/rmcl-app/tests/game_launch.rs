@@ -4,9 +4,9 @@ use std::{path::Path, time::Duration};
 
 use axum::{Router, routing::get};
 use rmcl_app::{
-    AppError, GameLaunchEvent, GameLaunchRequest, GameLauncher, JavaService, JavaServiceConfig,
-    TaskEvent, TaskId, TaskManager, TaskPhase, TaskStatus, VanillaInstallRequest, VanillaInstaller,
-    VanillaSources, VersionSource,
+    AppError, GameLaunchEvent, GameLaunchRequest, GameLauncher, JavaSelectionOrigin, JavaService,
+    JavaServiceConfig, TaskEvent, TaskId, TaskManager, TaskPhase, TaskStatus,
+    VanillaInstallRequest, VanillaInstaller, VanillaSources, VersionSource,
 };
 use rmcl_auth::OfflineAccount;
 use rmcl_domain::{OperatingSystem, Platform};
@@ -32,6 +32,7 @@ struct Fixture {
     root: std::path::PathBuf,
     installer: VanillaInstaller,
     java: JavaService,
+    java_path: std::path::PathBuf,
     request: GameLaunchRequest,
 }
 
@@ -40,7 +41,8 @@ fn fixture(mode: ScriptMode) -> Fixture {
     let root = temporary.path().join(".minecraft");
     write_metadata(&root);
     let managed = temporary.path().join("managed");
-    write_java(&managed.join("bin/java"), mode);
+    let java_path = managed.join("bin/java");
+    write_java(&java_path, mode);
     let installer = VanillaInstaller::new(
         DownloadConfig::default(),
         VanillaSources {
@@ -64,6 +66,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
     let request = GameLaunchRequest {
         install,
         account: LaunchAccount::from_offline(&OfflineAccount::new("Steve").unwrap()),
+        java_executable: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
         resolution: None,
@@ -74,6 +77,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
         root,
         installer,
         java,
+        java_path,
         request,
     }
 }
@@ -128,6 +132,20 @@ fn write_java(path: &Path, mode: ScriptMode) {
         }
     };
     std::fs::write(path, format!("{probe}{game}")).unwrap();
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
+
+fn write_java_8(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        path,
+        "#!/bin/sh\nif [ \"$1\" = \"-XshowSettings:properties\" ]; then\n  printf 'java.version = 1.8.0_402\\nos.name = Linux\\nos.arch = amd64\\njava.vendor = Legacy\\n' >&2\n  exit 0\nfi\nexit 0\n",
+    )
+    .unwrap();
     let mut permissions = std::fs::metadata(path).unwrap().permissions();
     permissions.set_mode(0o755);
     std::fs::set_permissions(path, permissions).unwrap();
@@ -401,6 +419,38 @@ async fn game_logs_are_bounded_and_do_not_depend_on_subscribers() {
     assert_eq!(logs.len(), 1024);
     assert_eq!(logs.first().unwrap().text, "line-76");
     assert_eq!(logs.last().unwrap().text, "line-1099");
+}
+
+#[tokio::test]
+async fn explicit_java_override_is_probed_and_reported_as_custom() {
+    let mut fixture = fixture(ScriptMode::Exit);
+    fixture.request.java_executable = Some(fixture.java_path.clone());
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.java.origin, JavaSelectionOrigin::Custom);
+    assert_eq!(outcome.java.runtime.major_version, 21);
+}
+
+#[tokio::test]
+async fn incompatible_explicit_java_is_rejected_instead_of_falling_back() {
+    let temporary = TempDir::new().unwrap();
+    let path = temporary.path().join("java8/bin/java");
+    write_java_8(&path);
+    let mut fixture = fixture(ScriptMode::Exit);
+    fixture.request.java_executable = Some(path);
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let error = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, AppError::JavaOverrideIncompatible { .. }));
 }
 
 fn sha1(bytes: &[u8]) -> String {

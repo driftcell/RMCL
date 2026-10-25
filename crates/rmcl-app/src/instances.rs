@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use rmcl_instance::{InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
 
 use crate::AppError;
 
@@ -62,6 +62,23 @@ pub async fn migrate_instance_to_isolated(
         manifest.minecraft_version = id.as_str().to_owned();
     }
     instance.ensure_content_dirs()?;
+    instance.write_manifest(&manifest)?;
+    Ok(())
+}
+
+/// Sets or clears the explicit Java executable stored in an instance manifest.
+///
+/// Existing manifest fields (name, isolation, loader) are preserved. Legacy
+/// versions without a manifest receive one using their current isolation mode,
+/// so changing Java never silently moves the game directory.
+pub fn set_instance_java(instance: &InstanceLayout, java: Option<PathBuf>) -> Result<(), AppError> {
+    if !instance.version_json_path().is_file() {
+        return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
+    }
+    let mut manifest = instance
+        .load_manifest()?
+        .unwrap_or_else(|| InstanceManifest::new(instance.id(), instance.isolation()));
+    manifest.java = java;
     instance.write_manifest(&manifest)?;
     Ok(())
 }
@@ -216,6 +233,43 @@ mod tests {
         let manifest = shared.load_manifest().unwrap().unwrap();
         assert_eq!(manifest.name, "Survival");
         assert_eq!(manifest.isolation, IsolationMode::Isolated);
+    }
+
+    #[test]
+    fn java_override_preserves_instance_fields_and_shared_isolation() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        write_version(root, "1.21.1");
+        let layout = MinecraftLayout::new(root);
+        let shared = layout.instance(VersionId::new("1.21.1").unwrap(), IsolationMode::Shared);
+        let mut manifest =
+            InstanceManifest::new(&VersionId::new("1.21.1").unwrap(), IsolationMode::Shared);
+        manifest.name = "Survival".to_owned();
+        shared.write_manifest(&manifest).unwrap();
+
+        set_instance_java(&shared, Some(PathBuf::from("/opt/java/bin/java"))).unwrap();
+
+        let loaded = shared.load_manifest().unwrap().unwrap();
+        assert_eq!(loaded.name, "Survival");
+        assert_eq!(loaded.isolation, IsolationMode::Shared);
+        assert_eq!(
+            loaded.java.as_deref(),
+            Some(Path::new("/opt/java/bin/java"))
+        );
+
+        set_instance_java(&shared, None).unwrap();
+        assert_eq!(shared.load_manifest().unwrap().unwrap().java, None);
+    }
+
+    #[test]
+    fn java_override_rejects_missing_versions() {
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+        let instance = layout.instance(VersionId::new("missing").unwrap(), IsolationMode::Isolated);
+
+        let error = set_instance_java(&instance, None).unwrap_err();
+
+        assert!(matches!(error, AppError::VersionNotFound(_)));
     }
 
     #[tokio::test]
