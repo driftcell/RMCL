@@ -109,12 +109,19 @@ impl LauncherApp {
                                     .justify_between()
                                     .gap_4()
                                     .child(
-                                        v_flex().gap_1().child(field_label("自动获取 Java")).child(
-                                            mono("缺少兼容 runtime 时自动下载；重启后生效。", cx),
-                                        ),
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("自动获取 Java"))
+                                            .child(mono(
+                                                "缺少兼容 runtime 时自动下载；重启后生效。",
+                                                cx,
+                                            )),
                                     )
                                     .child(
                                         Switch::new("settings-auto-java")
+                                            .flex_shrink_0()
                                             .checked(self.config.auto_install_java)
                                             .on_change(move |value, window, cx| {
                                                 let _ = auto_java_view.update(cx, |this, cx| {
@@ -138,6 +145,8 @@ impl LauncherApp {
                                     .gap_4()
                                     .child(
                                         v_flex()
+                                            .flex_1()
+                                            .min_w_0()
                                             .gap_1()
                                             .child(field_label("启动器可见性"))
                                             .child(mono("游戏退出后自动恢复。", cx)),
@@ -147,6 +156,7 @@ impl LauncherApp {
                                             .accessibility_label("启动器可见性")
                                             .menu_width(px(200.))
                                             .menu_max_h(px(200.))
+                                            .flex_shrink_0()
                                             .cleanable(false)
                                             .w(px(180.)),
                                     ),
@@ -162,6 +172,8 @@ impl LauncherApp {
                                     .gap_4()
                                     .child(
                                         v_flex()
+                                            .flex_1()
+                                            .min_w_0()
                                             .gap_1()
                                             .child(field_label("主题"))
                                             .child(mono("跟随系统、浅色或深色。", cx)),
@@ -171,6 +183,7 @@ impl LauncherApp {
                                             .accessibility_label("主题")
                                             .menu_width(px(200.))
                                             .menu_max_h(px(200.))
+                                            .flex_shrink_0()
                                             .cleanable(false)
                                             .w(px(180.)),
                                     ),
@@ -182,6 +195,8 @@ impl LauncherApp {
                                     .gap_4()
                                     .child(
                                         v_flex()
+                                            .flex_1()
+                                            .min_w_0()
                                             .gap_1()
                                             .child(field_label("强调色"))
                                             .child(mono("主按钮和选中状态的颜色。", cx)),
@@ -191,35 +206,9 @@ impl LauncherApp {
                                             .accessibility_label("强调色")
                                             .menu_width(px(200.))
                                             .menu_max_h(px(200.))
+                                            .flex_shrink_0()
                                             .cleanable(false)
                                             .w(px(180.)),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        card(cx)
-                            .child(section_title("诊断", "任务失败或游戏异常退出时使用。", cx))
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("settings-open-logs")
-                                            .outline()
-                                            .icon(IconName::ScrollText)
-                                            .label("查看最近任务日志")
-                                            .disabled(self.log_state.active_id().is_none())
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.navigate(Page::Logs, window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("settings-open-log-dir")
-                                            .ghost()
-                                            .icon(IconName::FolderOpen)
-                                            .label("打开日志目录")
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.open_logs_dir(window, cx)
-                                            })),
                                     ),
                             ),
                     )
