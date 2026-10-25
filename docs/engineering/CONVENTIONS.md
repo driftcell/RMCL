@@ -41,6 +41,8 @@
 ## Rust 实现
 
 - 使用 Rust 2024 edition 和 workspace 统一管理的依赖版本。
+- 通用能力优先选择成熟、维护活跃、许可证兼容且覆盖目标平台的 crate，例如 serde、regex、tokio、reqwest 等；不重复实现通用 JSON、正则、加密或异步基础设施。
+- 引入前评估实际适配度、维护状态、feature 和传递依赖，不能仅因流行而引入；RMCL 领域规则与兼容行为仍由本项目拥有。
 - 可恢复错误通过结构化错误传播，不以 panic 作为正常控制流。
 - 核心 crate 不依赖 GPUI 类型；UI 不直接拼装下载或启动细节。
 - 文件写入考虑中断与并发，配置和安装结果不能只凭“文件存在”判定成功。
@@ -60,9 +62,12 @@
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo nextest run --workspace --locked
+cargo test --workspace --doc --locked
 ```
+
+nextest 是标准测试运行器，默认按可用并行度执行测试；doctests 需要单独通过 `cargo test --doc` 运行。CI 使用 `.config/nextest.toml` 中的 `ci` profile，具体见 [持续集成](CI.md)。
 
 ## Git 提交
 

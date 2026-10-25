@@ -37,6 +37,8 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 ## 代码与注释
 
 - 使用惯用 Rust，保持模块边界、错误信息和平台行为明确。
+- 优先评估成熟、维护活跃、许可证兼容且覆盖目标平台的 crate；通用能力不重复造轮子，自研重点放在 RMCL 的领域规则和编排。
+- 引入依赖时控制 feature、传递依赖和平台成本，不能只因流行就引入。
 - 注释解释约束、原因和非显然行为，不复述代码，不保留注释掉的死代码。
 - `NOTE:` 记录必须知道的约束或不变量。
 - `SEE:` 指向相关规范、固定源码版本或详细文档。
@@ -72,9 +74,12 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo nextest run --workspace --locked
+cargo test --workspace --doc --locked
 ```
+
+nextest 是项目的标准测试运行器；它不执行 doctests，因此最后一条命令不能省略。CI 的具体矩阵见 `docs/engineering/CI.md`。
 
 - 纯解析、规则和计划生成使用普通单元测试或 golden tests。
 - 网络测试默认使用本地 mock 和固定 fixtures，不依赖真实账号或外部服务。
