@@ -1,0 +1,15 @@
+[package]
+name = "rmcl-java"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rmcl-domain.workspace = true
+rmcl-minecraft.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
