@@ -21,7 +21,7 @@
 
 版本 JSON 的获取与原始字节保存不属于当前 `InstallPlan`；路径 API 已经独立提供。
 
-实例 ID 与版本目录 ID 当前相同。没有 `rmcl.instance.toml` 的版本是 legacy 共享实例，游戏目录仍是 `.minecraft` 根；有 manifest 且 `isolation = "isolated"` 时，游戏目录是该版本目录。`libraries/`、`assets/` 和版本 JSON/client JAR 不随隔离复制。详见 [实例与版本隔离](../architecture/INSTANCES.md)。
+实例 ID 与版本目录 ID 当前相同。没有 `rmcl.instance.toml` 的版本是 legacy 共享实例，游戏目录仍是 `.minecraft` 根；有 manifest 且 `isolation = "isolated"` 时，游戏目录是该版本目录。`libraries/`、`assets/` 和版本 JSON/client JAR 不随隔离复制。资源包启用状态保存在对应游戏目录的 `options.txt`，由本地内容管理读取和原子更新。详见 [实例与版本隔离](../architecture/INSTANCES.md) 和 [本地内容管理](../architecture/LOCAL_CONTENT.md)。
 
 ## Natives 目录
 

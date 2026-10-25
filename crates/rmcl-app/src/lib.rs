@@ -2,6 +2,7 @@
 
 mod accounts;
 mod catalog;
+mod content;
 mod error;
 mod game;
 mod install;
@@ -17,6 +18,10 @@ pub use accounts::{
     ResolvedMicrosoftAccount,
 };
 pub use catalog::VersionCatalog;
+pub use content::{
+    delete_instance_content, import_instance_content, scan_instance_content,
+    set_instance_content_enabled,
+};
 pub use error::{AppError, InstallDownloadFailure};
 pub use game::{
     GameLaunchEvent, GameLaunchEventSender, GameLaunchOutcome, GameLaunchRequest, GameLauncher,
@@ -30,8 +35,9 @@ pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,
 };
+pub use rmcl_content::{ConflictPolicy, ContentKind, ContentLibrary, ContentWarning, LocalContent};
 pub use rmcl_instance::{
-    InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind,
+    InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,
 };
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;

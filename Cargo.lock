@@ -5483,6 +5483,7 @@ dependencies = [
  "reqwest",
  "rmcl-archive",
  "rmcl-auth",
+ "rmcl-content",
  "rmcl-domain",
  "rmcl-install",
  "rmcl-instance",
@@ -5530,6 +5531,17 @@ dependencies = [
  "tokio-util",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "rmcl-content"
+version = "0.1.1"
+dependencies = [
+ "rmcl-instance",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

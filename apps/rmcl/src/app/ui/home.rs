@@ -38,7 +38,7 @@ impl LauncherApp {
             })
             .unwrap_or_else(|| "从下载页选择任意 Vanilla 版本开始。".to_owned());
         let has_account = self.selected_account().is_some();
-        let can_start = self.log_state.can_start();
+        let can_start = self.can_start_operation();
 
         v_flex()
             .flex_1()

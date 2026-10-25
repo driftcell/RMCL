@@ -21,10 +21,13 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    AppError, GameLaunchRequest, InstallPhase, InstalledVersion, MicrosoftAccountServiceError,
+    AppError, ConflictPolicy, ContentKind, ContentLibrary, GameLaunchRequest, InstallPhase,
+    InstalledVersion, LocalContent, MicrosoftAccountServiceError, RepositoryPath,
     ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
     TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, discover_installed_versions, migrate_instance_to_isolated,
+    delete_installed_version, delete_instance_content, discover_installed_versions,
+    import_instance_content, migrate_instance_to_isolated, scan_instance_content,
+    set_instance_content_enabled,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -54,6 +57,7 @@ const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
 pub enum Page {
     Home,
     Versions,
+    Instance,
     Downloads,
     Logs,
     Settings,
@@ -64,6 +68,7 @@ impl Page {
         match self {
             Self::Home => "主页",
             Self::Versions => "实例",
+            Self::Instance => "实例详情",
             Self::Downloads => "下载游戏",
             Self::Logs => "日志",
             Self::Settings => "设置",
@@ -74,6 +79,7 @@ impl Page {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
+            Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::Downloads => "从 Mojang 官方源安装新的 Vanilla 版本。",
             Self::Logs => "查看安装、启动和游戏运行日志。",
             Self::Settings => "配置游戏目录、外观与 Java。",
@@ -84,9 +90,54 @@ impl Page {
         match self {
             Self::Home => IconName::House,
             Self::Versions => IconName::Boxes,
+            Self::Instance => IconName::Package,
             Self::Downloads => IconName::Download,
             Self::Logs => IconName::ScrollText,
             Self::Settings => IconName::Settings,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContentTab {
+    #[default]
+    Mods,
+    ResourcePacks,
+    ShaderPacks,
+}
+
+impl ContentTab {
+    pub const ALL: [Self; 3] = [Self::Mods, Self::ResourcePacks, Self::ShaderPacks];
+
+    pub fn label(self) -> &'static str {
+        self.kind().label()
+    }
+
+    pub fn kind(self) -> ContentKind {
+        match self {
+            Self::Mods => ContentKind::Mod,
+            Self::ResourcePacks => ContentKind::ResourcePack,
+            Self::ShaderPacks => ContentKind::ShaderPack,
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Self::Mods => 0,
+            Self::ResourcePacks => 1,
+            Self::ShaderPacks => 2,
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or(Self::Mods)
+    }
+
+    pub fn icon(self) -> IconName {
+        match self {
+            Self::Mods => IconName::Package,
+            Self::ResourcePacks => IconName::Image,
+            Self::ShaderPacks => IconName::Sparkles,
         }
     }
 }
@@ -209,6 +260,15 @@ pub struct LauncherApp {
     config_save_error: Option<String>,
     installed_versions: Vec<InstalledVersion>,
     versions_error: Option<String>,
+    selected_instance: Option<String>,
+    content_tab: ContentTab,
+    content_library: Option<ContentLibrary>,
+    content_loading: bool,
+    content_error: Option<String>,
+    content_action_pending: bool,
+    content_request: u64,
+    content_query: Entity<InputState>,
+    _content_task: Option<Task<()>>,
     accounts: Vec<Account>,
     account_heads: HashMap<Uuid, PathBuf>,
     editing_account: Option<String>,
@@ -366,7 +426,8 @@ impl LauncherApp {
 
         let downloads_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
-        let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装版本"));
+        let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装实例"));
+        let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -381,6 +442,13 @@ impl LauncherApp {
             cx.subscribe(&downloads_query, |this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.downloads_scroll.scroll_to_item(0, ScrollStrategy::Top);
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&content_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
             }),
@@ -445,6 +513,15 @@ impl LauncherApp {
             config_save_error: None,
             installed_versions,
             versions_error,
+            selected_instance: None,
+            content_tab: ContentTab::Mods,
+            content_library: None,
+            content_loading: false,
+            content_error: None,
+            content_action_pending: false,
+            content_request: 0,
+            content_query,
+            _content_task: None,
             accounts,
             account_heads: HashMap::new(),
             editing_account: None,
@@ -810,6 +887,10 @@ impl LauncherApp {
             .any(|version| version.id.as_str() == version_id)
     }
 
+    fn can_start_operation(&self) -> bool {
+        self.log_state.can_start() && !self.content_action_pending
+    }
+
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         self.page = page;
         if page == Page::Logs {
@@ -900,9 +981,9 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.log_state.can_start() {
+        if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务正在运行，请等待完成或先停止它。")
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
                     .title("无法开始安装"),
                 cx,
             );
@@ -919,9 +1000,9 @@ impl LauncherApp {
         if self.launch_resolving {
             return;
         }
-        if !self.log_state.can_start() {
+        if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务正在运行，请等待完成或先停止它。")
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
                     .title("无法启动游戏"),
                 cx,
             );
@@ -968,10 +1049,10 @@ impl LauncherApp {
                                         cx,
                                     );
                                 }
-                                if !view.log_state.can_start() {
+                                if !view.can_start_operation() {
                                     window.push_notification(
                                         Notification::warning(
-                                            "已有任务正在运行，请等待完成或先停止它。",
+                                            "已有任务或内容操作正在运行，请等待完成或先停止它。",
                                         )
                                         .title("无法启动游戏"),
                                         cx,
@@ -1009,9 +1090,9 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.log_state.can_start() {
+        if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务正在运行，请等待完成或先停止它。")
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
                     .title("无法启动游戏"),
                 cx,
             );
@@ -2471,9 +2552,9 @@ impl LauncherApp {
     }
 
     fn delete_version(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.log_state.can_start() {
+        if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("请先等待当前任务结束。").title("无法删除版本"),
+                Notification::warning("请先等待当前任务或内容操作结束。").title("无法删除实例"),
                 cx,
             );
             return;
@@ -2595,9 +2676,9 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.log_state.can_start() {
+        if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("请先等待当前任务结束。").title("无法启用隔离"),
+                Notification::warning("请先等待当前任务或内容操作结束。").title("无法启用隔离"),
                 cx,
             );
             return;
@@ -2643,6 +2724,442 @@ impl LauncherApp {
             });
         }));
         cx.notify();
+    }
+
+    fn selected_instance_version(&self) -> Option<&InstalledVersion> {
+        let selected = self.selected_instance.as_deref()?;
+        self.installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == selected)
+    }
+
+    fn open_instance_detail(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_action_pending {
+            window.push_notification(
+                Notification::warning("已有内容操作正在进行，请稍候。").title("无法打开实例"),
+                cx,
+            );
+            return;
+        }
+        if !self
+            .installed_versions
+            .iter()
+            .any(|version| version.id.as_str() == version_id)
+        {
+            window.push_notification(
+                Notification::error("实例不存在或已被删除。").title("无法打开实例"),
+                cx,
+            );
+            return;
+        }
+        self.selected_instance = Some(version_id);
+        self.page = Page::Instance;
+        self.content_tab = ContentTab::Mods;
+        self.content_library = None;
+        self.content_error = None;
+        self.content_query.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        self.load_instance_content(window, cx);
+    }
+
+    fn load_instance_content(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.content_request = self.content_request.wrapping_add(1);
+        let request = self.content_request;
+        let Some(version) = self.selected_instance_version().cloned() else {
+            self.content_loading = false;
+            self.content_library = None;
+            self.content_error = Some("实例不存在或已被删除。".to_owned());
+            cx.notify();
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_loading = true;
+        self.content_error = None;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move { scan_instance_content(instance).await })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.content_request != request {
+                    return;
+                }
+                view.content_loading = false;
+                match result {
+                    Ok(Ok(library)) => {
+                        view.content_library = Some(library);
+                        view.content_error = None;
+                    }
+                    Ok(Err(error)) => view.content_error = Some(error.to_string()),
+                    Err(error) => {
+                        view.content_error = Some(format!("后台任务失败: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn pick_content_files(
+        &mut self,
+        kind: ContentKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_action_pending || self.content_loading {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let directory =
+            kind.directory(&version.instance_layout(self.config.minecraft_root.clone()));
+        let _ = std::fs::create_dir_all(&directory);
+
+        #[cfg(target_os = "macos")]
+        {
+            match pick_content_files_macos(&directory) {
+                Ok(Some(paths)) if !paths.is_empty() => {
+                    self.import_content_files(kind, paths, window, cx)
+                }
+                Ok(Some(_)) | Ok(None) => {}
+                Err(error) => {
+                    window.push_notification(Notification::error(error).title("选择文件失败"), cx);
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let prompt = cx.prompt_for_paths(PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: true,
+                prompt: Some(format!("选择 {} 文件", kind.label()).into()),
+            });
+            self._prompt_task = Some(cx.spawn_in(
+                window,
+                async move |this, cx| match prompt.await {
+                    Ok(Ok(Some(paths))) if !paths.is_empty() => {
+                        let _ = this.update_in(cx, |view, window, cx| {
+                            view.import_content_files(kind, paths, window, cx)
+                        });
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        let _ = this.update_in(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::error(format!("无法打开文件选择器: {error}"))
+                                    .title("选择文件失败"),
+                                cx,
+                            );
+                        });
+                    }
+                    Err(_) => {
+                        let _ = this.update_in(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::error("文件选择器已取消或窗口已关闭。")
+                                    .title("选择文件失败"),
+                                cx,
+                            );
+                        });
+                    }
+                },
+            ));
+            cx.notify();
+        }
+    }
+
+    fn import_content_files(
+        &mut self,
+        kind: ContentKind,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_action_pending = true;
+        self.content_error = None;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move {
+                    let mut imported = 0usize;
+                    let mut failures = Vec::new();
+                    for source in paths {
+                        match import_instance_content(
+                            instance.clone(),
+                            kind,
+                            source,
+                            ConflictPolicy::Rename,
+                        )
+                        .await
+                        {
+                            Ok(_) => imported += 1,
+                            Err(error) => failures.push(error.to_string()),
+                        }
+                    }
+                    let library = scan_instance_content(instance).await;
+                    (imported, failures, library)
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_action_pending = false;
+                match result {
+                    Ok((imported, failures, library)) => {
+                        match library {
+                            Ok(library) => view.content_library = Some(library),
+                            Err(error) => view.content_error = Some(error.to_string()),
+                        }
+                        if failures.is_empty() {
+                            window.push_notification(
+                                Notification::success(format!(
+                                    "已导入 {imported} 个 {} 文件。",
+                                    kind.label()
+                                ))
+                                .title("导入完成"),
+                                cx,
+                            );
+                        } else {
+                            window.push_notification(
+                                Notification::warning(format!(
+                                    "已导入 {imported} 个文件，{} 个失败：{}",
+                                    failures.len(),
+                                    failures.join("；")
+                                ))
+                                .title("部分导入失败"),
+                                cx,
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}")).title("导入失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn toggle_content_item(
+        &mut self,
+        kind: ContentKind,
+        relative_path: RepositoryPath,
+        enabled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_action_pending {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_action_pending = true;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move {
+                    let changed = set_instance_content_enabled(
+                        instance.clone(),
+                        kind,
+                        relative_path,
+                        enabled,
+                    )
+                    .await;
+                    let library = scan_instance_content(instance).await;
+                    (changed, library)
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_action_pending = false;
+                match result {
+                    Ok((changed, library)) => {
+                        if let Err(error) = changed {
+                            window.push_notification(
+                                Notification::error(error.to_string()).title("更新内容失败"),
+                                cx,
+                            );
+                        }
+                        match library {
+                            Ok(library) => view.content_library = Some(library),
+                            Err(error) => view.content_error = Some(error.to_string()),
+                        }
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("更新内容失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn confirm_delete_content(
+        &mut self,
+        kind: ContentKind,
+        relative_path: RepositoryPath,
+        display_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            alert
+                .confirm()
+                .title(format!("删除 {display_name}？"))
+                .description("将从实例中永久删除该内容条目。")
+                .ok_text("删除")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok({
+                    let relative_path = relative_path.clone();
+                    let display_name = display_name.clone();
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let Some(view) = view.upgrade() else {
+                            return true;
+                        };
+                        view.update(cx, |this, cx| {
+                            this.delete_content_item(
+                                kind,
+                                relative_path.clone(),
+                                display_name.clone(),
+                                window,
+                                cx,
+                            )
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
+    fn delete_content_item(
+        &mut self,
+        kind: ContentKind,
+        relative_path: RepositoryPath,
+        display_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_action_pending {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_action_pending = true;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move {
+                    let deleted =
+                        delete_instance_content(instance.clone(), kind, relative_path).await;
+                    let library = scan_instance_content(instance).await;
+                    (deleted, library)
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_action_pending = false;
+                match result {
+                    Ok((deleted, library)) => match deleted {
+                        Ok(()) => {
+                            window.push_notification(
+                                Notification::success(format!("已删除 {display_name}。"))
+                                    .title("内容已删除"),
+                                cx,
+                            );
+                            match library {
+                                Ok(library) => view.content_library = Some(library),
+                                Err(error) => view.content_error = Some(error.to_string()),
+                            }
+                        }
+                        Err(error) => {
+                            window.push_notification(
+                                Notification::error(error.to_string()).title("删除内容失败"),
+                                cx,
+                            );
+                        }
+                    },
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("删除内容失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn open_content_folder(
+        &mut self,
+        kind: ContentKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let directory =
+            kind.directory(&version.instance_layout(self.config.minecraft_root.clone()));
+        let _ = std::fs::create_dir_all(&directory);
+        if let Err(error) = open_path(&directory) {
+            window.push_notification(
+                Notification::error(format!("无法打开内容目录: {error}")).title("打开失败"),
+                cx,
+            );
+        }
+    }
+
+    fn filtered_content(&self, cx: &App) -> Vec<LocalContent> {
+        let kind = self.content_tab.kind();
+        let query = self.content_query.read(cx).value().to_lowercase();
+        self.content_library
+            .as_ref()
+            .map(|library| {
+                library
+                    .items_for(kind)
+                    .filter(|item| {
+                        query.is_empty()
+                            || item.display_name().to_lowercase().contains(&query)
+                            || item.relative_path.as_str().to_lowercase().contains(&query)
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn refresh_versions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2700,6 +3217,7 @@ impl Render for LauncherApp {
         let page = match self.page {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
+            Page::Instance => self.render_instance(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
             Page::Settings => self.render_settings(window, cx).into_any_element(),
@@ -3045,4 +3563,36 @@ fn pick_directory_macos(start: &std::path::Path) -> Result<Option<PathBuf>, Stri
         return Ok(None);
     }
     Ok(panel.URLs().iter().find_map(|url| url.to_file_path()))
+}
+
+#[cfg(target_os = "macos")]
+fn pick_content_files_macos(start: &std::path::Path) -> Result<Option<Vec<PathBuf>>, String> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+    use objc2_foundation::{NSString, NSURL};
+
+    let marker =
+        MainThreadMarker::new().ok_or_else(|| "文件选择器必须在主线程打开。".to_owned())?;
+    let panel = NSOpenPanel::openPanel(marker);
+    panel.setCanChooseDirectories(false);
+    panel.setCanChooseFiles(true);
+    panel.setAllowsMultipleSelection(true);
+    panel.setResolvesAliases(false);
+
+    if start.is_dir()
+        && let Some(url) = NSURL::from_directory_path(start)
+    {
+        panel.setDirectoryURL(Some(&url));
+    }
+    panel.setPrompt(Some(&NSString::from_str("导入")));
+    if panel.runModal() != NSModalResponseOK {
+        return Ok(None);
+    }
+    Ok(Some(
+        panel
+            .URLs()
+            .iter()
+            .filter_map(|url| url.to_file_path())
+            .collect(),
+    ))
 }

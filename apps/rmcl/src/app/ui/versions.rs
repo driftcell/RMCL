@@ -21,7 +21,7 @@ use super::common::{card, empty_state, page_header, section_title, type_tag};
 impl LauncherApp {
     pub fn render_versions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let versions = self.filtered_installed_versions(cx);
-        let can_start = self.log_state.can_start();
+        let can_start = self.can_start_operation();
         let shared_count = self
             .installed_versions
             .iter()
@@ -214,6 +214,7 @@ impl LauncherApp {
         let manifest_invalid = manifest_error.is_some();
         let isolated = version.is_isolated();
         let play_id = id.clone();
+        let manage_id = id.clone();
         let repair_id = id.clone();
         let folder_id = id.clone();
         let isolate_id = id.clone();
@@ -297,6 +298,17 @@ impl LauncherApp {
                             .disabled(!can_start)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.start_launch(play_id.clone(), window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(format!("versions-manage-{manage_id}"))
+                            .ghost()
+                            .small()
+                            .icon(IconName::Package)
+                            .tooltip("管理内容")
+                            .accessibility_label("管理内容")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_instance_detail(manage_id.clone(), window, cx)
                             })),
                     )
                     .child(

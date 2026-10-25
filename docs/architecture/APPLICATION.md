@@ -8,6 +8,8 @@
 
 `rmcl-app` 组合现有元数据、安装计划、下载器、安全解压、Java 和启动 API，不重复这些 crate 的领域规则，也不依赖 GPUI。`VanillaInstaller`、`JavaService`、`GameLauncher` 可独立调用，`TaskManager` 在它们之上提供应用级生命周期。
 
+实例内容的本地扫描与变更由 `rmcl-content` 提供，`rmcl-app` 只提供 `spawn_blocking` 异步包装；见 [本地内容管理](LOCAL_CONTENT.md)。远程内容下载会另外接入任务模型，不复用当前只负责本地文件的同步用例。
+
 `VanillaInstallRequest` 要求调用方提供 `.minecraft` 根、精确版本 ID、目标平台和 `VersionSource`：
 
 - `Manifest`：从配置的版本 manifest 查找精确 ID；官方构造器使用 Mojang `version_manifest_v2.json`。

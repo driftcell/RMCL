@@ -4,6 +4,7 @@ members = [
     "crates/rmcl-app",
     "crates/rmcl-archive",
     "crates/rmcl-auth",
+    "crates/rmcl-content",
     "crates/rmcl-domain",
     "crates/rmcl-instance",
     "crates/rmcl-install",
@@ -36,6 +37,7 @@ relative-path = "2"
 rmcl-app = { path = "crates/rmcl-app" }
 rmcl-archive = { path = "crates/rmcl-archive" }
 rmcl-auth = { path = "crates/rmcl-auth" }
+rmcl-content = { path = "crates/rmcl-content" }
 rmcl-domain = { path = "crates/rmcl-domain" }
 rmcl-instance = { path = "crates/rmcl-instance" }
 rmcl-install = { path = "crates/rmcl-install" }

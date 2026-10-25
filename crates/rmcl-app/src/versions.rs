@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rmcl_instance::{InstanceLoader, IsolationMode, MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLayout, InstanceLoader, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::GameVersion;
 
 use crate::AppError;
@@ -44,6 +44,11 @@ impl InstalledVersion {
         } else {
             name
         }
+    }
+
+    /// Rebuilds the instance layout from the scanned metadata.
+    pub fn instance_layout(&self, minecraft_root: impl Into<PathBuf>) -> InstanceLayout {
+        MinecraftLayout::new(minecraft_root).instance(self.id.clone(), self.isolation)
     }
 }
 
