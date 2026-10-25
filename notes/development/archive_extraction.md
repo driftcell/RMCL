@@ -26,6 +26,12 @@
 - 审查特殊文件时发现 `is_file` 不等于普通文件保证，补充 Unix 类型位检查和 FIFO 回归测试。
 - CRC 测试通过修改 stored 条目内容但保留原元数据，确认损坏内容不会发布。
 
+## Windows CI 回归与修复
+
+首次跨平台 CI 中，Linux 和 macOS 通过，Windows 的 symlink 与 FIFO 两个测试失败。原因是 zip 在 `System::Dos` 分支会把外部属性解释为普通文件或目录，即使高 16 位携带 Unix 特殊类型；仅依赖 `is_symlink()` 或 `unix_mode()` 会漏检。
+
+修复为同时检查原始 external attributes，并让特殊类型测试显式构造 `System::Dos` 条目。修复后本地 100 个测试再次全部通过，Windows 云端结果以新运行结论为准。
+
 ## 验证
 
 - `cargo fmt --all -- --check`

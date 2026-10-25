@@ -27,7 +27,7 @@
 仅允许普通文件和目录：
 
 - 不创建符号链接、硬链接、FIFO 或设备节点。
-- Unix 文件类型位异常的条目返回 `UnsupportedEntry`。
+- Unix 文件类型位异常的条目返回 `UnsupportedEntry`；同时检查原始 external attributes，标记为 `System::Dos` 但携带 Unix 特殊类型的条目也会被拒绝。
 - 绝对路径、`..`、`.`、空组件、反斜杠、盘符、冒号和控制字符均拒绝。
 - 重复目标直接报错。
 - 为统一 Windows、macOS 和 Linux 行为，冲突键使用小写形式；仅大小写不同的条目也视为冲突。

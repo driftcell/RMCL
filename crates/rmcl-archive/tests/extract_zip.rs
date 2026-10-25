@@ -84,7 +84,12 @@ fn archive(entries: &[TestEntry]) -> NamedTempFile {
             }
             EntryKind::Special { mode } => {
                 writer
-                    .start_file(&entry.name, options.external_attributes(mode << 16))
+                    .start_file(
+                        &entry.name,
+                        options
+                            .system(zip::System::Dos)
+                            .external_attributes(mode << 16),
+                    )
                     .unwrap();
                 writer.write_all(&entry.data).unwrap();
             }

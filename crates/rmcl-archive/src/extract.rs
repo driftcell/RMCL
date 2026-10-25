@@ -284,7 +284,16 @@ fn ensure_destination_available(destination: &Path) -> Result<(), ExtractionErro
 }
 
 fn supported_entry_type<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {
-    let file_type = entry.unix_mode().map(|mode| mode & 0o170000);
+    // NOTE: System::Dos entries can still carry Unix types in the raw external attributes.
+    let raw_type = (entry.external_attributes() >> 16) & 0o170000;
+    if raw_type == 0o120000 || entry.is_symlink() {
+        return false;
+    }
+    let file_type = if raw_type == 0 {
+        entry.unix_mode().map(|mode| mode & 0o170000)
+    } else {
+        Some(raw_type)
+    };
     if entry.is_dir() {
         matches!(file_type, None | Some(0) | Some(0o040000))
     } else if entry.is_file() {
