@@ -299,7 +299,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn kills_a_probe_that_times_out() {
-        let (_directory, executable) = write_script("#!/bin/sh\nsleep 60\n");
+        let (_directory, executable) = write_script("#!/bin/sh\nexec sleep 60\n");
 
         let error = probe_with_config(
             executable,

@@ -106,7 +106,7 @@ async fn collects_logs_and_redacts_tokens_before_exit() {
 #[cfg(unix)]
 #[tokio::test]
 async fn kill_returns_an_unsuccessful_exit() {
-    let (directory, executable) = write_script("#!/bin/sh\nsleep 60\n");
+    let (directory, executable) = write_script("#!/bin/sh\nexec sleep 60\n");
     let plan = process_plan(executable, directory.path().to_path_buf());
     let mut process = GameProcess::spawn(&plan).unwrap();
 
