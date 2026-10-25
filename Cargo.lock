@@ -5537,11 +5537,17 @@ dependencies = [
 name = "rmcl-content"
 version = "0.1.1"
 dependencies = [
+ "axum",
+ "reqwest",
+ "rmcl-domain",
  "rmcl-instance",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "url",
 ]
 
 [[package]]

@@ -155,6 +155,7 @@ mod tests {
         TaskSnapshot {
             id: TaskId::from_raw(id),
             kind: TaskKind::GameLaunch,
+            subject: None,
             status,
             phase: Some(TaskPhase::Install(InstallPhase::DownloadingBase)),
             progress: None,

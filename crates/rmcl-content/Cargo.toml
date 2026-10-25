@@ -5,8 +5,17 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+rmcl-domain.workspace = true
 rmcl-instance.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["net"] }

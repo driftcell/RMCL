@@ -1,5 +1,6 @@
 pub mod chrome;
 pub mod common;
+pub mod content_browser;
 pub mod downloads;
 pub mod home;
 pub mod instance;

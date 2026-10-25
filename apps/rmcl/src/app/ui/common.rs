@@ -115,3 +115,64 @@ pub fn mono(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
 pub fn field_label(label: &str) -> impl IntoElement {
     div().text_sm().font_medium().child(label.to_owned())
 }
+
+pub fn error_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
+    banner(IconName::CircleAlert, cx.theme().danger, title, message, cx)
+}
+
+pub fn warning_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
+    banner(
+        IconName::TriangleAlert,
+        cx.theme().warning,
+        title,
+        message,
+        cx,
+    )
+}
+
+fn banner(icon: IconName, color: Hsla, title: &str, message: &str, cx: &App) -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .gap_3()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(color.opacity(0.35))
+        .bg(color.opacity(0.08))
+        .p_3()
+        .child(Icon::new(icon).small().text_color(color))
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap_0p5()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_medium()
+                        .text_color(color)
+                        .child(title.to_owned()),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(message.to_owned()),
+                ),
+        )
+}
+
+pub fn format_size(bytes: u64) -> String {
+    const KIB: f64 = 1024.;
+    const MIB: f64 = KIB * 1024.;
+    const GIB: f64 = MIB * 1024.;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes / GIB)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}

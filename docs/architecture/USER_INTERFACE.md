@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：启动器壳、实例列表与隔离迁移、本地 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
+状态：启动器壳、实例列表与隔离迁移、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
 日期：2026-10-25
 
@@ -56,6 +56,15 @@
 - Mod 和资源包提供启用/禁用按钮；Mod 使用 `.disabled` 后缀，资源包改写实例 `options.txt`；光影包只管理文件。
 - 每行显示大小或“文件夹”、相对路径和状态；删除前弹出确认。扫描警告和 `options.txt` 错误显示为横幅，不隐藏其他内容。
 - 内容操作进行中时禁用导入、切换、删除和启动，避免与游戏进程或后续扫描冲突。
+- “下载内容”进入在线内容页，按当前实例的 Minecraft 版本过滤；Mod 还会按实例加载器过滤。
+
+### 在线内容
+
+- 搜索 Modrinth 项目，支持相关度、下载量、关注数、最新发布和最近更新排序，以及分页“加载更多”。
+- 项目列表显示标题、作者、描述、下载量、加载器和分类；进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量。
+- 每个版本可直接安装；下载、SHA-1 校验和写入实例由 `ContentInstall` 后台任务执行，进度和取消复用底部任务栏。
+- 当前实例没有 Mod 加载器时显示警告；依赖目前只显示数量，不自动安装。
+- 安装完成后刷新实例本地内容；同名文件自动改名，不覆盖。
 
 ### 下载游戏
 
@@ -125,7 +134,9 @@ GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spaw
 
 版本选择使用 `SelectState<SearchableVec<String>>`；账户选择使用带稳定账户键的 `AccountSelectItem`，显示名不含类型后缀，同名离线与正版账户仍可区分。安装完成或目录切换后通过 `set_items` 更新，不重建整个 View。版本请求带稳定 `TaskId`，终态只触发一次续期、版本重扫和通知。
 
-实例详情页的本地内容扫描、导入、切换和删除通过 `Runtime::spawn` + `spawn_blocking` 执行；界面持有短生命周期 foreground task，只负责等待结果和更新 `ContentLibrary`。这些本地操作不进入 `TaskManager`，因为它们没有长时下载或游戏进程生命周期；远程内容下载接入时会复用任务模型。
+实例详情页的本地内容扫描、导入、切换和删除通过 `Runtime::spawn` + `spawn_blocking` 执行；界面持有短生命周期 foreground task，只负责等待结果和更新 `ContentLibrary`。这些本地操作不进入 `TaskManager`，因为它们没有长时下载或游戏进程生命周期。
+
+Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元数据客户端，并用请求 generation/cancellation 防止旧结果覆盖新页面。远程文件安装进入 `TaskManager` 的 `ContentInstall` 任务，复用状态栏进度、取消、广播快照和实例互斥。
 
 ## 明暗主题与系统外观
 
@@ -139,14 +150,15 @@ GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spaw
 
 ## 当前不包含
 
-authlib-injector、ModLoader、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、远程 Mod/资源包/光影检索与下载、Mod 依赖与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
+authlib-injector、ModLoader、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
 
 ## 验证
 
 - `apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入、有界缓冲和终态通知去重。
 - `rmcl-store` 覆盖 TOML 往返、schema 1 升级、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
-- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全。
+- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖解析、API 错误和取消。
+- `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。
 - 游戏运行时最小化、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。

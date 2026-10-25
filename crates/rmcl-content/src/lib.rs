@@ -5,6 +5,7 @@ mod kind;
 mod local;
 mod model;
 mod options;
+mod remote;
 
 pub use error::ContentError;
 pub use kind::ContentKind;
@@ -12,3 +13,8 @@ pub use local::{
     ConflictPolicy, delete_content, import_file, scan_kind, scan_library, set_content_enabled,
 };
 pub use model::{ContentLibrary, ContentScan, ContentWarning, LocalContent};
+pub use remote::{
+    ContentSource, ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency,
+    RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
+    RemoteSort, RemoteVersion,
+};

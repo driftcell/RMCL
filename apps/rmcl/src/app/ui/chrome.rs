@@ -201,7 +201,11 @@ impl LauncherApp {
     fn nav_item(&self, page: Page, cx: &mut Context<Self>) -> SidebarMenuItem {
         SidebarMenuItem::new(page.title())
             .icon(page.icon())
-            .active(self.page == page || (page == Page::Versions && self.page == Page::Instance))
+            .active(
+                self.page == page
+                    || (page == Page::Versions
+                        && matches!(self.page, Page::Instance | Page::ContentBrowser)),
+            )
             .on_click(cx.listener(move |this, _, window, cx| this.navigate(page, window, cx)))
     }
 

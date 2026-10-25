@@ -21,11 +21,12 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    AppError, ConflictPolicy, ContentKind, ContentLibrary, GameLaunchRequest, InstallPhase,
-    InstalledVersion, LocalContent, MicrosoftAccountServiceError, RepositoryPath,
-    ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
-    TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, delete_instance_content, discover_installed_versions,
+    AppError, ConflictPolicy, ContentInstallPhase, ContentInstallRequest, ContentKind,
+    ContentLibrary, ContentSource, GameLaunchRequest, InstallPhase, InstalledVersion, LocalContent,
+    MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
+    RepositoryPath, ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress,
+    TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest, VersionManifest, VersionSource,
+    VersionSummary, delete_installed_version, delete_instance_content, discover_installed_versions,
     import_instance_content, migrate_instance_to_isolated, scan_instance_content,
     set_instance_content_enabled,
 };
@@ -58,6 +59,7 @@ pub enum Page {
     Home,
     Versions,
     Instance,
+    ContentBrowser,
     Downloads,
     Logs,
     Settings,
@@ -69,6 +71,7 @@ impl Page {
             Self::Home => "主页",
             Self::Versions => "实例",
             Self::Instance => "实例详情",
+            Self::ContentBrowser => "在线内容",
             Self::Downloads => "下载游戏",
             Self::Logs => "日志",
             Self::Settings => "设置",
@@ -80,6 +83,7 @@ impl Page {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
+            Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
             Self::Downloads => "从 Mojang 官方源安装新的 Vanilla 版本。",
             Self::Logs => "查看安装、启动和游戏运行日志。",
             Self::Settings => "配置游戏目录、外观与 Java。",
@@ -91,6 +95,7 @@ impl Page {
             Self::Home => IconName::House,
             Self::Versions => IconName::Boxes,
             Self::Instance => IconName::Package,
+            Self::ContentBrowser => IconName::Globe,
             Self::Downloads => IconName::Download,
             Self::Logs => IconName::ScrollText,
             Self::Settings => IconName::Settings,
@@ -104,6 +109,19 @@ pub enum ContentTab {
     Mods,
     ResourcePacks,
     ShaderPacks,
+}
+
+#[derive(Default)]
+pub struct ContentBrowserState {
+    kind: Option<ContentKind>,
+    project: Option<RemoteProject>,
+    projects: Vec<RemoteProject>,
+    total_hits: u64,
+    search_loading: bool,
+    search_error: Option<String>,
+    versions: Vec<RemoteVersion>,
+    versions_loading: bool,
+    versions_error: Option<String>,
 }
 
 impl ContentTab {
@@ -209,6 +227,7 @@ pub struct CatalogState {
 
 enum Command {
     Install(VanillaInstallRequest),
+    ContentInstall(ContentInstallRequest),
     Launch(GameLaunchRequest),
 }
 
@@ -268,6 +287,12 @@ pub struct LauncherApp {
     content_action_pending: bool,
     content_request: u64,
     content_query: Entity<InputState>,
+    content_browser: ContentBrowserState,
+    remote_query: Entity<InputState>,
+    remote_sort: RemoteSort,
+    content_browser_request: u64,
+    content_browser_cancel: Option<CancellationToken>,
+    _content_browser_task: Option<Task<()>>,
     _content_task: Option<Task<()>>,
     accounts: Vec<Account>,
     account_heads: HashMap<Uuid, PathBuf>,
@@ -428,6 +453,8 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
         let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装实例"));
         let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
+        let remote_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -448,6 +475,13 @@ impl LauncherApp {
         );
         subscriptions.push(
             cx.subscribe(&content_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&remote_query, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
@@ -521,6 +555,12 @@ impl LauncherApp {
             content_action_pending: false,
             content_request: 0,
             content_query,
+            content_browser: ContentBrowserState::default(),
+            remote_query,
+            remote_sort: RemoteSort::Relevance,
+            content_browser_request: 0,
+            content_browser_cancel: None,
+            _content_browser_task: None,
             _content_task: None,
             accounts,
             account_heads: HashMap::new(),
@@ -996,6 +1036,29 @@ impl LauncherApp {
         self.spawn_command(Command::Install(request), version_id, window, cx);
     }
 
+    fn start_content_install_task(
+        &mut self,
+        request: ContentInstallRequest,
+        instance_id: String,
+        display_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.can_start_operation() {
+            window.push_notification(
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
+                    .title("无法安装内容"),
+                cx,
+            );
+            return;
+        }
+        window.push_notification(
+            Notification::info(format!("正在安装 {display_name}。")).title("已开始下载"),
+            cx,
+        );
+        self.spawn_command(Command::ContentInstall(request), instance_id, window, cx);
+    }
+
     fn start_launch(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.launch_resolving {
             return;
@@ -1156,6 +1219,9 @@ impl LauncherApp {
                 .spawn(async move {
                     match command {
                         Command::Install(request) => command_manager.start_install(request).await,
+                        Command::ContentInstall(request) => {
+                            command_manager.start_content_install(request).await
+                        }
                         Command::Launch(request) => {
                             command_manager.start_launch_installed(request).await
                         }
@@ -1277,6 +1343,23 @@ impl LauncherApp {
         }
         let version = self.active_task_version.clone();
         match snapshot.status {
+            TaskStatus::Completed if snapshot.kind == TaskKind::ContentInstall => {
+                let (instance_id, name) = match snapshot.subject {
+                    Some(TaskSubject::Content {
+                        instance_id, name, ..
+                    }) => (Some(instance_id), name),
+                    _ => (None, "内容".to_owned()),
+                };
+                if self.page == Page::Instance
+                    && self.selected_instance.as_deref() == instance_id.as_deref()
+                {
+                    self.load_instance_content(window, cx);
+                }
+                window.push_notification(
+                    Notification::success(format!("{name} 已安装到实例。")).title("内容安装完成"),
+                    cx,
+                );
+            }
             TaskStatus::Completed => {
                 if let Some(version) = version {
                     self.config.selected_version = Some(version);
@@ -2768,6 +2851,267 @@ impl LauncherApp {
         self.load_instance_content(window, cx);
     }
 
+    fn open_content_browser(
+        &mut self,
+        kind: ContentKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self.selected_instance_version().cloned() else {
+            window.push_notification(
+                Notification::error("实例不存在或已被删除。").title("无法打开在线内容"),
+                cx,
+            );
+            return;
+        };
+        self.cancel_content_browser_request();
+        self.selected_instance = Some(version.id.as_str().to_owned());
+        self.content_tab = match kind {
+            ContentKind::Mod => ContentTab::Mods,
+            ContentKind::ResourcePack => ContentTab::ResourcePacks,
+            ContentKind::ShaderPack => ContentTab::ShaderPacks,
+        };
+        self.page = Page::ContentBrowser;
+        self.content_browser = ContentBrowserState {
+            kind: Some(kind),
+            ..ContentBrowserState::default()
+        };
+        self.remote_sort = RemoteSort::Relevance;
+        self.remote_query.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        self.load_remote_search(true, window, cx);
+    }
+
+    fn back_to_instance_detail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_content_browser_request();
+        self.page = Page::Instance;
+        self.load_instance_content(window, cx);
+    }
+
+    fn cancel_content_browser_request(&mut self) {
+        if let Some(cancellation) = self.content_browser_cancel.take() {
+            cancellation.cancel();
+        }
+        self.content_browser_request = self.content_browser_request.wrapping_add(1);
+    }
+
+    fn load_remote_search(&mut self, reset: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !reset && self.content_browser.search_loading {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let Some(kind) = self.content_browser.kind else {
+            return;
+        };
+        if let Some(cancellation) = self.content_browser_cancel.take() {
+            cancellation.cancel();
+        }
+        let cancellation = CancellationToken::new();
+        self.content_browser_cancel = Some(cancellation.clone());
+        self.content_browser_request = self.content_browser_request.wrapping_add(1);
+        let request = self.content_browser_request;
+        let query = RemoteSearchQuery {
+            source: ContentSource::Modrinth,
+            kind,
+            query: self.remote_query.read(cx).value().to_string(),
+            game_version: Some(version.minecraft_version.clone()),
+            loader: (kind == ContentKind::Mod)
+                .then(|| {
+                    version
+                        .loader
+                        .as_ref()
+                        .map(|loader| loader.kind.as_str().to_owned())
+                })
+                .flatten(),
+            offset: if reset {
+                0
+            } else {
+                self.content_browser.projects.len()
+            },
+            limit: 20,
+            sort: self.remote_sort,
+        };
+        if reset {
+            self.content_browser.projects.clear();
+            self.content_browser.total_hits = 0;
+        }
+        self.content_browser.search_loading = true;
+        self.content_browser.search_error = None;
+        let client = self.services.modrinth.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._content_browser_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move { client.search(&query, &cancellation).await })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.content_browser_request != request {
+                    return;
+                }
+                view.content_browser.search_loading = false;
+                match result {
+                    Ok(Ok(page)) => {
+                        if reset {
+                            view.content_browser.projects = page.projects;
+                        } else {
+                            view.content_browser.projects.extend(page.projects);
+                        }
+                        view.content_browser.total_hits = page.total_hits;
+                        view.content_browser.search_error = None;
+                    }
+                    Ok(Err(error)) => {
+                        if !matches!(error, rmcl_app::RemoteContentError::Cancelled) {
+                            view.content_browser.search_error = Some(error.to_string());
+                        }
+                    }
+                    Err(error) => {
+                        view.content_browser.search_error = Some(format!("后台任务失败: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn open_remote_project(
+        &mut self,
+        project: RemoteProject,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.content_browser.project = Some(project.clone());
+        self.content_browser.versions.clear();
+        self.content_browser.versions_error = None;
+        self.load_remote_versions(project, window, cx);
+    }
+
+    fn load_remote_versions(
+        &mut self,
+        project: RemoteProject,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let game_version = version.minecraft_version.clone();
+        let loader = version
+            .loader
+            .as_ref()
+            .map(|loader| loader.kind.as_str().to_owned());
+        let project_id = project.id.clone();
+        if let Some(cancellation) = self.content_browser_cancel.take() {
+            cancellation.cancel();
+        }
+        let cancellation = CancellationToken::new();
+        self.content_browser_cancel = Some(cancellation.clone());
+        self.content_browser_request = self.content_browser_request.wrapping_add(1);
+        let request = self.content_browser_request;
+        self.content_browser.versions_loading = true;
+        self.content_browser.versions_error = None;
+        let client = self.services.modrinth.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._content_browser_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move {
+                    client
+                        .project_versions(
+                            &project_id,
+                            Some(&game_version),
+                            loader.as_deref(),
+                            &cancellation,
+                        )
+                        .await
+                })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.content_browser_request != request {
+                    return;
+                }
+                view.content_browser.versions_loading = false;
+                match result {
+                    Ok(Ok(versions)) => {
+                        view.content_browser.versions = versions;
+                        view.content_browser.versions_error = None;
+                    }
+                    Ok(Err(error)) => {
+                        if !matches!(error, rmcl_app::RemoteContentError::Cancelled) {
+                            view.content_browser.versions_error = Some(error.to_string());
+                        }
+                    }
+                    Err(error) => {
+                        view.content_browser.versions_error =
+                            Some(format!("后台任务失败: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn back_to_content_search(&mut self, cx: &mut Context<Self>) {
+        self.cancel_content_browser_request();
+        self.content_browser.project = None;
+        self.content_browser.versions.clear();
+        self.content_browser.versions_error = None;
+        self.content_browser.versions_loading = false;
+        cx.notify();
+    }
+
+    fn install_remote_version(
+        &mut self,
+        version: RemoteVersion,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(kind) = self.content_browser.kind else {
+            return;
+        };
+        let Some(file) = version.installable_file(kind).cloned() else {
+            window.push_notification(
+                Notification::error("该版本没有适用于当前内容类型的文件。").title("无法安装"),
+                cx,
+            );
+            return;
+        };
+        if file.sha1.is_none() {
+            window.push_notification(
+                Notification::error("该文件没有 SHA-1 校验值，已拒绝安装。").title("无法安装"),
+                cx,
+            );
+            return;
+        }
+        let Some(instance) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance_layout = instance.instance_layout(self.config.minecraft_root.clone());
+        let project_title = self
+            .content_browser
+            .project
+            .as_ref()
+            .map(|project| project.title.clone())
+            .unwrap_or_else(|| kind.label().to_owned());
+        let display_name = format!("{project_title} {}", version.version_number);
+        let request = ContentInstallRequest {
+            instance: instance_layout,
+            kind,
+            file,
+            display_name: display_name.clone(),
+            conflict: ConflictPolicy::Rename,
+        };
+        self.start_content_install_task(
+            request,
+            instance.id.as_str().to_owned(),
+            display_name,
+            window,
+            cx,
+        );
+    }
+
     fn load_instance_content(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.content_request = self.content_request.wrapping_add(1);
         let request = self.content_request;
@@ -3218,6 +3562,7 @@ impl Render for LauncherApp {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
             Page::Instance => self.render_instance(cx).into_any_element(),
+            Page::ContentBrowser => self.render_content_browser(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
             Page::Settings => self.render_settings(window, cx).into_any_element(),
@@ -3424,6 +3769,12 @@ pub fn task_progress(snapshot: Option<&TaskSnapshot>) -> (f32, bool) {
         Some(TaskProgress::Download(progress)) if progress.total_files > 0 => {
             progress.completed_files as f32 / progress.total_files as f32 * 100.0
         }
+        Some(TaskProgress::Content(progress)) => progress
+            .total_bytes
+            .filter(|total| *total > 0)
+            .map_or(0.0, |total| {
+                progress.downloaded_bytes as f32 / total as f32 * 100.0
+            }),
         Some(TaskProgress::Natives {
             completed_archives,
             total_archives,
@@ -3450,6 +3801,19 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
             progress.total_files,
             progress.current.display()
         ),
+        TaskProgress::Content(progress) => {
+            let current = progress
+                .current
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| progress.current.display().to_string());
+            match progress.total_bytes {
+                Some(total) => {
+                    format!("{current} · {} / {} 字节", progress.downloaded_bytes, total)
+                }
+                None => format!("{current} · {} 字节", progress.downloaded_bytes),
+            }
+        }
         TaskProgress::Natives {
             current,
             completed_archives,
@@ -3476,6 +3840,10 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
+        TaskPhase::Content(ContentInstallPhase::Preparing) => "准备内容下载",
+        TaskPhase::Content(ContentInstallPhase::Downloading) => "下载内容文件",
+        TaskPhase::Content(ContentInstallPhase::Installing) => "写入实例内容",
+        TaskPhase::Content(ContentInstallPhase::Completed) => "内容安装完成",
         TaskPhase::Inspecting => "检查版本文件",
         TaskPhase::CheckingJava => "检查 Java",
         TaskPhase::InstallingJava => "安装 Java",
@@ -3491,6 +3859,11 @@ pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
         None => "就绪".to_owned(),
         Some(TaskStatus::Running) => "运行中".to_owned(),
         Some(TaskStatus::Cancelling) => "正在停止".to_owned(),
+        Some(TaskStatus::Completed)
+            if snapshot.map(|snapshot| snapshot.kind) == Some(TaskKind::ContentInstall) =>
+        {
+            "内容安装完成".to_owned()
+        }
         Some(TaskStatus::Completed) => "安装完成".to_owned(),
         Some(TaskStatus::Cancelled) => "已取消".to_owned(),
         Some(TaskStatus::Failed) => "任务失败".to_owned(),
@@ -3501,6 +3874,7 @@ pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
 pub fn task_kind_label(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::VanillaInstall => "安装",
+        TaskKind::ContentInstall => "安装内容",
         TaskKind::GameLaunch => "启动",
     }
 }

@@ -8,7 +8,7 @@
 
 `rmcl-app` 组合现有元数据、安装计划、下载器、安全解压、Java 和启动 API，不重复这些 crate 的领域规则，也不依赖 GPUI。`VanillaInstaller`、`JavaService`、`GameLauncher` 可独立调用，`TaskManager` 在它们之上提供应用级生命周期。
 
-实例内容的本地扫描与变更由 `rmcl-content` 提供，`rmcl-app` 只提供 `spawn_blocking` 异步包装；见 [本地内容管理](LOCAL_CONTENT.md)。远程内容下载会另外接入任务模型，不复用当前只负责本地文件的同步用例。
+实例内容的本地扫描与变更由 `rmcl-content` 提供，`rmcl-app` 只提供 `spawn_blocking` 异步包装；见 [本地内容管理](LOCAL_CONTENT.md)。Modrinth 元数据客户端也在 `rmcl-content`，但远程文件下载由 `rmcl-app` 的 `ContentInstaller` 复用 `rmcl-net` 执行，并由 `TaskManager` 以 `ContentInstall` 任务持有下载、取消和进度；见 [远程内容与 Modrinth](REMOTE_CONTENT.md)。
 
 `VanillaInstallRequest` 要求调用方提供 `.minecraft` 根、精确版本 ID、目标平台和 `VersionSource`：
 
@@ -116,6 +116,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 - Microsoft 登录、专用 Quick Play 配置和账号令牌存储
 - 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
 - 版本继承、特殊资产名称重建、ModLoader 和镜像策略
+- CurseForge、依赖图自动安装、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach
 - GPUI 页面或窗口生命周期（由 `apps/rmcl` 持有；`rmcl-app` 仍不依赖 GPUI）

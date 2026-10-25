@@ -78,6 +78,15 @@ pub enum AppError {
     Instance(#[from] rmcl_instance::InstanceError),
     #[error(transparent)]
     Content(#[from] rmcl_content::ContentError),
+    #[error("content download failed: {source}")]
+    ContentDownload {
+        #[source]
+        source: rmcl_net::DownloadError,
+    },
+    #[error("remote content operations are not configured")]
+    RemoteContentNotConfigured,
+    #[error(transparent)]
+    RemoteContent(#[from] rmcl_content::RemoteContentError),
     #[error(transparent)]
     Checksum(#[from] rmcl_domain::ParseSha1Error),
     #[error(transparent)]

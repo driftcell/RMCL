@@ -31,6 +31,15 @@ impl ContentKind {
         }
     }
 
+    /// Modrinth project type used by search facets and project page URLs.
+    pub const fn modrinth_project_type(self) -> &'static str {
+        match self {
+            Self::Mod => "mod",
+            Self::ResourcePack => "resourcepack",
+            Self::ShaderPack => "shader",
+        }
+    }
+
     pub fn directory(self, instance: &InstanceLayout) -> PathBuf {
         match self {
             Self::Mod => instance.mods_dir(),
