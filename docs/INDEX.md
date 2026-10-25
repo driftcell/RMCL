@@ -16,12 +16,14 @@
 
 - [目标工作区](architecture/WORKSPACE.md)：多 crate 边界和依赖方向。
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
+- [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
 
 ## 兼容性
 
 - [HMCL 参考基线](compatibility/HMCL_BASELINE.md)：固定参考版本、使用方式和参考边界。
 - [离线账号行为](compatibility/OFFLINE_ACCOUNTS.md)：用户名、UUID 与自定义身份语义。
 - [版本元数据行为](compatibility/VERSION_METADATA.md)：清单、规则、参数与当前解析边界。
+- [Minecraft 仓库布局](compatibility/REPOSITORY_LAYOUT.md)：标准目录、安全相对路径和 natives 隔离。
 
 ## 工程
 

@@ -12,7 +12,8 @@
 - 具体版本 JSON：ID、继承相关字段、主类、下载信息、asset index、Java 版本、libraries 和时间字段。
 - modern `arguments.game` / `arguments.jvm` 与 legacy `minecraftArguments` 的分别保留。
 - library 的 artifact、classifiers、natives、rules 和 extract 元数据。
-- OS、架构、feature 规则求值，以及 modern 参数按顺序筛选与展开。
+- asset index 内容 `AssetCatalog`、asset objects 和经过验证的 `Sha1Hash`。
+- OS、归一化架构、feature 规则求值，以及 modern 参数按顺序筛选与展开。
 
 时间戳目前保留原始字符串，不引入不必要的日期转换。未知 JSON 字段被忽略；当前模型用于读取，不承诺原样写回或保留未知字段。
 
@@ -26,7 +27,7 @@
 - 非法正则：返回结构化错误，不静默当作允许。
 - features：所有键值都必须匹配；缺失 feature 按 `false` 处理。
 
-OS 版本与架构字符串由调用方显式提供。未来平台层必须统一这些标识，不能直接在不同模块中混用 `amd64`、`x86_64`、`arm64`、`aarch64` 等名称。
+OS 版本与架构由调用方显式提供。`Architecture` 将常见别名归一化：`amd64`/`x64` 归为 `x86_64`，`arm64` 归为 `aarch64`，并提供 32/64 位指针宽度；未知架构保留名称但不猜测位数。
 
 ## 参数语义
 
@@ -56,8 +57,7 @@ RMCL 追求功能兼容，不复制所有容错异常：
 ## 尚未实现
 
 - `inheritsFrom` 递归解析、循环检测和 patch 合并。
-- Maven 坐标到路径/URL 的解析与路径安全检查。
-- natives classifier 选择、`${arch}` 替换和实际解压。
+- natives 的实际解压；classifier 选择、`${arch}` 替换与提取计划已在 [Vanilla 安装计划](../architecture/INSTALL_PLAN.md) 实现。
 - 真实文件下载、校验、缓存和修复。
 - legacy 参数切分、占位符替换和最终 `LaunchPlan`。
 

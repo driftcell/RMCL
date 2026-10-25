@@ -1,5 +1,11 @@
 [workspace]
-members = ["apps/rmcl", "crates/rmcl-auth", "crates/rmcl-minecraft"]
+members = [
+    "apps/rmcl",
+    "crates/rmcl-auth",
+    "crates/rmcl-instance",
+    "crates/rmcl-install",
+    "crates/rmcl-minecraft",
+]
 default-members = ["apps/rmcl"]
 resolver = "3"
 
@@ -9,11 +15,16 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
+hex = "0.4"
 md-5 = "0.10"
 regex = "1"
+relative-path = "2"
 rmcl-auth = { path = "crates/rmcl-auth" }
+rmcl-instance = { path = "crates/rmcl-instance" }
+rmcl-install = { path = "crates/rmcl-install" }
 rmcl-minecraft = { path = "crates/rmcl-minecraft" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+url = "2"
 uuid = "1"

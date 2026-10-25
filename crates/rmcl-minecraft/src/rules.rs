@@ -30,13 +30,60 @@ impl OperatingSystem {
             Self::Linux => "linux",
         }
     }
+
+    pub fn native_directory_name(self) -> &'static str {
+        match self {
+            Self::Windows => "windows",
+            Self::MacOs => "macos",
+            Self::Linux => "linux",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Architecture {
+    X86,
+    X86_64,
+    Arm32,
+    Aarch64,
+    Other(String),
+}
+
+impl Architecture {
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "x86" | "i386" | "i486" | "i586" | "i686" => Self::X86,
+            "x86_64" | "x86-64" | "amd64" | "x64" => Self::X86_64,
+            "arm" | "arm32" | "armv7" | "armv7l" => Self::Arm32,
+            "aarch64" | "arm64" => Self::Aarch64,
+            other => Self::Other(other.to_owned()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::X86 => "x86",
+            Self::X86_64 => "x86_64",
+            Self::Arm32 => "arm",
+            Self::Aarch64 => "aarch64",
+            Self::Other(name) => name,
+        }
+    }
+
+    pub fn pointer_width(&self) -> Option<u8> {
+        match self {
+            Self::X86 | Self::Arm32 => Some(32),
+            Self::X86_64 | Self::Aarch64 => Some(64),
+            Self::Other(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Platform {
     pub os: OperatingSystem,
     pub os_version: String,
-    pub arch: String,
+    pub arch: Architecture,
 }
 
 impl Platform {
@@ -45,10 +92,23 @@ impl Platform {
         os_version: impl Into<String>,
         arch: impl Into<String>,
     ) -> Self {
+        let arch = arch.into();
         Self {
             os,
             os_version: os_version.into(),
-            arch: arch.into(),
+            arch: Architecture::from_name(&arch),
+        }
+    }
+
+    pub fn with_architecture(
+        os: OperatingSystem,
+        os_version: impl Into<String>,
+        arch: Architecture,
+    ) -> Self {
+        Self {
+            os,
+            os_version: os_version.into(),
+            arch,
         }
     }
 }
@@ -148,7 +208,7 @@ fn os_matches(restriction: &OsRestriction, platform: &Platform) -> Result<bool, 
     }
 
     if let Some(pattern) = &restriction.arch
-        && !matches_entire(pattern, &platform.arch, "arch")?
+        && !matches_entire(pattern, platform.arch.as_str(), "arch")?
     {
         return Ok(false);
     }
@@ -183,6 +243,19 @@ mod tests {
             }),
             features: FeatureMap::new(),
         }
+    }
+
+    #[test]
+    fn normalizes_architecture_aliases_and_pointer_width() {
+        for name in ["x86_64", "amd64", "x64"] {
+            let architecture = Architecture::from_name(name);
+            assert_eq!(architecture, Architecture::X86_64);
+            assert_eq!(architecture.pointer_width(), Some(64));
+            assert_eq!(architecture.as_str(), "x86_64");
+        }
+        assert_eq!(Architecture::from_name("arm64"), Architecture::Aarch64);
+        assert_eq!(Architecture::from_name("i686").pointer_width(), Some(32));
+        assert_eq!(Architecture::from_name("riscv64").pointer_width(), None);
     }
 
     #[test]

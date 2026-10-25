@@ -1,0 +1,10 @@
+[package]
+name = "rmcl-instance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+relative-path.workspace = true
+rmcl-minecraft.workspace = true
+thiserror.workspace = true

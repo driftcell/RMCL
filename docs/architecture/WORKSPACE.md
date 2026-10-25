@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`，`rmcl-auth` 提供离线账号能力，`rmcl-minecraft` 提供版本元数据与规则求值。其他边界按实现进度加入；本文件其余部分描述目标结构，不表示对应 crate 已经存在。
+RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 
