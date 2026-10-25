@@ -2,13 +2,14 @@ use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use crc32fast::Hasher;
 use rmcl_domain::ExtractionPlan;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 use tokio_util::sync::CancellationToken;
+use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::{
@@ -30,10 +31,33 @@ impl ArchiveExtractor {
         &self,
         request: &ExtractionPlan,
         cancellation: CancellationToken,
+        progress: Option<&mut dyn FnMut(ExtractionProgress)>,
+    ) -> Result<ExtractionReport, ExtractionError> {
+        self.extract_zip_with_mode(request, cancellation, progress, PublishMode::New)
+    }
+
+    /// Extracts into a new or existing real directory without replacing existing files.
+    ///
+    /// The archive is staged and destination conflicts are checked before any entry is moved.
+    /// File/type conflicts are errors. An I/O failure while publishing can leave a partial merge.
+    pub fn merge_zip(
+        &self,
+        request: &ExtractionPlan,
+        cancellation: CancellationToken,
+        progress: Option<&mut dyn FnMut(ExtractionProgress)>,
+    ) -> Result<ExtractionReport, ExtractionError> {
+        self.extract_zip_with_mode(request, cancellation, progress, PublishMode::Merge)
+    }
+
+    fn extract_zip_with_mode(
+        &self,
+        request: &ExtractionPlan,
+        cancellation: CancellationToken,
         mut progress: Option<&mut dyn FnMut(ExtractionProgress)>,
+        mode: PublishMode,
     ) -> Result<ExtractionReport, ExtractionError> {
         validate_request(request)?;
-        ensure_destination_available(&request.destination)?;
+        validate_destination(&request.destination, mode)?;
         let parent = parent_directory(&request.destination);
         fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
         let staging = Builder::new()
@@ -161,12 +185,138 @@ impl ArchiveExtractor {
             return Err(ExtractionError::Cancelled);
         }
         drop(archive);
-        ensure_destination_available(&request.destination)?;
-        fs::rename(&staging_root, &request.destination)
-            .map_err(|error| io_error(&request.destination, error))?;
-        drop(staging);
+        match mode {
+            PublishMode::New => {
+                ensure_destination_available(&request.destination)?;
+                fs::rename(&staging_root, &request.destination)
+                    .map_err(|error| io_error(&request.destination, error))?;
+                drop(staging);
+            }
+            PublishMode::Merge => {
+                merge_publish(staging, staging_root, &request.destination, &mut report)?;
+            }
+        }
         Ok(report)
     }
+}
+
+#[derive(Clone, Copy)]
+enum PublishMode {
+    New,
+    Merge,
+}
+
+fn merge_publish(
+    staging: TempDir,
+    staging_root: PathBuf,
+    destination: &Path,
+    report: &mut ExtractionReport,
+) -> Result<(), ExtractionError> {
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_dir() => {
+            preflight_merge(&staging_root, destination, report)?;
+            merge_entries(&staging_root, destination)?;
+            drop(staging);
+            Ok(())
+        }
+        Ok(_) => Err(ExtractionError::DestinationExists(
+            destination.display().to_string(),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(&staging_root, destination).map_err(|error| io_error(destination, error))?;
+            drop(staging);
+            Ok(())
+        }
+        Err(source) => Err(io_error(destination, source)),
+    }
+}
+
+fn preflight_merge(
+    staging_root: &Path,
+    destination: &Path,
+    report: &mut ExtractionReport,
+) -> Result<(), ExtractionError> {
+    for entry in WalkDir::new(staging_root).follow_links(false) {
+        let entry = entry.map_err(|error| io_error(staging_root, error.into()))?;
+        let relative = entry.path().strip_prefix(staging_root).map_err(|error| {
+            io_error(
+                staging_root,
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, error),
+            )
+        })?;
+        let destination_path = destination.join(relative);
+        check_parent_directories(destination, relative)?;
+        match fs::symlink_metadata(&destination_path) {
+            Ok(metadata) => {
+                if entry.file_type().is_dir() && !metadata.file_type().is_dir() {
+                    return Err(ExtractionError::DestinationExists(
+                        destination_path.display().to_string(),
+                    ));
+                }
+                if entry.file_type().is_file() && !metadata.file_type().is_file() {
+                    return Err(ExtractionError::DestinationExists(
+                        destination_path.display().to_string(),
+                    ));
+                }
+                if entry.file_type().is_file() {
+                    report.skipped += 1;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io_error(&destination_path, error)),
+        }
+    }
+    Ok(())
+}
+
+fn merge_entries(staging_root: &Path, destination: &Path) -> Result<(), ExtractionError> {
+    for entry in WalkDir::new(staging_root).follow_links(false) {
+        let entry = entry.map_err(|error| io_error(staging_root, error.into()))?;
+        let relative = entry.path().strip_prefix(staging_root).map_err(|error| {
+            io_error(
+                staging_root,
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, error),
+            )
+        })?;
+        let destination_path = destination.join(relative);
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&destination_path)
+                .map_err(|error| io_error(&destination_path, error))?;
+            continue;
+        }
+        match fs::symlink_metadata(&destination_path) {
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io_error(&destination_path, error)),
+        }
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
+        }
+        fs::rename(entry.path(), &destination_path)
+            .map_err(|error| io_error(&destination_path, error))?;
+    }
+    Ok(())
+}
+
+fn check_parent_directories(destination: &Path, relative: &Path) -> Result<(), ExtractionError> {
+    let mut current = destination.to_path_buf();
+    for component in relative
+        .components()
+        .take(relative.components().count().saturating_sub(1))
+    {
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_dir() => continue,
+            Ok(_) => {
+                return Err(ExtractionError::DestinationExists(
+                    current.display().to_string(),
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => return Err(io_error(&current, source)),
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -273,14 +423,19 @@ fn validate_request(request: &ExtractionPlan) -> Result<(), ExtractionError> {
     Ok(())
 }
 
-fn ensure_destination_available(destination: &Path) -> Result<(), ExtractionError> {
-    match fs::symlink_metadata(destination) {
-        Ok(_) => Err(ExtractionError::DestinationExists(
+fn validate_destination(destination: &Path, mode: PublishMode) -> Result<(), ExtractionError> {
+    match (mode, fs::symlink_metadata(destination)) {
+        (PublishMode::Merge, Ok(metadata)) if metadata.file_type().is_dir() => Ok(()),
+        (_, Ok(_)) => Err(ExtractionError::DestinationExists(
             destination.display().to_string(),
         )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(io_error(destination, error)),
+        (_, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        (_, Err(error)) => Err(io_error(destination, error)),
     }
+}
+
+fn ensure_destination_available(destination: &Path) -> Result<(), ExtractionError> {
+    validate_destination(destination, PublishMode::New)
 }
 
 fn supported_entry_type<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> bool {

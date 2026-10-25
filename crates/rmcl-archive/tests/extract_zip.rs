@@ -222,6 +222,96 @@ fn rejects_non_regular_special_files() {
 }
 
 #[test]
+fn merges_archives_and_preserves_existing_files() {
+    let first = archive(&[file("native/a.so", b"one"), file("shared.txt", b"first")]);
+    let second = archive(&[file("native/b.so", b"two"), file("shared.txt", b"second")]);
+    let temporary = TempDir::new().unwrap();
+    let destination = temporary.path().join("natives");
+    let extractor = ArchiveExtractor::default();
+
+    extractor
+        .extract_zip(
+            &request(&first, destination.clone()),
+            CancellationToken::new(),
+            None,
+        )
+        .unwrap();
+    let report = extractor
+        .merge_zip(
+            &request(&second, destination.clone()),
+            CancellationToken::new(),
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(fs::read(destination.join("native/a.so")).unwrap(), b"one");
+    assert_eq!(fs::read(destination.join("native/b.so")).unwrap(), b"two");
+    assert_eq!(fs::read(destination.join("shared.txt")).unwrap(), b"first");
+    assert_eq!(report.skipped, 1);
+    assert_eq!(report.files, 2);
+}
+
+#[test]
+fn merge_rejects_file_directory_conflicts_without_replacing() {
+    let first = archive(&[file("a", b"one")]);
+    let second = archive(&[file("new", b"new"), file("a/b", b"two")]);
+    let temporary = TempDir::new().unwrap();
+    let destination = temporary.path().join("output");
+    let extractor = ArchiveExtractor::default();
+
+    extractor
+        .extract_zip(
+            &request(&first, destination.clone()),
+            CancellationToken::new(),
+            None,
+        )
+        .unwrap();
+    let result = extractor.merge_zip(
+        &request(&second, destination.clone()),
+        CancellationToken::new(),
+        None,
+    );
+
+    assert!(matches!(result, Err(ExtractionError::DestinationExists(_))));
+    assert_eq!(fs::read(destination.join("a")).unwrap(), b"one");
+    assert!(!destination.join("new").exists());
+}
+
+#[test]
+fn merge_publishes_a_missing_destination() {
+    let archive = archive(&[file("native/a.so", b"one")]);
+    let temporary = TempDir::new().unwrap();
+    let destination = temporary.path().join("natives");
+
+    ArchiveExtractor::default()
+        .merge_zip(
+            &request(&archive, destination.clone()),
+            CancellationToken::new(),
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(fs::read(destination.join("native/a.so")).unwrap(), b"one");
+}
+
+#[test]
+fn merge_rejects_a_non_directory_destination() {
+    let archive = archive(&[file("a", b"new")]);
+    let temporary = TempDir::new().unwrap();
+    let destination = temporary.path().join("output");
+    fs::write(&destination, b"existing").unwrap();
+
+    let result = ArchiveExtractor::default().merge_zip(
+        &request(&archive, destination.clone()),
+        CancellationToken::new(),
+        None,
+    );
+
+    assert!(matches!(result, Err(ExtractionError::DestinationExists(_))));
+    assert_eq!(fs::read(destination).unwrap(), b"existing");
+}
+
+#[test]
 fn enforces_entry_count_limit() {
     let archive = archive(&[file("a", b"a"), file("b", b"b")]);
     let temporary = TempDir::new().unwrap();

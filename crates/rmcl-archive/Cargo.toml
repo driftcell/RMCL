@@ -11,4 +11,5 @@ rmcl-domain.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
+walkdir.workspace = true
 zip.workspace = true

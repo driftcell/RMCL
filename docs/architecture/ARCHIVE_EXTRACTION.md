@@ -6,21 +6,24 @@
 
 ## API 与执行方式
 
-`rmcl-archive::ArchiveExtractor::extract_zip` 执行 `rmcl-domain::ExtractionPlan`，支持 ZIP/JAR 的 stored 与 deflate 内容。
+`rmcl-archive::ArchiveExtractor::extract_zip` 和 `merge_zip` 执行 `rmcl-domain::ExtractionPlan`，支持 ZIP/JAR 的 stored 与 deflate 内容。前者只发布新目录，后者允许合并到同一 natives 目录。
 
-该 API 是同步阻塞操作，调用方需要将其放入 `spawn_blocking` 或专用工作线程。`CancellationToken` 在条目之间和每个读取块时检查，进度回调在每个条目完成后触发。
+这些 API 是同步阻塞操作，调用方需要将其放入 `spawn_blocking` 或专用工作线程。`CancellationToken` 在条目之间和每个读取块时检查，进度回调在每个条目完成后触发。
 
 `ExtractionPlan` 已从 `rmcl-install` 上移到 `rmcl-domain`，安装计划仍 re-export 同一类型，因此下载、安装与解压不形成反向依赖。
 
 ## 发布与目录策略
 
-- 首版只发布一个新目录，目标已存在时返回 `DestinationExists`，不做合并或覆盖。
-- 在目标父目录创建 `.rmcl-extract-*` staging，所有条目成功后才重命名到目标。
-- 发布前再次检查目标是否出现，避免并发任务把两个结果混入同一目录。
-- 失败、取消或 CRC 不符时删除 staging，不发布部分目录。
+- `extract_zip` 只发布新目录，目标已存在时返回 `DestinationExists`，不做合并或覆盖。
+- `merge_zip` 接受不存在的新目录或已存在的真实目录；文件、符号链接等非目录目标仍返回 `DestinationExists`。
+- 两种模式都在目标父目录创建 `.rmcl-extract-*` staging，条目完整校验后才进入发布阶段。
+- `extract_zip` 发布前再次检查目标是否出现，避免并发任务把两个结果混入同一目录。
+- `merge_zip` 保留已存在的普通文件，不覆盖其内容；文件/目录、目录/文件及符号链接类型冲突在移动任何条目前报错。
+- merge 先预检整个 staging，再逐条目创建目录或移动新文件。发布阶段的 I/O 错误可能留下部分合并，不提供事务回滚；同一目标的调用方需要自行串行化。
+- 解压失败、取消或 CRC 不符时删除 staging，不发布其中的条目。
 - 文件会 flush，但不承诺文件内容或目录项在系统崩溃时立即持久化。
 
-已有目录的复用、清理、备份和合并属于实例或修复策略，不在通用 archive crate 中隐式执行。
+已有 natives 的清理、备份、损坏文件替换和版本升级策略属于实例或修复层，不由 `merge_zip` 隐式决定。
 
 ## 条目与路径安全
 
@@ -55,11 +58,11 @@
 
 Unix 上保留普通文件的 rwx 权限位，不保留 setuid、setgid 或其他特殊位；其他平台不应用 Unix 权限。
 
-`ExtractionReport` 返回目标、普通文件数、目录数、展开字节数和排除条目数。`ExtractionProgress` 返回当前条目、已完成/总条目数和已展开字节数。
+`ExtractionReport` 返回目标、普通文件数、目录数、展开字节数和跳过条目数。跳过数包括 exclude 项和 merge 时保留的已有普通文件；展开字节数统计 staging 实际读取量，不等于 merge 新增的字节数。`ExtractionProgress` 返回当前条目、已完成/总条目数和已展开字节数。
 
 ## 当前不包含
 
 - TAR、tar.gz 或其他归档格式
 - 加密 ZIP、链接解压和嵌套归档
-- 已有目录合并、覆盖或回滚策略
-- natives 的复用、清理和启动参数生成
+- 已有文件覆盖、损坏修复和 merge 事务回滚
+- natives 的清理、版本升级策略和启动参数生成

@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用。其他边界按实现进度加入，本文件其余部分描述目标结构。
+RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 
@@ -19,11 +19,11 @@ RMCL/
 │   ├── rmcl-domain/          # 基础领域类型、ID、平台与错误模型
 │   ├── rmcl-platform/        # 平台路径、系统集成与安全存储
 │   ├── rmcl-net/             # HTTP、候选源、缓存、下载与校验
-│   ├── rmcl-minecraft/       # 清单、继承、规则、资源和启动计划
+│   ├── rmcl-minecraft/       # 清单、继承、规则与资源元数据
 │   ├── rmcl-java/            # Java 检测、选择、下载与管理
 │   ├── rmcl-auth/            # 离线、Microsoft、authlib-injector
 │   ├── rmcl-install/         # Vanilla 与 ModLoader 安装编排
-│   ├── rmcl-launch/          # 进程、日志、退出与崩溃处理
+│   ├── rmcl-launch/          # 启动计划、进程、日志、退出与崩溃处理
 │   ├── rmcl-instance/        # 实例、版本隔离与实例配置
 │   ├── rmcl-content/         # Mod、资源包与整合包生态
 │   ├── rmcl-store/           # 配置持久化、迁移与原子写入
