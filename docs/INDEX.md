@@ -17,6 +17,7 @@
 - [目标工作区](architecture/WORKSPACE.md)：多 crate 边界和依赖方向。
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
 - [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
+- [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。
 
 ## 兼容性
 

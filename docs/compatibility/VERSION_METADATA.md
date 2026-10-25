@@ -58,7 +58,7 @@ RMCL 追求功能兼容，不复制所有容错异常：
 
 - `inheritsFrom` 递归解析、循环检测和 patch 合并。
 - natives 的实际解压；classifier 选择、`${arch}` 替换与提取计划已在 [Vanilla 安装计划](../architecture/INSTALL_PLAN.md) 实现。
-- 真实文件下载、校验、缓存和修复。
+- 内容寻址缓存与修复执行；通用下载和 SHA-1/size 校验已在 [下载执行器](../architecture/DOWNLOAD_EXECUTOR.md) 实现。
 - legacy 参数切分、占位符替换和最终 `LaunchPlan`。
 
 因此，当前 crate 是元数据与规则核心，不是完整的 Vanilla 安装器或启动器。

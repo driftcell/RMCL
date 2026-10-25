@@ -11,7 +11,7 @@
 - `plan_vanilla`：client JAR、普通 libraries、native libraries 和 asset index。
 - `plan_asset_objects`：下载并解析 asset index 后，根据 `AssetCatalog` 生成 content-addressed objects 计划。
 
-两阶段分离允许执行器先取得 asset index，再规划其中的对象。当前不会读写文件、访问网络、修改版本 JSON 或执行解压。
+两阶段分离允许执行器先取得 asset index，再规划其中的对象。计划本身不会读写文件、访问网络、修改版本 JSON 或执行解压；实际下载由 [下载执行器](DOWNLOAD_EXECUTOR.md) 提供。
 
 `InstallPlan` 包含：
 
@@ -55,7 +55,7 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 
 当前尚未实现：
 
-- 真实下载、缓存、重试、取消和原子落盘。
+- 内容寻址缓存、镜像策略与 HTTP Range 断点续传；通用下载、重试、取消和原子发布已在 [下载执行器](DOWNLOAD_EXECUTOR.md) 实现。
 - 实际 ZIP/JAR 解压及 ZIP slip、symlink 防护。
 - `inheritsFrom`、patches 和 `jar != id` 的 client 重定向。
 - 无 `assetIndex` 的旧版本内置回退表。
