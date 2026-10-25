@@ -28,17 +28,30 @@
 
 暂不支持 `inheritsFrom`、`virtual: true` 或 `map_to_resources: true`，这些情况返回结构化错误，不按不完整 Vanilla 继续安装。
 
+## 实例解析与隔离
+
+`VanillaInstaller` 在解析版本 JSON 后确定实例布局：
+
+- 版本 JSON 原本不存在且来源不是 `Existing`：写入 `rmcl.instance.toml`，默认 `isolation = "isolated"`，并创建标准内容目录。
+- manifest 已存在：按其中的 `isolation` 决定游戏目录，不覆盖已有名称或加载器字段。
+- 版本 JSON 已存在但没有 manifest：保持 legacy 共享模式；重装不会静默把用户已有的全局内容移出视野。
+- `Existing` 修复：只读取 manifest，不创建或改写。
+
+`InstallOutcome` 同时返回 `MinecraftLayout` 和解析后的 `InstanceLayout`。后者提供游戏目录、`mods/`、`resourcepacks/`、`shaderpacks/`、`saves/` 和 manifest 路径。启动使用实例布局；共享 libraries 和 assets 仍由仓库布局提供。
+
+旧实例迁移由 `migrate_instance_to_isolated` 提供：复制全局内容中实例尚不存在的文件，不覆盖、不跟随符号链接，最后写入 `isolation = "isolated"` 的 manifest；失败时实例保持共享。详见 [实例与版本隔离](INSTANCES.md)。
+
 ## 执行顺序与副作用
 
-1. 解析、读取或保存版本 JSON。
+1. 解析、读取或保存版本 JSON；新安装同时建立实例 manifest。
 2. 生成并下载 base 计划：client、普通 libraries、native libraries 和 asset index。
 3. 读取 asset index，生成并下载 asset objects 计划。
 4. 在一个 `spawn_blocking` 中按顺序调用 `merge_zip`，合并全部 native JAR。
-5. 返回 `InstallOutcome`。
+5. 返回带实例布局的 `InstallOutcome`。
 
 base 失败时不会下载 assets 或提取 natives；assets 失败时不会提取 natives。已经原子发布的文件不会因后续失败或取消而自动撤回。native merge 保留已有文件，不是损坏修复或过期文件清理。
 
-`InstallOutcome` 保留绝对 `MinecraftLayout`、目标平台、`GameVersion`、base/asset 计划和 native 报告，供后续启动复用。`DownloadSummary` 区分下载与跳过的文件数和字节数，只统计 base 与 asset objects，不包含版本 manifest 或版本 JSON。
+`InstallOutcome` 保留绝对 `MinecraftLayout`、解析后的 `InstanceLayout`、目标平台、`GameVersion`、base/asset 计划和 native 报告，供后续启动复用。`DownloadSummary` 区分下载与跳过的文件数和字节数，只统计 base 与 asset objects，不包含版本 manifest 或版本 JSON。
 
 ## 进度、取消与错误
 
@@ -99,7 +112,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 ## 当前不包含
 
 - Microsoft 登录、专用 Quick Play 配置和账号令牌存储
-- 实例隔离、实例级配置持久化和实例生命周期
+- 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
 - 版本继承、特殊资产名称重建、ModLoader 和镜像策略
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach

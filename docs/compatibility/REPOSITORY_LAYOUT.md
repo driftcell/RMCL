@@ -16,8 +16,12 @@
 | asset index | `assets/indexes/<assetIndex.id>.json` |
 | asset objects | `assets/objects/<sha1 前两位>/<完整 sha1>` |
 | natives | `versions/<id>/natives-<os>-<arch>` |
+| RMCL 实例 manifest | `versions/<id>/rmcl.instance.toml` |
+| 隔离实例内容 | `versions/<id>/mods/`、`resourcepacks/`、`shaderpacks/`、`saves/`、`options.txt` |
 
-版本 JSON 的获取与原始字节保存不属于当前 `InstallPlan`；路径API 已经独立提供。
+版本 JSON 的获取与原始字节保存不属于当前 `InstallPlan`；路径 API 已经独立提供。
+
+实例 ID 与版本目录 ID 当前相同。没有 `rmcl.instance.toml` 的版本是 legacy 共享实例，游戏目录仍是 `.minecraft` 根；有 manifest 且 `isolation = "isolated"` 时，游戏目录是该版本目录。`libraries/`、`assets/` 和版本 JSON/client JAR 不随隔离复制。详见 [实例与版本隔离](../architecture/INSTANCES.md)。
 
 ## Natives 目录
 
@@ -31,7 +35,7 @@ OS 名称使用 `windows`、`linux`、`macos`。架构使用 RMCL 归一化名�
 
 ## 版本与 client JAR
 
-版本 ID 必须是非空白、安全的单路径组件。当前 Vanilla planner 只接受 `jar` 缺失或 `jar == id`；`jar != id` 返回 `UnsupportedClientJarRedirect`，避免安装写入路径与后续启动读取路径不一致。
+版本 ID 必须是非空白、安全的单路径组件。当前 Vanilla planner 只接受 `jar` 缺失或 `jar == id`；`jar != id` 返回 `UnsupportedClientJarRedirect`，避免安装写入路径与后续启动读取路径不一致。启动层已经按版本 JSON 的 `jar` 选择 client JAR，但加载器安装和继承合并尚未实现。
 
 继承场景中的 client 重定向需要未来单独定义，不能通过静默覆盖另一个版本的 JAR 实现。
 

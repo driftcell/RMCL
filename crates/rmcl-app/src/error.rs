@@ -75,6 +75,8 @@ pub enum AppError {
     #[error(transparent)]
     Layout(#[from] rmcl_instance::LayoutError),
     #[error(transparent)]
+    Instance(#[from] rmcl_instance::InstanceError),
+    #[error(transparent)]
     Checksum(#[from] rmcl_domain::ParseSha1Error),
     #[error(transparent)]
     DownloadConfiguration(#[from] rmcl_net::DownloadError),

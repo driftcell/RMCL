@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use rmcl_domain::{Platform, Sha1Hash};
 
-use crate::{LayoutError, RepositoryPath, VersionId, path::validate_segment};
+use crate::{
+    InstanceLayout, IsolationMode, LayoutError, RepositoryPath, VersionId, path::validate_segment,
+};
 
 /// Paths for the standard shared `.minecraft` repository layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +27,11 @@ impl MinecraftLayout {
 
     pub fn version_dir(&self, id: &VersionId) -> PathBuf {
         self.versions_dir().join(id.as_str())
+    }
+
+    /// Builds the path and game-directory semantics for one instance.
+    pub fn instance(&self, id: VersionId, isolation: IsolationMode) -> InstanceLayout {
+        InstanceLayout::new(self.clone(), id, isolation)
     }
 
     pub fn version_json_path(&self, id: &VersionId) -> PathBuf {

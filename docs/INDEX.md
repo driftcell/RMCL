@@ -17,6 +17,7 @@
 - [目标工作区](architecture/WORKSPACE.md)：多 crate 边界和依赖方向。
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
+- [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
 - [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
 - [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。
 - [ZIP 安全解压](architecture/ARCHIVE_EXTRACTION.md)：staging、条目校验、路径安全与取消。
@@ -54,3 +55,4 @@
 - [当前未决问题](../notes/bootstrap/open_questions.md)
 - [界面重做与配置记录](../notes/development/ui_redesign.md)
 - [Microsoft 登录与正版皮肤实现记录](../notes/development/microsoft_login.md)
+- [实例隔离方案取舍](../notes/development/instance_isolation.md)

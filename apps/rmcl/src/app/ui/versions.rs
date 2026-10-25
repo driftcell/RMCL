@@ -22,6 +22,11 @@ impl LauncherApp {
     pub fn render_versions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let versions = self.filtered_installed_versions(cx);
         let can_start = self.log_state.can_start();
+        let shared_count = self
+            .installed_versions
+            .iter()
+            .filter(|version| !version.is_isolated() && version.manifest_error.is_none())
+            .count();
         let mut rows = Vec::new();
         for version in &versions {
             rows.push(
@@ -43,8 +48,8 @@ impl LauncherApp {
                         Button::new("versions-refresh")
                             .ghost()
                             .icon(IconName::RefreshCw)
-                            .tooltip("重新扫描已安装版本")
-                            .accessibility_label("重新扫描已安装版本")
+                            .tooltip("重新扫描已安装实例")
+                            .accessibility_label("重新扫描已安装实例")
                             .on_click(
                                 cx.listener(|this, _, window, cx| {
                                     this.refresh_versions(window, cx)
@@ -55,7 +60,7 @@ impl LauncherApp {
                         Button::new("versions-install")
                             .primary()
                             .icon(IconName::Plus)
-                            .label("安装新版本")
+                            .label("安装新实例")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Downloads, window, cx)
                             })),
@@ -93,6 +98,45 @@ impl LauncherApp {
                                     ),
                             ),
                     )
+                    .when(shared_count > 0, |this| {
+                        this.child(
+                            h_flex()
+                                .w_full()
+                                .gap_3()
+                                .rounded(cx.theme().radius)
+                                .border_1()
+                                .border_color(cx.theme().primary.opacity(0.25))
+                                .bg(cx.theme().primary.opacity(0.06))
+                                .p_3()
+                                .child(
+                                    Icon::new(IconName::Info)
+                                        .small()
+                                        .text_color(cx.theme().primary),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .gap_0p5()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_medium()
+                                                .child(format!(
+                                                    "{shared_count} 个实例仍在共享游戏目录"
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(
+                                                    "点击行内的隔离按钮迁移。全局 mods、资源包和光影会复制到实例，原内容保留。",
+                                                ),
+                                        ),
+                                ),
+                        )
+                    })
                     .when_some(self.versions_error.clone(), |this, error| {
                         this.child(
                             div()
@@ -111,12 +155,12 @@ impl LauncherApp {
                             .child(empty_state(
                                 IconName::Boxes,
                                 if self.installed_versions.is_empty() {
-                                    "还没有安装版本"
+                                    "还没有安装实例"
                                 } else {
-                                    "没有匹配的版本"
+                                    "没有匹配的实例"
                                 },
                                 if self.installed_versions.is_empty() {
-                                    "从 Mojang 官方源安装第一个 Vanilla 版本。"
+                                    "从 Mojang 官方源安装第一个 Vanilla 实例。"
                                 } else {
                                     "试试更换搜索词或筛选条件。"
                                 },
@@ -124,7 +168,7 @@ impl LauncherApp {
                                     .primary()
                                     .icon(IconName::Download)
                                     .label(if self.installed_versions.is_empty() {
-                                        "安装第一个版本"
+                                        "安装第一个实例"
                                     } else {
                                         "浏览全部版本"
                                     })
@@ -137,8 +181,8 @@ impl LauncherApp {
                     } else {
                         card(cx)
                             .child(section_title(
-                                "已安装版本",
-                                &format!("共 {} 个版本", versions.len()),
+                                "已安装实例",
+                                &format!("共 {} 个实例", versions.len()),
                                 cx,
                             ))
                             .children(rows)
@@ -154,10 +198,25 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = version.id.as_str().to_owned();
-        let path = version.version_dir.display().to_string();
+        let display_name = version.display_name().to_owned();
+        let path = version.game_dir.display().to_string();
+        let meta = if version.minecraft_version != id {
+            format!(
+                "Minecraft {} · {}",
+                version.minecraft_version,
+                short_date(version.release_time.as_deref())
+            )
+        } else {
+            short_date(version.release_time.as_deref())
+        };
+        let loader = version.loader.clone();
+        let manifest_error = version.manifest_error.clone();
+        let manifest_invalid = manifest_error.is_some();
+        let isolated = version.is_isolated();
         let play_id = id.clone();
         let repair_id = id.clone();
         let folder_id = id.clone();
+        let isolate_id = id.clone();
         let delete_id = id.clone();
         h_flex()
             .w_full()
@@ -182,9 +241,31 @@ impl LauncherApp {
                                     .text_base()
                                     .font_semibold()
                                     .truncate()
-                                    .child(id.clone()),
+                                    .child(display_name),
                             )
+                            .when(version.display_name() != version.id.as_str(), |this| {
+                                this.child(Tag::new().outline().child(id.clone()).small())
+                            })
                             .child(type_tag(version.version_type.as_deref()))
+                            .when_some(loader, |this, loader| {
+                                this.child(
+                                    Tag::info()
+                                        .child(format!(
+                                            "{} {}",
+                                            loader.kind.label(),
+                                            loader.version
+                                        ))
+                                        .small(),
+                                )
+                            })
+                            .child(if isolated {
+                                Tag::success().child("隔离").small()
+                            } else {
+                                Tag::new().outline().child("共享").small()
+                            })
+                            .when(manifest_error.is_some(), |this| {
+                                this.child(Tag::danger().child("配置异常").small())
+                            })
                             .when(!version.client_jar_present, |this| {
                                 this.child(Tag::warning().child("文件不完整").small())
                             }),
@@ -193,7 +274,7 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(short_date(version.release_time.as_deref())),
+                            .child(meta),
                     )
                     .child(
                         div()
@@ -201,7 +282,7 @@ impl LauncherApp {
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_color(cx.theme().muted_foreground.opacity(0.75))
                             .truncate()
-                            .child(path),
+                            .child(format!("游戏目录 · {path}")),
                     ),
             )
             .child(
@@ -230,15 +311,29 @@ impl LauncherApp {
                                 this.start_repair(repair_id.clone(), window, cx)
                             })),
                     )
+                    .when(!isolated, |this| {
+                        this.child(
+                            Button::new(format!("versions-isolate-{isolate_id}"))
+                                .ghost()
+                                .small()
+                                .icon(IconName::FolderLock)
+                                .tooltip("启用版本隔离")
+                                .accessibility_label("启用版本隔离")
+                                .disabled(!can_start || manifest_invalid)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.confirm_enable_isolation(isolate_id.clone(), window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         Button::new(format!("versions-folder-{folder_id}"))
                             .ghost()
                             .small()
                             .icon(IconName::FolderOpen)
-                            .tooltip("打开版本目录")
-                            .accessibility_label("打开版本目录")
+                            .tooltip("打开游戏目录")
+                            .accessibility_label("打开游戏目录")
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_version_folder(folder_id.as_str(), window, cx)
+                                this.open_instance_folder(folder_id.as_str(), window, cx)
                             })),
                     )
                     .child(
@@ -246,8 +341,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::Trash)
-                            .tooltip("删除版本")
-                            .accessibility_label("删除版本")
+                            .tooltip("删除实例")
+                            .accessibility_label("删除实例")
                             .disabled(!can_start)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_delete_version(delete_id.clone(), window, cx)

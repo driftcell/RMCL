@@ -245,6 +245,27 @@ async fn installed_launch_skips_the_install_pipeline() {
 }
 
 #[tokio::test]
+async fn isolated_instance_launches_in_its_own_game_directory() {
+    let fixture = fixture(ScriptMode::Exit);
+    std::fs::write(
+        fixture.root.join("versions/test/rmcl.instance.toml"),
+        "schema_version = 1\nname = \"Isolated\"\nminecraft_version = \"test\"\nisolation = \"isolated\"\n",
+    )
+    .unwrap();
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    assert!(outcome.install.instance.isolation() == rmcl_app::IsolationMode::Isolated);
+    assert!(fixture.root.join("versions/test/raw-args.txt").is_file());
+    assert!(!fixture.root.join("raw-args.txt").exists());
+}
+
+#[tokio::test]
 async fn installed_launch_reports_missing_base_files() {
     let fixture = fixture(ScriptMode::Exit);
     std::fs::remove_file(fixture.root.join("versions/test/test.jar")).unwrap();

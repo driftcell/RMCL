@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use rmcl_archive::ExtractionReport;
 use rmcl_domain::Platform;
 use rmcl_install::InstallPlan;
-use rmcl_instance::MinecraftLayout;
+use rmcl_instance::{InstanceLayout, MinecraftLayout};
 use rmcl_minecraft::GameVersion;
 use rmcl_net::{DownloadReport, DownloadStatus, ProgressStage};
 use tokio::sync::mpsc;
@@ -121,6 +121,8 @@ impl DownloadSummary {
 #[derive(Debug, Clone)]
 pub struct InstallOutcome {
     pub layout: MinecraftLayout,
+    /// Instance paths and game-directory semantics resolved at install time.
+    pub instance: InstanceLayout,
     pub platform: Platform,
     pub version: GameVersion,
     pub version_json_path: PathBuf,

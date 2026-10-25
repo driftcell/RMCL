@@ -8,8 +8,8 @@ use std::{
 
 use axum::{Router, routing::get};
 use rmcl_app::{
-    AppError, DownloadStage, InstallEvent, InstallPhase, VanillaInstallRequest, VanillaInstaller,
-    VanillaSources, VersionSource,
+    AppError, DownloadStage, InstallEvent, InstallPhase, IsolationMode, VanillaInstallRequest,
+    VanillaInstaller, VanillaSources, VersionSource,
 };
 use rmcl_domain::{OperatingSystem, Platform};
 use rmcl_net::DownloadConfig;
@@ -279,6 +279,16 @@ async fn installs_remote_vanilla_and_reuses_verified_files() {
         .unwrap();
 
     assert_eq!(outcome.version.id, "test");
+    assert_eq!(outcome.instance.isolation(), IsolationMode::Isolated);
+    assert_eq!(outcome.instance.game_dir(), root.join("versions/test"));
+    assert!(
+        outcome
+            .instance
+            .load_manifest()
+            .unwrap()
+            .is_some_and(|manifest| manifest.isolation == IsolationMode::Isolated)
+    );
+    assert!(outcome.instance.mods_dir().is_dir());
     assert_eq!(outcome.base_plan.files.len(), 5);
     assert_eq!(outcome.asset_plan.files.len(), 2);
     assert_eq!(outcome.downloads.downloaded_files, 7);

@@ -5,7 +5,7 @@ use std::{
 
 use rmcl_domain::Platform;
 use rmcl_install::{InstallPlan, PlannedFileKind};
-use rmcl_instance::{MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLayout, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::JavaRuntime;
 use rmcl_minecraft::{FeatureMap, GameVersion};
 
@@ -17,6 +17,8 @@ pub struct LaunchOptions {
     pub account: LaunchAccount,
     pub platform: Platform,
     pub game_directory: PathBuf,
+    /// Shared Maven library root, independent of the instance game directory.
+    pub library_directory: PathBuf,
     pub assets_root: PathBuf,
     pub natives_directory: PathBuf,
     pub client_jar: PathBuf,
@@ -32,6 +34,8 @@ pub struct LaunchOptions {
 }
 
 impl LaunchOptions {
+    /// Builds options for a legacy shared-directory launch where the version ID
+    /// is also the instance directory name.
     pub fn from_layout(
         layout: &MinecraftLayout,
         java: JavaRuntime,
@@ -39,8 +43,23 @@ impl LaunchOptions {
         account: LaunchAccount,
         platform: &Platform,
     ) -> Result<Self, LaunchError> {
-        let layout = MinecraftLayout::new(absolute_path(layout.root())?);
         let id = VersionId::new(version.id.clone())?;
+        let instance = layout.instance(id, IsolationMode::Shared);
+        Self::from_instance(&instance, java, version, account, platform)
+    }
+
+    /// Builds options for an explicit instance. The game directory follows the
+    /// instance isolation mode, while libraries, assets and the client JAR stay
+    /// in the shared repository.
+    pub fn from_instance(
+        instance: &InstanceLayout,
+        java: JavaRuntime,
+        version: &GameVersion,
+        account: LaunchAccount,
+        platform: &Platform,
+    ) -> Result<Self, LaunchError> {
+        let repository = MinecraftLayout::new(absolute_path(instance.repository().root())?);
+        let instance = repository.instance(instance.id().clone(), instance.isolation());
         let jar_id = VersionId::new(version.jar.as_deref().unwrap_or(&version.id))?;
         let mut features = FeatureMap::new();
         features.insert("has_custom_resolution".to_owned(), false);
@@ -49,10 +68,11 @@ impl LaunchOptions {
             java,
             account,
             platform: platform.clone(),
-            game_directory: layout.root().to_path_buf(),
-            assets_root: layout.assets_dir(),
-            natives_directory: layout.natives_dir(&id, platform),
-            client_jar: layout.client_jar_path(&jar_id),
+            game_directory: instance.game_dir(),
+            library_directory: instance.repository().libraries_dir(),
+            assets_root: instance.repository().assets_dir(),
+            natives_directory: instance.natives_dir(platform),
+            client_jar: instance.client_jar_path_for(Some(&jar_id)),
             libraries: Vec::new(),
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
@@ -66,14 +86,14 @@ impl LaunchOptions {
     }
 
     pub fn from_install_plan(
-        layout: &MinecraftLayout,
+        instance: &InstanceLayout,
         java: JavaRuntime,
         version: &GameVersion,
         account: LaunchAccount,
         platform: &Platform,
         plan: &InstallPlan,
     ) -> Result<Self, LaunchError> {
-        let mut options = Self::from_layout(layout, java, version, account, platform)?;
+        let mut options = Self::from_instance(instance, java, version, account, platform)?;
         options.libraries = plan
             .files
             .iter()

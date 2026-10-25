@@ -1,17 +1,26 @@
 use std::path::{Path, PathBuf};
 
-use rmcl_instance::{MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLoader, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::GameVersion;
 
 use crate::AppError;
 
-/// One valid version directory discovered in a standard Minecraft repository.
+/// One valid version directory and its RMCL instance metadata.
+///
+/// Legacy versions have no manifest and keep using the shared game directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledVersion {
     pub id: VersionId,
+    pub name: String,
+    pub minecraft_version: String,
     pub version_type: Option<String>,
     pub release_time: Option<String>,
     pub version_dir: PathBuf,
+    pub game_dir: PathBuf,
+    pub isolation: IsolationMode,
+    pub loader: Option<InstanceLoader>,
+    pub manifest_present: bool,
+    pub manifest_error: Option<String>,
     pub client_jar_present: bool,
 }
 
@@ -19,13 +28,32 @@ impl InstalledVersion {
     pub fn is_release(&self) -> bool {
         self.version_type.as_deref() == Some("release")
     }
+
+    pub fn is_isolated(&self) -> bool {
+        self.isolation == IsolationMode::Isolated
+    }
+
+    pub fn is_legacy(&self) -> bool {
+        !self.manifest_present
+    }
+
+    pub fn display_name(&self) -> &str {
+        let name = self.name.trim();
+        if name.is_empty() {
+            self.id.as_str()
+        } else {
+            name
+        }
+    }
 }
 
 /// Enumerates valid `versions/<id>/<id>.json` entries, newest release first.
 ///
 /// A missing repository or version directory is an empty installation, not an
 /// error. Entries with unsafe names, unreadable JSON, or a mismatched ID are
-/// skipped because they cannot be launched as standalone Vanilla versions.
+/// skipped because they cannot be launched. A malformed RMCL manifest is
+/// surfaced on the entry as `manifest_error` while the version remains usable
+/// in shared mode, so one bad instance cannot hide the whole list.
 pub fn discover_installed_versions(
     root: impl AsRef<Path>,
 ) -> Result<Vec<InstalledVersion>, AppError> {
@@ -73,12 +101,43 @@ pub fn discover_installed_versions(
         if version.id != id.as_str() {
             continue;
         }
+        let probe = layout.instance(id.clone(), IsolationMode::Shared);
+        let (manifest, manifest_present, manifest_error) = match probe.load_manifest() {
+            Ok(Some(manifest)) => (Some(manifest), true, None),
+            Ok(None) => (None, false, None),
+            Err(error) => (None, true, Some(error.to_string())),
+        };
+        let isolation = manifest
+            .as_ref()
+            .map_or(IsolationMode::Shared, |manifest| manifest.isolation);
+        let instance = layout.instance(id.clone(), isolation);
+        let name = manifest.as_ref().map_or_else(
+            || id.as_str().to_owned(),
+            |manifest| manifest.display_name(&id).to_owned(),
+        );
+        let minecraft_version = manifest.as_ref().map_or_else(
+            || id.as_str().to_owned(),
+            |manifest| manifest.resolved_minecraft_version(&id).to_owned(),
+        );
+        let loader = manifest.and_then(|manifest| manifest.loader);
+        let jar_id = version
+            .jar
+            .as_deref()
+            .and_then(|jar| VersionId::new(jar).ok())
+            .unwrap_or_else(|| id.clone());
         versions.push(InstalledVersion {
-            version_dir: layout.version_dir(&id),
-            client_jar_present: layout.client_jar_path(&id).is_file(),
             id,
+            name,
+            minecraft_version,
             version_type: version.version_type,
             release_time: version.release_time,
+            version_dir: instance.root(),
+            game_dir: instance.game_dir(),
+            isolation,
+            loader,
+            manifest_present,
+            manifest_error,
+            client_jar_present: layout.client_jar_path(&jar_id).is_file(),
         });
     }
 
@@ -207,8 +266,81 @@ mod tests {
         assert_eq!(versions[0].id.as_str(), "1.21.1");
         assert!(versions[0].is_release());
         assert!(versions[0].client_jar_present);
+        assert!(versions[0].is_legacy());
+        assert!(!versions[0].is_isolated());
+        assert_eq!(versions[0].name, "1.21.1");
+        assert_eq!(versions[0].game_dir, temporary.path());
         assert_eq!(versions[1].id.as_str(), "24w14a");
         assert!(!versions[1].client_jar_present);
+    }
+
+    #[test]
+    fn loads_manifest_name_loader_and_isolated_game_dir() {
+        let temporary = TempDir::new().unwrap();
+        write_version(
+            temporary.path(),
+            "fabric-1.21.1",
+            "release",
+            "2024-08-08T08:00:00+00:00",
+            true,
+        );
+        let layout = MinecraftLayout::new(temporary.path());
+        let instance = layout.instance(
+            VersionId::new("fabric-1.21.1").unwrap(),
+            IsolationMode::Isolated,
+        );
+        let mut manifest = rmcl_instance::InstanceManifest::new(
+            &VersionId::new("fabric-1.21.1").unwrap(),
+            IsolationMode::Isolated,
+        );
+        manifest.name = "Fabric 生存".to_owned();
+        manifest.minecraft_version = "1.21.1".to_owned();
+        manifest.loader = Some(rmcl_instance::InstanceLoader {
+            kind: rmcl_instance::LoaderKind::Fabric,
+            version: "0.16.10".to_owned(),
+        });
+        instance.write_manifest(&manifest).unwrap();
+
+        let versions = discover_installed_versions(temporary.path()).unwrap();
+
+        assert_eq!(versions.len(), 1);
+        let version = &versions[0];
+        assert_eq!(version.display_name(), "Fabric 生存");
+        assert_eq!(version.minecraft_version, "1.21.1");
+        assert!(version.is_isolated());
+        assert!(!version.is_legacy());
+        assert_eq!(
+            version.game_dir,
+            temporary.path().join("versions/fabric-1.21.1")
+        );
+        assert_eq!(
+            version.loader.as_ref().map(|loader| loader.kind.as_str()),
+            Some("fabric")
+        );
+    }
+
+    #[test]
+    fn malformed_manifest_does_not_hide_the_version() {
+        let temporary = TempDir::new().unwrap();
+        write_version(
+            temporary.path(),
+            "1.21.1",
+            "release",
+            "2024-08-08T08:00:00+00:00",
+            true,
+        );
+        std::fs::write(
+            temporary.path().join("versions/1.21.1/rmcl.instance.toml"),
+            "schema_version = 1\nisolation = \"broken\"\n",
+        )
+        .unwrap();
+
+        let versions = discover_installed_versions(temporary.path()).unwrap();
+
+        assert_eq!(versions.len(), 1);
+        assert!(versions[0].manifest_present);
+        assert!(versions[0].manifest_error.is_some());
+        assert!(!versions[0].is_isolated());
     }
 
     #[test]

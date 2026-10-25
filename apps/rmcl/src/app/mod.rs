@@ -24,7 +24,7 @@ use rmcl_app::{
     AppError, GameLaunchRequest, InstallPhase, InstalledVersion, MicrosoftAccountServiceError,
     ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
     TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, discover_installed_versions,
+    delete_installed_version, discover_installed_versions, migrate_instance_to_isolated,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -63,7 +63,7 @@ impl Page {
     pub fn title(self) -> &'static str {
         match self {
             Self::Home => "主页",
-            Self::Versions => "版本",
+            Self::Versions => "实例",
             Self::Downloads => "下载游戏",
             Self::Logs => "日志",
             Self::Settings => "设置",
@@ -72,8 +72,8 @@ impl Page {
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            Self::Home => "选择一个版本，立即开始游戏。",
-            Self::Versions => "管理已安装的 Minecraft 版本。",
+            Self::Home => "选择一个实例，立即开始游戏。",
+            Self::Versions => "管理已安装的游戏实例与版本。",
             Self::Downloads => "从 Mojang 官方源安装新的 Vanilla 版本。",
             Self::Logs => "查看安装、启动和游戏运行日志。",
             Self::Settings => "配置游戏目录、外观与 Java。",
@@ -2303,6 +2303,14 @@ impl LauncherApp {
                                         .text_color(cx.theme().muted_foreground)
                                         .child(target.clone()),
                                 ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(
+                                    "新实例默认启用版本隔离，mods、资源包、光影和存档互不影响。",
+                                ),
                         ),
                 )
                 .footer(
@@ -2428,12 +2436,22 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let isolated = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .is_some_and(InstalledVersion::is_isolated);
+        let description = if isolated {
+            "将删除整个实例目录，包括 mods、资源包、光影和存档；共享 libraries 和 assets 不受影响。"
+        } else {
+            "将删除整个版本目录；共享 libraries 和 assets 不受影响。"
+        };
         let view = cx.entity().downgrade();
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("删除版本 {version_id}？"))
-                .description("将删除整个版本目录；共享 libraries 和 assets 不受影响。")
+                .title(format!("删除实例 {version_id}？"))
+                .description(description)
                 .ok_text("删除")
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok({
@@ -2495,7 +2513,7 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn open_version_folder(
+    fn open_instance_folder(
         &mut self,
         version_id: &str,
         window: &mut Window,
@@ -2508,16 +2526,21 @@ impl LauncherApp {
         else {
             return;
         };
-        if let Err(error) = open_path(&version.version_dir) {
+        let directory = version.game_dir.clone();
+        let _ = std::fs::create_dir_all(&directory);
+        if let Err(error) = open_path(&directory) {
             window.push_notification(
-                Notification::error(format!("无法打开版本目录: {error}")).title("打开失败"),
+                Notification::error(format!("无法打开实例目录: {error}")).title("打开失败"),
                 cx,
             );
         }
     }
 
     fn open_game_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let root = self.config.minecraft_root.clone();
+        let root = self.selected_version().map_or_else(
+            || self.config.minecraft_root.clone(),
+            |version| version.game_dir.clone(),
+        );
         let _ = std::fs::create_dir_all(&root);
         if let Err(error) = open_path(&root) {
             window.push_notification(
@@ -2525,6 +2548,101 @@ impl LauncherApp {
                 cx,
             );
         }
+    }
+
+    fn confirm_enable_isolation(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+        else {
+            return;
+        };
+        let name = version.display_name().to_owned();
+        let view = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            alert
+                .confirm()
+                .title(format!("为 {name} 启用版本隔离？"))
+                .description(
+                    "游戏将使用实例目录作为工作目录。全局 mods、资源包和光影会复制到该实例，不覆盖已有文件，原全局内容保留。",
+                )
+                .ok_text("启用隔离")
+                .on_ok({
+                    let version_id = version_id.clone();
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let Some(view) = view.upgrade() else {
+                            return true;
+                        };
+                        view.update(cx, |this, cx| {
+                            this.enable_isolation(version_id.clone(), window, cx)
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
+    fn enable_isolation(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.log_state.can_start() {
+            window.push_notification(
+                Notification::warning("请先等待当前任务结束。").title("无法启用隔离"),
+                cx,
+            );
+            return;
+        }
+        let display = version_id.clone();
+        let root = self.config.minecraft_root.clone();
+        let services = self.services.clone();
+        self.log_state.begin_command();
+        self._command_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move { migrate_instance_to_isolated(root, &version_id, true).await })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.log_state.finish_command();
+                match result {
+                    Ok(Ok(())) => {
+                        view.reload_versions(window, cx);
+                        view.save_config();
+                        window.push_notification(
+                            Notification::success(format!(
+                                "已为 {display} 启用版本隔离，全局内容已复制到实例。"
+                            ))
+                            .title("版本隔离已启用"),
+                            cx,
+                        );
+                    }
+                    Ok(Err(error)) => {
+                        window.push_notification(
+                            Notification::error(error.to_string()).title("启用隔离失败"),
+                            cx,
+                        );
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("启用隔离失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
     }
 
     fn refresh_versions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2542,7 +2660,10 @@ impl LauncherApp {
             .filter(|version| {
                 self.versions_filter
                     .matches(version.version_type.as_deref())
-                    && (query.is_empty() || version.id.as_str().to_lowercase().contains(&query))
+                    && (query.is_empty()
+                        || version.id.as_str().to_lowercase().contains(&query)
+                        || version.name.to_lowercase().contains(&query)
+                        || version.minecraft_version.to_lowercase().contains(&query))
             })
             .cloned()
             .collect()

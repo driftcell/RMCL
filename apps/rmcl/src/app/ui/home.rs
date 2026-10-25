@@ -21,15 +21,20 @@ impl LauncherApp {
     pub fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.selected_version();
         let version_label = selected
-            .map(|version| version.id.as_str().to_owned())
-            .unwrap_or_else(|| "准备安装你的第一个版本".to_owned());
+            .map(|version| version.display_name().to_owned())
+            .unwrap_or_else(|| "准备安装你的第一个实例".to_owned());
         let version_meta = selected
             .map(|version| {
-                format!(
+                let base = format!(
                     "{} · {}",
                     version_type_label(version.version_type.as_deref()),
                     short_date(version.release_time.as_deref())
-                )
+                );
+                if version.display_name() != version.id.as_str() {
+                    format!("{} · Minecraft {}", base, version.minecraft_version)
+                } else {
+                    base
+                }
             })
             .unwrap_or_else(|| "从下载页选择任意 Vanilla 版本开始。".to_owned());
         let has_account = self.selected_account().is_some();
@@ -125,12 +130,19 @@ impl LauncherApp {
                                             .child(
                                                 Tag::new()
                                                     .child(if selected.is_some() {
-                                                        "当前版本"
+                                                        "当前实例"
                                                     } else {
                                                         "尚未安装"
                                                     })
                                                     .small(),
                                             )
+                                            .when_some(selected, |this, version| {
+                                                this.child(if version.is_isolated() {
+                                                    Tag::success().child("隔离").small()
+                                                } else {
+                                                    Tag::new().outline().child("共享").small()
+                                                })
+                                            })
                                             .when(has_account, |this| {
                                                 this.child(
                                                     Tag::new()
@@ -179,12 +191,17 @@ impl LauncherApp {
                                                     .text_color(
                                                         cx.theme().muted_foreground.opacity(0.75),
                                                     )
-                                                    .child(
-                                                        self.config
-                                                            .minecraft_root
-                                                            .display()
-                                                            .to_string(),
-                                                    ),
+                                                    .child(selected.map_or_else(
+                                                        || {
+                                                            self.config
+                                                                .minecraft_root
+                                                                .display()
+                                                                .to_string()
+                                                        },
+                                                        |version| {
+                                                            version.game_dir.display().to_string()
+                                                        },
+                                                    )),
                                             ),
                                     )
                                     .when(!has_account, |this| {
@@ -221,12 +238,12 @@ impl LauncherApp {
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("版本"),
+                                            .child("实例"),
                                     )
                                     .child(
                                         Select::new(&self.version_select)
-                                            .placeholder("选择版本")
-                                            .accessibility_label("选择版本")
+                                            .placeholder("选择实例")
+                                            .accessibility_label("选择实例")
                                             .menu_width(px(280.))
                                             .menu_max_h(px(260.))
                                             .cleanable(false)
@@ -298,7 +315,7 @@ impl LauncherApp {
                                         .primary()
                                         .large()
                                         .icon(IconName::Download)
-                                        .label("安装第一个版本")
+                                        .label("安装第一个实例")
                                         .w_full()
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.navigate(Page::Downloads, window, cx)
@@ -318,7 +335,7 @@ impl LauncherApp {
             );
         }
         card(cx)
-            .child(section_title("最近版本", "", cx))
+            .child(section_title("最近实例", "", cx))
             .when(self.installed_versions.is_empty(), |this| {
                 this.child(
                     v_flex()
@@ -335,7 +352,7 @@ impl LauncherApp {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("还没有已安装版本"),
+                                .child("还没有已安装实例"),
                         ),
                 )
             })
@@ -349,7 +366,16 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = version.id.as_str().to_owned();
-        let meta = short_date(version.release_time.as_deref());
+        let name = version.display_name().to_owned();
+        let meta = if version.display_name() != version.id.as_str() {
+            format!(
+                "{} · Minecraft {}",
+                short_date(version.release_time.as_deref()),
+                version.minecraft_version
+            )
+        } else {
+            short_date(version.release_time.as_deref())
+        };
         h_flex()
             .w_full()
             .gap_3()
@@ -363,7 +389,7 @@ impl LauncherApp {
                     .flex_1()
                     .min_w_0()
                     .gap_0p5()
-                    .child(div().text_sm().font_medium().truncate().child(id.clone()))
+                    .child(div().text_sm().font_medium().truncate().child(name))
                     .child(
                         div()
                             .text_xs()
@@ -372,6 +398,11 @@ impl LauncherApp {
                     ),
             )
             .child(type_tag(version.version_type.as_deref()))
+            .child(if version.is_isolated() {
+                Tag::success().child("隔离").small()
+            } else {
+                Tag::new().outline().child("共享").small()
+            })
             .child(
                 Button::new(format!("home-row-play-{id}"))
                     .outline()
@@ -392,7 +423,7 @@ impl LauncherApp {
                 Button::new("quick-install")
                     .outline()
                     .icon(IconName::Download)
-                    .label("安装新版本")
+                    .label("安装新实例")
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.navigate(Page::Downloads, window, cx)

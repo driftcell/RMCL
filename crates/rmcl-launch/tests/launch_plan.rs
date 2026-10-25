@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use rmcl_auth::OfflineAccount;
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
 use rmcl_install::{InstallPlan, PlannedFile, PlannedFileKind};
-use rmcl_instance::MinecraftLayout;
+use rmcl_instance::{IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::{JavaRuntime, JavaRuntimeSource};
 use rmcl_launch::{LaunchAccount, LaunchError, LaunchOptions, LaunchPlan};
 use rmcl_minecraft::GameVersion;
@@ -150,6 +150,73 @@ fn builds_modern_launch_plan_with_safe_diagnostics() {
     let diagnostic = plan.diagnostic_command_line().join(" ");
     assert!(!diagnostic.contains("secret-token"));
     assert!(diagnostic.contains("<redacted>"));
+}
+
+#[test]
+fn isolated_instance_uses_its_own_game_dir_and_shared_libraries() {
+    let version = GameVersion::from_json(
+        r#"{
+            "id": "fabric-1.21.1",
+            "mainClass": "example.Main",
+            "javaVersion": {"component": "java-runtime-delta", "majorVersion": 21},
+            "arguments": {
+                "jvm": ["-Dlib=${library_directory}", "-cp", "${classpath}"],
+                "game": ["--gameDir", "${game_directory}"]
+            }
+        }"#,
+    )
+    .unwrap();
+    let repository = MinecraftLayout::new(".minecraft");
+    let instance = repository.instance(
+        VersionId::new("fabric-1.21.1").unwrap(),
+        IsolationMode::Isolated,
+    );
+
+    let options =
+        LaunchOptions::from_instance(&instance, java(), &version, account(), &platform()).unwrap();
+    let plan = LaunchPlan::from_options(&version, options).unwrap();
+
+    assert_eq!(
+        plan.working_directory,
+        absolute(".minecraft/versions/fabric-1.21.1")
+    );
+    assert_eq!(
+        plan.natives_directory,
+        absolute(".minecraft/versions/fabric-1.21.1/natives-linux-x86_64")
+    );
+    assert!(plan.jvm_arguments.iter().any(|argument| {
+        argument == &format!("-Dlib={}", absolute(".minecraft/libraries").display())
+    }));
+    let game_dir = absolute(".minecraft/versions/fabric-1.21.1")
+        .display()
+        .to_string();
+    assert_eq!(plan.game_arguments, ["--gameDir", game_dir.as_str()]);
+}
+
+#[test]
+fn instance_client_jar_follows_the_version_jar_redirect() {
+    let version = GameVersion::from_json(
+        r#"{
+            "id": "fabric-1.21.1",
+            "jar": "1.21.1",
+            "mainClass": "example.Main",
+            "javaVersion": {"component": "java-runtime-delta", "majorVersion": 21}
+        }"#,
+    )
+    .unwrap();
+    let repository = MinecraftLayout::new(".minecraft");
+    let instance = repository.instance(
+        VersionId::new("fabric-1.21.1").unwrap(),
+        IsolationMode::Isolated,
+    );
+
+    let options =
+        LaunchOptions::from_instance(&instance, java(), &version, account(), &platform()).unwrap();
+
+    assert_eq!(
+        options.client_jar,
+        absolute(".minecraft/versions/1.21.1/1.21.1.jar")
+    );
 }
 
 #[test]
@@ -344,8 +411,10 @@ fn install_plan_only_contributes_classpath_libraries() {
         ],
         extractions: Vec::new(),
     };
+    let instance = MinecraftLayout::new(".minecraft")
+        .instance(VersionId::new("test").unwrap(), IsolationMode::Shared);
     let options = LaunchOptions::from_install_plan(
-        &MinecraftLayout::new(".minecraft"),
+        &instance,
         java(),
         &version,
         account(),

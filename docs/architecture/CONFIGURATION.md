@@ -10,6 +10,8 @@
 
 配置和游戏状态分离：删除或重建 `config.toml` 只会丢失启动器偏好、账户元数据和选中项，不会删除 Minecraft 文件或系统钥匙串中的令牌。
 
+实例级元数据不写入 `config.toml`。每个实例的显示名称、基础版本、隔离模式和可选加载器保存在 `versions/<id>/rmcl.instance.toml`，语义见 [实例与版本隔离](INSTANCES.md)。当前 `selected_version` 仍保存实例目录 ID，而不是显示名称。
+
 ## 路径
 
 | 平台 | 默认路径 |
@@ -49,7 +51,7 @@ accent = "emerald"
 
 - `minecraft_root`：标准 `.minecraft` 仓库根。修改后重新扫描版本，不移动文件。
 - `java_store`：RMCL 管理的 Java runtime store。启动时读取，修改后需重启。
-- `selected_version`：下一次启动使用的已安装版本 ID；不存在时界面回退到第一个有效版本。
+- `selected_version`：下一次启动使用的已安装实例目录 ID；不存在时界面回退到第一个有效实例。
 - `selected_account`：当前选中的玩家名。
 - `selected_account_kind`：`offline` 或 `microsoft`。同名离线账户与正版账户通过该字段区分。
 - `accounts`：离线账户的玩家名和 UUID。UUID 使用离线身份规则生成并持久化；不保存访问令牌。

@@ -8,10 +8,11 @@
 
 `rmcl-launch` 提供 `LaunchOptions`、`LaunchPlan` 和 `GameProcess`。它消费版本元数据、仓库布局、已探测的 `JavaRuntime`、账号和可选 `InstallPlan`，不自行下载游戏文件或选择 Java。
 
-- `LaunchOptions::from_layout` 建立标准 `.minecraft` 路径。
-- `from_install_plan` 只把 `PlannedFileKind::Library` 加入 classpath；`NativeLibrary` 只用于提取，client JAR 和 asset 文件不进入 libraries。
+- `LaunchOptions::from_layout` 建立共享游戏目录的 legacy `.minecraft` 路径；`from_instance` 使用实例 manifest 解析出的隔离模式。
+- `from_install_plan` 接受 `InstanceLayout`，只把 `PlannedFileKind::Library` 加入 classpath；`NativeLibrary` 只用于提取，client JAR 和 asset 文件不进入 libraries。
 - client JAR 固定位于 classpath 最后。现代显式 native classifier 若已被安装计划归类为普通 `Library`，仍按元数据进入 classpath。
-- 生成启动计划时，游戏目录、assets、natives、client JAR 和 libraries 统一转为绝对路径，避免切换工作目录后重复解析相对仓库前缀。
+- 生成启动计划时，游戏目录、共享 libraries、assets、natives 和 client JAR 统一转为绝对路径，避免切换工作目录后重复解析相对仓库前缀。
+- `${game_directory}` 来自实例游戏目录；`${library_directory}` 和 `${libraries_directory}` 来自仓库的共享 `libraries/`，不能从游戏目录推导。
 - Java 的最低/最高 major、OS 和架构必须满足 `JavaRequirement`，否则在 spawn 前返回 `IncompatibleJava`。
 
 [应用层 Vanilla 安装与启动](APPLICATION.md) 已组合下载、native 解压、Java ensure 和游戏任务。单独构造 `LaunchPlan` 不证明这些文件已经存在。
@@ -71,4 +72,4 @@ Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app`
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
 - 2026-10-25 使用真实 Microsoft 账户和正版 access token 在 macOS ARM64 启动 Vanilla，用户确认游戏正常进入运行阶段；正版会话的刷新和启动链路已验证。
 
-当前不包含版本继承和 ModLoader 参数合并、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。
+当前不包含版本继承和 ModLoader 参数合并、实例级 Java/内存/窗口覆盖、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。

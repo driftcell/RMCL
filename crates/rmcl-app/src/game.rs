@@ -166,7 +166,7 @@ impl GameLauncher {
 
         emit(&events, GameLaunchEvent::Preparing).await;
         let mut options = LaunchOptions::from_install_plan(
-            &install.layout,
+            &install.instance,
             java.runtime.clone(),
             &install.version,
             account,

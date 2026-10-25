@@ -5,6 +5,7 @@ mod catalog;
 mod error;
 mod game;
 mod install;
+mod instances;
 mod java;
 mod model;
 mod skins;
@@ -21,12 +22,16 @@ pub use game::{
     GameLaunchEvent, GameLaunchEventSender, GameLaunchOutcome, GameLaunchRequest, GameLauncher,
 };
 pub use install::VanillaInstaller;
+pub use instances::migrate_instance_to_isolated;
 pub use java::{
     JavaEvent, JavaEventSender, JavaSelection, JavaSelectionOrigin, JavaService, JavaServiceConfig,
 };
 pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,
+};
+pub use rmcl_instance::{
+    InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind,
 };
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;

@@ -3,7 +3,7 @@ use std::{collections::HashSet, io::Write, path::Path};
 use rmcl_archive::{ArchiveExtractor, ExtractionError, ExtractionReport};
 use rmcl_domain::DownloadRequest;
 use rmcl_install::{InstallPlan, PlannedFileKind, plan_asset_objects_with_base, plan_vanilla};
-use rmcl_instance::{MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::{AssetCatalog, GameVersion, VersionManifest, VersionSummary};
 use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadReport, ProgressStage, progress_channel};
 use tokio_util::sync::CancellationToken;
@@ -53,6 +53,17 @@ impl VanillaInstaller {
         let layout = MinecraftLayout::new(root);
         let id = VersionId::new(request.version_id.clone())?;
         let version_json_path = layout.version_json_path(&id);
+        // A version JSON that already exists belongs to a user-visible instance.
+        // Only a genuinely new installation is promoted to isolated by default;
+        // reinstalling a legacy version must not silently move its game directory.
+        let had_version_json =
+            tokio::fs::try_exists(&version_json_path)
+                .await
+                .map_err(|source| AppError::Io {
+                    operation: "check installed version JSON",
+                    path: version_json_path.clone(),
+                    source,
+                })?;
         let version_json = self
             .resolve_version_json(&request, &version_json_path, &cancellation, &events)
             .await?;
@@ -64,6 +75,7 @@ impl VanillaInstaller {
                 actual: version.id.clone(),
             });
         }
+        let instance = resolve_instance_layout(&layout, &id, had_version_json, &request.source)?;
 
         emit_phase(&events, InstallPhase::PlanningBase).await;
         check_cancelled(&cancellation)?;
@@ -115,6 +127,7 @@ impl VanillaInstaller {
         emit_phase(&events, InstallPhase::Completed).await;
         Ok(InstallOutcome {
             layout,
+            instance,
             platform: request.platform,
             version,
             version_json_path,
@@ -158,6 +171,10 @@ impl VanillaInstaller {
                 actual: version.id.clone(),
             });
         }
+        let probe = layout.instance(id.clone(), IsolationMode::Shared);
+        let manifest = probe.load_manifest()?;
+        let isolation = manifest.map_or(IsolationMode::Shared, |manifest| manifest.isolation);
+        let instance = layout.instance(id.clone(), isolation);
 
         let base_plan = plan_vanilla(&layout, &version, &request.platform)?;
         let mut missing = Vec::new();
@@ -174,7 +191,7 @@ impl VanillaInstaller {
             }
         }
         if !base_plan.extractions.is_empty() {
-            let natives = layout.natives_dir(&id, &request.platform);
+            let natives = instance.natives_dir(&request.platform);
             if !natives.is_dir() {
                 missing.push(natives);
             }
@@ -200,6 +217,7 @@ impl VanillaInstaller {
         check_cancelled(&cancellation)?;
         Ok(InstallOutcome {
             layout,
+            instance,
             platform: request.platform.clone(),
             version,
             version_json_path,
@@ -339,6 +357,32 @@ impl VanillaInstaller {
         let (report, ()) = tokio::join!(download, collect);
         validate_download_report(report, phase, cancellation)
     }
+}
+
+fn resolve_instance_layout(
+    layout: &MinecraftLayout,
+    id: &VersionId,
+    had_version_json: bool,
+    source: &VersionSource,
+) -> Result<InstanceLayout, AppError> {
+    let probe = layout.instance(id.clone(), IsolationMode::Shared);
+    let manifest = probe.load_manifest()?;
+    let create_new =
+        manifest.is_none() && !matches!(source, VersionSource::Existing) && !had_version_json;
+    let isolation = if let Some(manifest) = &manifest {
+        manifest.isolation
+    } else if create_new {
+        let instance = layout.instance(id.clone(), IsolationMode::Isolated);
+        instance.write_manifest(&InstanceManifest::new(id, IsolationMode::Isolated))?;
+        IsolationMode::Isolated
+    } else {
+        IsolationMode::Shared
+    };
+    let instance = layout.instance(id.clone(), isolation);
+    if manifest.is_some() || create_new {
+        instance.ensure_content_dirs()?;
+    }
+    Ok(instance)
 }
 
 fn download_error(
@@ -526,6 +570,11 @@ fn emit_blocking(events: &Option<InstallEventSender>, event: InstallEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn id(value: &str) -> VersionId {
+        VersionId::new(value).unwrap()
+    }
 
     #[test]
     fn single_download_cancellation_is_not_reported_as_a_failure() {
@@ -536,5 +585,73 @@ mod tests {
         );
 
         assert!(matches!(error, AppError::Cancelled));
+    }
+
+    #[test]
+    fn a_new_install_creates_an_isolated_instance_manifest() {
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+
+        let instance =
+            resolve_instance_layout(&layout, &id("1.21.1"), false, &VersionSource::Manifest)
+                .unwrap();
+
+        assert_eq!(instance.isolation(), IsolationMode::Isolated);
+        assert!(
+            instance
+                .load_manifest()
+                .unwrap()
+                .is_some_and(|manifest| manifest.isolation == IsolationMode::Isolated)
+        );
+        assert!(instance.mods_dir().is_dir());
+        assert!(instance.resourcepacks_dir().is_dir());
+        assert!(instance.shaderpacks_dir().is_dir());
+    }
+
+    #[test]
+    fn reinstalling_a_legacy_version_keeps_the_shared_game_directory() {
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+
+        let instance =
+            resolve_instance_layout(&layout, &id("1.21.1"), true, &VersionSource::Manifest)
+                .unwrap();
+
+        assert_eq!(instance.isolation(), IsolationMode::Shared);
+        assert!(instance.load_manifest().unwrap().is_none());
+        assert_eq!(instance.game_dir(), temporary.path());
+    }
+
+    #[test]
+    fn repair_never_creates_a_manifest() {
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+
+        let instance =
+            resolve_instance_layout(&layout, &id("1.21.1"), false, &VersionSource::Existing)
+                .unwrap();
+
+        assert_eq!(instance.isolation(), IsolationMode::Shared);
+        assert!(instance.load_manifest().unwrap().is_none());
+    }
+
+    #[test]
+    fn an_existing_manifest_controls_isolation() {
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+        let isolated = layout.instance(id("1.21.1"), IsolationMode::Isolated);
+        let mut manifest = InstanceManifest::new(&id("1.21.1"), IsolationMode::Isolated);
+        manifest.name = "My Instance".to_owned();
+        isolated.write_manifest(&manifest).unwrap();
+
+        let instance =
+            resolve_instance_layout(&layout, &id("1.21.1"), true, &VersionSource::Manifest)
+                .unwrap();
+
+        assert_eq!(instance.isolation(), IsolationMode::Isolated);
+        assert_eq!(
+            instance.load_manifest().unwrap().unwrap().name,
+            "My Instance"
+        );
     }
 }

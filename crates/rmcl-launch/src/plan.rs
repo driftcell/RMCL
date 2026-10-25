@@ -160,6 +160,7 @@ impl LaunchPlan {
 
 fn make_paths_absolute(options: &mut LaunchOptions) -> Result<(), LaunchError> {
     options.game_directory = absolute_path(&options.game_directory)?;
+    options.library_directory = absolute_path(&options.library_directory)?;
     options.assets_root = absolute_path(&options.assets_root)?;
     options.natives_directory = absolute_path(&options.natives_directory)?;
     options.client_jar = absolute_path(&options.client_jar)?;
@@ -249,19 +250,11 @@ fn placeholders(
         ),
         (
             "library_directory".to_owned(),
-            options
-                .game_directory
-                .join("libraries")
-                .display()
-                .to_string(),
+            options.library_directory.display().to_string(),
         ),
         (
             "libraries_directory".to_owned(),
-            options
-                .game_directory
-                .join("libraries")
-                .display()
-                .to_string(),
+            options.library_directory.display().to_string(),
         ),
         (
             "primary_jar".to_owned(),
