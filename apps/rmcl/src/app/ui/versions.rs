@@ -15,9 +15,7 @@ use gpui_kit::{
 };
 use rmcl_app::InstalledVersion;
 
-use super::super::{
-    LauncherApp, Page, VersionFilter, short_date, version_tile, version_type_label,
-};
+use super::super::{LauncherApp, Page, VersionFilter, short_date, version_tile};
 use super::common::{card, empty_state, page_header, section_title, type_tag};
 
 impl LauncherApp {
@@ -194,11 +192,7 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!(
-                                "{} · {}",
-                                version_type_label(version.version_type.as_deref()),
-                                short_date(version.release_time.as_deref())
-                            )),
+                            .child(short_date(version.release_time.as_deref())),
                     )
                     .child(
                         div()

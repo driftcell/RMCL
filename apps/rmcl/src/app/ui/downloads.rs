@@ -17,9 +17,7 @@ use gpui_kit::{
 };
 use rmcl_app::VersionSummary;
 
-use super::super::{
-    LauncherApp, Page, VersionFilter, short_date, version_tile, version_type_label,
-};
+use super::super::{LauncherApp, Page, VersionFilter, short_date, version_tile};
 use super::common::{card, empty_state, page_header, type_tag};
 
 impl LauncherApp {
@@ -252,25 +250,15 @@ impl LauncherApp {
             .hover(|style| style.bg(cx.theme().list_hover))
             .child(version_tile(icon, cx.theme().primary))
             .child(
-                v_flex()
+                h_flex()
                     .flex_1()
                     .min_w_0()
-                    .gap_1()
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(div().text_sm().font_semibold().truncate().child(id.clone()))
-                            .child(type_tag(version.version_type.as_deref()))
-                            .when(latest, |this| {
-                                this.child(Tag::primary().child("最新正式版").small())
-                            }),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(version_type_label(version.version_type.as_deref())),
-                    ),
+                    .gap_2()
+                    .child(div().text_sm().font_semibold().truncate().child(id.clone()))
+                    .child(type_tag(version.version_type.as_deref()))
+                    .when(latest, |this| {
+                        this.child(Tag::primary().child("最新正式版").small())
+                    }),
             )
             .child(
                 div()

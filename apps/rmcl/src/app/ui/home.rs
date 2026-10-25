@@ -453,11 +453,7 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let id = version.id.as_str().to_owned();
-        let meta = format!(
-            "{} · {}",
-            version_type_label(version.version_type.as_deref()),
-            short_date(version.release_time.as_deref())
-        );
+        let meta = short_date(version.release_time.as_deref());
         h_flex()
             .w_full()
             .gap_3()
@@ -548,15 +544,11 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!(
-                                "{} 个已安装版本 · {}",
-                                self.installed_versions.len(),
-                                if self.config.auto_install_java {
-                                    "Java 自动获取已开启"
-                                } else {
-                                    "Java 自动获取已关闭"
-                                }
-                            )),
+                            .child(if self.config.auto_install_java {
+                                "Java 自动获取已开启"
+                            } else {
+                                "Java 自动获取已关闭"
+                            }),
                     ),
             )
     }
