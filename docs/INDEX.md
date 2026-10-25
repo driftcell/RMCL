@@ -20,7 +20,7 @@
 - [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。
 - [ZIP 安全解压](architecture/ARCHIVE_EXTRACTION.md)：staging、条目校验、路径安全与取消。
 - [Java 检测、探测与选择](architecture/JAVA_DISCOVERY.md)：真实 runtime 探测与兼容选择。
-- [Mojang runtime 元数据](architecture/MOJANG_RUNTIME.md)：平台键、组件回退与 entry 选择。
+- [Mojang runtime 元数据与安装](architecture/MOJANG_RUNTIME.md)：组件选择、raw 安装、链接、marker 与复用。
 
 ## 兼容性
 

@@ -54,6 +54,5 @@ Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实
 
 ## 当前不包含
 
-- Mojang runtime 产品清单与自动下载
-- LZMA、runtime link 和托管安装发布
+- LZMA 压缩形式的 runtime 文件；raw 安装见 [Mojang runtime 元数据与安装](MOJANG_RUNTIME.md)
 - 启动参数、游戏进程与日志

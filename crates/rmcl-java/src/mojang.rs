@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use rmcl_domain::{Architecture, OperatingSystem};
-use serde::Deserialize;
+use rmcl_instance::RepositoryPath;
+use serde::{Deserialize, Serialize};
 
 use crate::{JavaError, JavaRequirement, parse_major_version};
 
@@ -9,19 +10,19 @@ pub const MOJANG_RUNTIME_INDEX_URL: &str = "https://piston-meta.mojang.com/v1/pr
 
 pub type MojangRuntimeIndex = BTreeMap<String, BTreeMap<String, Vec<MojangRuntimeEntry>>>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangRuntimeEntry {
     pub version: MojangRuntimeVersion,
     pub manifest: MojangDownload,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangRuntimeVersion {
     pub name: String,
     pub released: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangDownload {
     pub url: String,
     #[serde(default)]
@@ -30,12 +31,12 @@ pub struct MojangDownload {
     pub size: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangRuntimeManifest {
     pub files: BTreeMap<String, MojangFile>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangFile {
     #[serde(rename = "type")]
     pub kind: MojangFileType,
@@ -47,7 +48,7 @@ pub struct MojangFile {
     pub target: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MojangFileType {
     File,
@@ -55,7 +56,7 @@ pub enum MojangFileType {
     Link,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MojangFileDownloads {
     #[serde(default)]
     pub raw: Option<MojangDownload>,
@@ -82,18 +83,24 @@ pub fn mojang_platform_key(
     }
 }
 
-pub fn select_runtime_entry(
+#[derive(Debug, Clone)]
+pub struct SelectedRuntime {
+    pub component: String,
+    pub entry: MojangRuntimeEntry,
+}
+
+pub fn select_runtime(
     index: &MojangRuntimeIndex,
     requirement: &JavaRequirement,
-) -> Result<MojangRuntimeEntry, JavaError> {
+) -> Result<SelectedRuntime, JavaError> {
     let major = requirement.major_version.ok_or(JavaError::MissingMajor)?;
     let platform = mojang_platform_key(requirement.operating_system, &requirement.architecture)?;
+    let mut components = runtime_components(requirement, major)?;
     let platform_components = index.get(platform).ok_or_else(|| JavaError::NoRuntimeFor {
         platform: platform.to_owned(),
         major,
         components: Vec::new(),
     })?;
-    let mut components = component_candidates(requirement, major)?;
     components.sort();
     components.dedup();
 
@@ -107,7 +114,11 @@ pub fn select_runtime_entry(
             .collect();
         candidates.sort_by(|left, right| right.version.released.cmp(&left.version.released));
         if let Some(entry) = candidates.first() {
-            return Ok((*entry).clone());
+            validate_component(component)?;
+            return Ok(SelectedRuntime {
+                component: component.clone(),
+                entry: (*entry).clone(),
+            });
         }
     }
 
@@ -118,12 +129,13 @@ pub fn select_runtime_entry(
     })
 }
 
-fn component_candidates(
+pub fn runtime_components(
     requirement: &JavaRequirement,
     major: u32,
 ) -> Result<Vec<String>, JavaError> {
     let mut components = Vec::new();
     if let Some(component) = &requirement.component {
+        validate_component(component)?;
         components.push(component.clone());
     }
     match canonical_component(major) {
@@ -138,7 +150,25 @@ fn component_candidates(
     Ok(components)
 }
 
-fn canonical_component(major: u32) -> Result<&'static str, JavaError> {
+pub fn select_runtime_entry(
+    index: &MojangRuntimeIndex,
+    requirement: &JavaRequirement,
+) -> Result<MojangRuntimeEntry, JavaError> {
+    Ok(select_runtime(index, requirement)?.entry)
+}
+
+fn validate_component(component: &str) -> Result<(), JavaError> {
+    let path = RepositoryPath::new(component)?;
+    if path.as_str().contains('/') {
+        return Err(JavaError::InvalidManifest {
+            path: component.to_owned(),
+            reason: "runtime component must be a single path component".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+pub fn canonical_component(major: u32) -> Result<&'static str, JavaError> {
     match major {
         8 => Ok("jre-legacy"),
         16 => Ok("java-runtime-alpha"),
@@ -243,6 +273,15 @@ mod tests {
         let selected = select_runtime_entry(&index, &requirement).unwrap();
 
         assert_eq!(selected.version.name, "17.0.15");
+    }
+
+    #[test]
+    fn rejects_unsafe_components() {
+        let mut requirement = requirement(OperatingSystem::Linux, Architecture::X86_64, 21);
+        requirement.component = Some("../escape".to_owned());
+        let index = MojangRuntimeIndex::new();
+        let error = select_runtime_entry(&index, &requirement).unwrap_err();
+        assert!(matches!(error, JavaError::Path(_)));
     }
 
     #[test]
