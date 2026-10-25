@@ -49,7 +49,7 @@ Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实
 - 同一 major 下优先 RMCL managed runtime，然后才是 JAVA_HOME、系统 PATH 和其他自定义来源。
 - 自动扫描禁用列表只影响自动发现；显式路径仍由独立 probe 验证。
 - 实例 manifest 的 `java` 字段提供显式覆盖。启动前用 `probe` 重新读取真实版本、系统和架构，并通过 `JavaRequirement::accepts` 校验；不满足时返回 `JavaOverrideIncompatible`，不会回退到自动选择。
-- 实例 Java 选择器通过 `JavaService::discover` 展示 managed、`JAVA_HOME` 和 PATH 候选；选择结果只写入当前实例 manifest。
+- 实例 Java 选择器通过 `JavaService::discover` 展示 managed、`JAVA_HOME` 和 PATH 候选；也可输入任意可执行文件，通过 `JavaService::probe` 以 `Custom` 来源探测后保存。选择结果只写入当前实例 manifest。
 
 没有可用候选时，`select_java` 返回 `None`，由上层进入自动下载或展示错误。
 

@@ -83,6 +83,21 @@ fn write_fake_java(path: &Path) {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn custom_java_path_is_probed_without_automatic_discovery() {
+    let temporary = TempDir::new().unwrap();
+    let path = temporary.path().join("custom/bin/java");
+    write_fake_java(&path);
+    let service = JavaService::new(config(temporary.path())).unwrap();
+
+    let runtime = service.probe(path.clone()).await.unwrap();
+
+    assert_eq!(runtime.executable, path);
+    assert_eq!(runtime.major_version, 21);
+    assert_eq!(runtime.source, rmcl_java::JavaRuntimeSource::Custom);
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn detected_compatible_java_does_not_install() {
     let temporary = TempDir::new().unwrap();
     let managed = temporary.path().join("managed");

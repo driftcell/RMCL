@@ -315,6 +315,8 @@ pub struct LauncherApp {
     java_dialog_error: Option<String>,
     java_dialog_runtimes: Vec<JavaRuntime>,
     java_dialog_target: Option<String>,
+    java_path_input: Entity<InputState>,
+    java_custom_probing: bool,
     _java_task: Option<Task<()>>,
     _create_task: Option<Task<()>>,
     _content_task: Option<Task<()>>,
@@ -486,6 +488,8 @@ impl LauncherApp {
         let create_id_input = cx.new(|cx| InputState::new(window, cx).placeholder("留空自动生成"));
         let instance_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
+        let java_path_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("例如 /Library/Java/.../bin/java"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -635,6 +639,8 @@ impl LauncherApp {
             java_dialog_error: None,
             java_dialog_runtimes: Vec::new(),
             java_dialog_target: None,
+            java_path_input,
+            java_custom_probing: false,
             _java_task: None,
             _create_task: None,
             _content_task: None,
@@ -3086,11 +3092,23 @@ impl LauncherApp {
         {
             return;
         }
+        let initial_path = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .and_then(|version| version.java.as_ref())
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        self.java_path_input.update(cx, |state, cx| {
+            state.set_value(initial_path, window, cx);
+        });
         self.java_dialog_target = Some(version_id);
         self.java_dialog_runtimes.clear();
         self.java_dialog_error = None;
+        self.java_custom_probing = false;
         self.spawn_java_discovery(window, cx);
 
+        let java_input = self.java_path_input.clone();
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             let Some(view) = view.upgrade() else {
@@ -3101,6 +3119,7 @@ impl LauncherApp {
             let error = this.java_dialog_error.clone();
             let runtimes = this.java_dialog_runtimes.clone();
             let target = this.java_dialog_target.clone().unwrap_or_default();
+            let custom_probing = this.java_custom_probing;
             let current = this
                 .installed_versions
                 .iter()
@@ -3238,6 +3257,9 @@ impl LauncherApp {
                 );
             }
 
+            let custom_view = view.downgrade();
+            let custom_target = target.clone();
+            let custom_input = java_input.clone();
             let body = v_flex()
                 .gap_3()
                 .child(
@@ -3262,7 +3284,58 @@ impl LauncherApp {
                 .when_some(error, |this, error: String| {
                     this.child(div().text_sm().text_color(cx.theme().danger).child(error))
                 })
-                .child(list);
+                .child(list)
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .pt_2()
+                        .border_t_1()
+                        .border_color(cx.theme().border)
+                        .child(div().text_sm().font_medium().child("自定义可执行文件"))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(Input::new(&java_input).w_full()),
+                                )
+                                .child(
+                                    Button::new("java-custom-use")
+                                        .outline()
+                                        .label(if custom_probing {
+                                            "检测中…"
+                                        } else {
+                                            "使用此路径"
+                                        })
+                                        .disabled(custom_probing || loading)
+                                        .on_click(move |_, window, cx| {
+                                            let path =
+                                                custom_input.read(cx).value().trim().to_owned();
+                                            if path.is_empty() {
+                                                return;
+                                            }
+                                            if let Some(view) = custom_view.upgrade() {
+                                                view.update(cx, |this, cx| {
+                                                    this.probe_and_apply_java(
+                                                        custom_target.clone(),
+                                                        PathBuf::from(path),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                });
+                                            }
+                                        }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("必须指向 java 或 java.exe；启动时会重新校验版本与平台。"),
+                        ),
+                );
 
             let retry_view = view.downgrade();
             dialog
@@ -3320,13 +3393,51 @@ impl LauncherApp {
         }));
     }
 
+    fn probe_and_apply_java(
+        &mut self,
+        version_id: String,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.java_custom_probing = true;
+        cx.notify();
+        let java = self.services.java.clone();
+        let view = cx.entity().downgrade();
+        self._java_task = Some(cx.spawn_in(window, async move |_, cx| {
+            let result = java.probe(path).await;
+            let _ = view.update_in(cx, |this, window, cx| {
+                this.java_custom_probing = false;
+                match result {
+                    Ok(runtime) => {
+                        if this.apply_instance_java(
+                            version_id,
+                            Some(runtime.executable),
+                            window,
+                            cx,
+                        ) {
+                            window.close_dialog(cx);
+                        }
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(error.to_string()).title("无法使用该 Java"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
     fn apply_instance_java(
         &mut self,
         version_id: String,
         java: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let Some(version) = self
             .installed_versions
             .iter()
@@ -3337,7 +3448,7 @@ impl LauncherApp {
                 Notification::error("实例不存在或已被删除。").title("无法保存 Java 设置"),
                 cx,
             );
-            return;
+            return false;
         };
         let layout = version.instance_layout(self.config.minecraft_root.clone());
         match set_instance_java(&layout, java.clone()) {
@@ -3347,12 +3458,14 @@ impl LauncherApp {
                 let label =
                     java.map_or_else(|| "自动选择".to_owned(), |path| path.display().to_string());
                 window.push_notification(Notification::info(label).title("实例 Java 已更新"), cx);
+                true
             }
             Err(error) => {
                 window.push_notification(
                     Notification::error(error.to_string()).title("无法保存 Java 设置"),
                     cx,
                 );
+                false
             }
         }
     }

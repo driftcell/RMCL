@@ -95,6 +95,15 @@ impl JavaService {
         self.detector.discover().await
     }
 
+    /// Probes a user-supplied executable without adding it to automatic
+    /// discovery. The result still has to satisfy the game's Java requirement
+    /// when the instance is launched.
+    pub async fn probe(&self, executable: PathBuf) -> Result<JavaRuntime, AppError> {
+        rmcl_java::probe(executable, rmcl_java::JavaRuntimeSource::Custom)
+            .await
+            .map_err(AppError::Java)
+    }
+
     pub async fn ensure(
         &self,
         requirement: &JavaRequirement,

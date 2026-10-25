@@ -419,7 +419,7 @@ impl LauncherApp {
                                 .ghost()
                                 .label("改回自动")
                                 .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.apply_instance_java(auto_target.clone(), None, window, cx)
+                                    this.apply_instance_java(auto_target.clone(), None, window, cx);
                                 })),
                         )
                     }),
