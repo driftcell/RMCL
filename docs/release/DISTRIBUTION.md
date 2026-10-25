@@ -65,7 +65,7 @@ RMCL 使用 GitHub Actions 构建并分发各平台原生二进制。首批目�
 | `macos-15-intel` | `RMCL-<version>-macos-x86_64.zip` |
 | `macos-15` | `RMCL-<version>-macos-aarch64.zip` |
 
-- Linux 包包含 `rmcl`、`rmcl.desktop` 和 `rmcl.png`；Windows 包包含 `rmcl.exe` 和 `rmcl.png`，exe 通过 `build.rs` 嵌入 `rmcl.ico`；macOS 包是带 `Info.plist` 和 `rmcl.icns` 的 `RMCL.app`。
+- Linux 包包含 `rmcl`、`rmcl.desktop` 和 `rmcl.png`；Windows 包包含 `rmcl.exe` 和 `rmcl.png`，exe 通过 `build.rs` 嵌入 `rmcl.ico`，release 构建使用 Windows GUI subsystem，不附带控制台窗口；macOS 包是带 `Info.plist` 和 `rmcl.icns` 的 `RMCL.app`。
 - 所有构建成功后，发布 job 下载四个 artifact，生成 `SHA256SUMS`，先创建草稿 Release，上传全部资产后再取消草稿。任一平台失败时不会发布半成品。
 - Release 资产保留 GitHub 自动生成的源码归档；构建 artifact 保留 7 天。
 - 工作流只使用内置 `GITHUB_TOKEN`，发布 job 才申请 `contents: write`；不需要额外 secrets。

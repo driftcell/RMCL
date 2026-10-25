@@ -5452,7 +5452,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui-kit",
  "image",
@@ -5475,7 +5475,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "hex",
@@ -5504,7 +5504,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-archive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crc32fast",
  "relative-path",
@@ -5518,7 +5518,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-auth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "md-5",
@@ -5534,7 +5534,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-domain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hex",
  "thiserror 2.0.21",
@@ -5543,7 +5543,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-install"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rmcl-domain",
  "rmcl-instance",
@@ -5555,7 +5555,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-instance"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "relative-path",
  "rmcl-domain",
@@ -5564,7 +5564,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-java"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "relative-path",
@@ -5586,7 +5586,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-launch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rmcl-auth",
  "rmcl-domain",
@@ -5604,7 +5604,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-minecraft"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "rmcl-domain",
@@ -5615,7 +5615,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-net"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "fastrand",
@@ -5632,7 +5632,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "thiserror 2.0.21",
@@ -5640,7 +5640,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "tempfile",
