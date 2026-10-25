@@ -100,4 +100,5 @@
 - `rmcl-content` 使用本地 axum mock 覆盖搜索 facets/index/分页、项目版本解析、单版本查询、primary file 选择、依赖解析、API 错误和请求取消。
 - `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。
 - `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的搜索、项目版本切换、安装进度和取消仍需在 macOS、Windows、Linux 逐平台验收。
-- 2026-10-25 使用真实 `https://api.modrinth.com/` 做了只读 smoke：带 `project_type:mod`、`versions:1.21.1`、`categories:fabric` facets 的搜索返回 Sodium；Sodium 项目在 `1.21.1` + `fabric` 下的版本列表包含 `primary` 文件、SHA-1/SHA-512 和 size，字段与客户端 DTO 一致。该 smoke 未下载文件，也未纳入自动测试。
+- 2026-10-25 使用真实 `https://api.modrinth.com/` 做了只读 smoke：带 `project_type:mod`、`versions:1.21.1`、`categories:fabric` facets 的搜索返回 Sodium；Sodium 项目在 `1.21.1` + `fabric` 下的版本列表包含 `primary` 文件、SHA-1/SHA-512 和 size，字段与客户端 DTO 一致。
+- 标记为 `#[ignore]` 的真实网络 smoke 安装 Iris 1.8.7（精确依赖 Sodium 版本），确认依赖图返回 Sodium + Iris、依赖先安装、两个文件 SHA-1 校验通过并写入实例 `mods/`。2026-10-25 本机通过。

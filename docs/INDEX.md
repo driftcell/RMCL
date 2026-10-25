@@ -19,7 +19,7 @@
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
 - [本地内容管理](architecture/LOCAL_CONTENT.md)：Mod、资源包和光影的扫描、导入、删除、冲突策略与 `options.txt` 语义。
-- [远程内容与 Modrinth](architecture/REMOTE_CONTENT.md)：搜索、版本列表、文件校验、内容安装任务与 UI 流程。
+- [远程内容与 Modrinth](architecture/REMOTE_CONTENT.md)：搜索、版本列表、文件校验、必需依赖解析、内容安装任务与 UI 流程。
 - [版本继承、加载器安装与实例创建](architecture/LOADERS.md)：继承合并、jar 重定向、加载器 profile、Forge/NeoForge installer processors、实例创建事务与 UI。
 - [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
 - [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。

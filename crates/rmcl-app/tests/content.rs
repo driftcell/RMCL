@@ -607,6 +607,66 @@ async fn cancelling_dependency_resolution_marks_the_task_cancelled() {
 }
 
 #[tokio::test]
+#[ignore = "downloads Iris and Sodium from the live Modrinth API"]
+async fn real_modrinth_required_dependency_chain_installs() {
+    let client = ModrinthClient::official().unwrap();
+    let version = client
+        .version("A99vfwJc", &CancellationToken::new())
+        .await
+        .unwrap();
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let request = ContentGraphInstallRequest {
+        instance: instance.clone(),
+        kind: ContentKind::Mod,
+        version,
+        display_name: "Iris 1.8.7".to_owned(),
+        conflict: ConflictPolicy::Rename,
+        game_version: "1.21.1".to_owned(),
+        loader: Some("fabric".to_owned()),
+    };
+
+    let requests = resolve_content_install_batch(&client, &request, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0]
+            .file
+            .filename
+            .to_ascii_lowercase()
+            .starts_with("sodium")
+    );
+    assert!(
+        requests[1]
+            .file
+            .filename
+            .to_ascii_lowercase()
+            .starts_with("iris")
+    );
+
+    let installer = ContentInstaller::official(DownloadConfig::default()).unwrap();
+    let outcome = installer
+        .install_batch(requests, CancellationToken::new(), None)
+        .await
+        .unwrap();
+    assert_eq!(outcome.items.len(), 2);
+    let mods = instance.mods_dir();
+    assert!(
+        std::fs::read_dir(&mods)
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().starts_with("sodium"))
+    );
+    assert!(
+        std::fs::read_dir(&mods)
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().starts_with("iris"))
+    );
+}
+
+#[tokio::test]
 async fn content_task_exposes_subject_and_completes() {
     let bytes = b"remote mod".to_vec();
     let (base, server) = mod_server(bytes.clone()).await;
