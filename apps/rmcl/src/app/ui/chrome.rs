@@ -5,7 +5,7 @@ use gpui_kit::{
         button::{Button, ButtonVariants},
         h_flex,
         progress::Progress as ProgressBar,
-        sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuItem},
+        sidebar::{Sidebar, SidebarGroup, SidebarMenu, SidebarMenuItem},
         spinner::Spinner,
         tag::Tag,
         v_flex,
@@ -133,7 +133,7 @@ impl LauncherApp {
                     .child(SidebarMenu::new().child(self.nav_item(Page::Settings, cx))),
             )
             .footer(
-                SidebarFooter::new().w_full().child(
+                div().w_full().child(
                     div()
                         .id("account-chip")
                         .w_full()
