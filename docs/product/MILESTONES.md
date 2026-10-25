@@ -35,7 +35,7 @@
 
 ### 当前进度（2026-10-25）
 
-已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/内容安装任务、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java 选择器和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。authlib-injector、legacy Forge、真实 Forge/NeoForge 游戏启动验收、Java runtime 列表管理界面、实例级内存/窗口/启动参数、Windows/Linux 真实运行验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、依赖自动安装/更新检查和整合包属于后续里程碑。
+已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/内容安装任务、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java 选择器和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge 已在 macOS ARM64 通过真实 installer 和启动到 ModLauncher 初始化的自动化 smoke。authlib-injector、legacy Forge、主菜单/世界加载验收、Java runtime 列表管理界面、实例级内存/窗口/启动参数、Windows/Linux 真实运行验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、依赖自动安装/更新检查和整合包属于后续里程碑。
 
 ## 后续顺序
 

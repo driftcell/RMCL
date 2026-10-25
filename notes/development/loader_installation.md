@@ -44,4 +44,4 @@ HMCL：
 - legacy Forge installer、OptiFine、LiteLoader、Cleanroom。
 - Fabric API / Quilt API 自动安装。
 - 依赖实例隐藏、实例重命名和复制。
-- 真实加载器游戏启动验收；当前用真实 Minecraft 1.21.1 和官方 installer 跑通 Forge 1.21.1-52.1.20、NeoForge 21.1.80 的完整 processor 链，但尚未启动游戏。
+- 真实加载器主菜单、世界加载和游戏内验收；当前用真实 Minecraft 1.21.1 和官方 installer 跑通 Forge 1.21.1-52.1.20、NeoForge 21.1.80 的完整 processor 链，并在 macOS ARM64 启动到 ModLauncher 初始化日志后主动终止。

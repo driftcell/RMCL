@@ -73,4 +73,4 @@ Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app`
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
 - 2026-10-25 使用真实 Microsoft 账户和正版 access token 在 macOS ARM64 启动 Vanilla，用户确认游戏正常进入运行阶段；正版会话的刷新和启动链路已验证。
 
-Forge/NeoForge installer processors 已由实例创建流程实现，合并后的加载器参数会进入启动 profile；但真实 Forge/NeoForge 游戏启动尚未验收。当前不包含 legacy Forge installer、实例级 Java/内存/窗口覆盖、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Fabric/Quilt/Forge/NeoForge 的真实游戏启动仍需逐平台验收，不能由 CI 编译和脚本进程测试替代。
+Forge/NeoForge installer processors 已由实例创建流程实现，合并后的加载器参数会进入启动 profile。2026-10-25 在 macOS ARM64 使用真实 Java 启动安装后的 Forge 1.21.1 和 NeoForge 21.1.80 实例，日志进入 ModLauncher 初始化并出现对应加载器标记后主动终止；这验证了安装结果、版本继承和启动参数，但主菜单、世界加载和游戏内行为仍需逐平台验收。当前不包含 legacy Forge installer、实例级内存/窗口覆盖、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Fabric/Quilt/Forge/NeoForge 的真实游戏启动仍不能由 CI 编译和脚本进程测试替代。

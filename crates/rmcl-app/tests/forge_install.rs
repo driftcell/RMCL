@@ -6,10 +6,15 @@ use std::{
 };
 
 use axum::{Router, routing::get};
-use rmcl_app::{ForgeInstallRequest, ForgeInstaller};
+use rmcl_app::{
+    ForgeInstallRequest, ForgeInstaller, GameLaunchEvent, GameLaunchRequest, GameLauncher,
+    JavaService, JavaServiceConfig, VanillaInstallRequest, VanillaInstaller, VersionSource,
+};
+use rmcl_auth::OfflineAccount;
 use rmcl_domain::{OperatingSystem, Platform, Sha1Hash};
 use rmcl_instance::VersionId;
 use rmcl_java::{JavaRuntime, JavaRuntimeSource};
+use rmcl_launch::LaunchAccount;
 use rmcl_minecraft::GameVersion;
 use rmcl_net::DownloadConfig;
 use serde_json::json;
@@ -327,6 +332,11 @@ async fn real_smoke_fixture() -> RealSmokeFixture {
         .bytes()
         .await
         .unwrap();
+    std::fs::write(
+        root.join("versions/1.21.1/1.21.1.json"),
+        version_json.to_string(),
+    )
+    .unwrap();
     std::fs::write(root.join("versions/1.21.1/1.21.1.jar"), &client_jar).unwrap();
     let base_version = GameVersion::from_json(&version_json.to_string()).unwrap();
 
@@ -410,6 +420,105 @@ async fn real_neoforge_installer_runs_processor_chain() {
         .join("libraries/net/neoforged/neoforge/21.1.80/neoforge-21.1.80-client.jar");
     assert!(generated.is_file());
     assert!(zip::ZipArchive::new(std::fs::File::open(generated).unwrap()).is_ok());
+}
+
+async fn real_loader_launch(installer_url: &str, instance_id: &str, expected: &str) {
+    let fixture = real_smoke_fixture().await;
+    let version_json = run_real_installer(&fixture, installer_url).await;
+    let mut profile: serde_json::Value = serde_json::from_str(&version_json).unwrap();
+    profile["id"] = serde_json::Value::String(instance_id.to_owned());
+    let instance_dir = fixture.root.join("versions").join(instance_id);
+    std::fs::create_dir_all(&instance_dir).unwrap();
+    std::fs::write(
+        instance_dir.join(format!("{instance_id}.json")),
+        serde_json::to_vec_pretty(&profile).unwrap(),
+    )
+    .unwrap();
+
+    let installer = VanillaInstaller::official(DownloadConfig::default()).unwrap();
+    let install_request = VanillaInstallRequest {
+        minecraft_root: fixture.root.clone(),
+        version_id: instance_id.to_owned(),
+        platform: fixture.platform.clone(),
+        source: VersionSource::Existing,
+    };
+    installer
+        .install(install_request.clone(), CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    let mut java_config = JavaServiceConfig::new(fixture.root.join("java-store"));
+    java_config.include_java_home = false;
+    java_config.include_path = false;
+    java_config.auto_install = false;
+    let java = JavaService::new(java_config).unwrap();
+    let launcher = GameLauncher::new(installer, java);
+    let cancellation = CancellationToken::new();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(512);
+    let request = GameLaunchRequest {
+        install: install_request,
+        account: LaunchAccount::from_offline(&OfflineAccount::new("LoaderSmoke").unwrap()),
+        java_executable: Some(fixture.java.executable.clone()),
+        additional_jvm_arguments: Vec::new(),
+        additional_game_arguments: Vec::new(),
+        resolution: None,
+        demo: false,
+    };
+    let timer = cancellation.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+        timer.cancel();
+    });
+    let run = launcher.run_installed(request, cancellation.clone(), Some(sender));
+    let watch = async {
+        let mut logs = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            if let GameLaunchEvent::Output(log) = event {
+                let lower = log.text.to_ascii_lowercase();
+                if lower.contains("modlauncher running") {
+                    cancellation.cancel();
+                }
+                logs.push(log.text);
+            }
+        }
+        logs
+    };
+    let (outcome, logs) = tokio::join!(run, watch);
+    let outcome = outcome.unwrap();
+    assert!(outcome.stop_requested);
+    let tail = logs
+        .iter()
+        .rev()
+        .take(60)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        logs.join("\n").to_ascii_lowercase().contains(expected),
+        "{expected} did not appear in logs; tail:\n{tail}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "downloads assets and launches a real Minecraft window"]
+async fn real_forge_instance_reaches_forge_logs() {
+    real_loader_launch(
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-installer.jar",
+        "forge-smoke",
+        "forge",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "downloads assets and launches a real Minecraft window"]
+async fn real_neoforge_instance_reaches_neoforge_logs() {
+    real_loader_launch(
+        "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.80/neoforge-21.1.80-installer.jar",
+        "neoforge-smoke",
+        "neoforge",
+    )
+    .await;
 }
 
 #[test]
