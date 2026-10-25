@@ -29,6 +29,7 @@ impl LauncherApp {
         let has_logs = !logs.is_empty();
         let has_task = self.log_state.active_id().is_some();
         let follow_view = cx.entity().downgrade();
+        let scroll_view = cx.entity().downgrade();
 
         v_flex()
             .flex_1()
@@ -188,6 +189,14 @@ impl LauncherApp {
                             .id("log-scroll")
                             .flex_1()
                             .min_h_0()
+                            .on_scroll_wheel(move |_, _, cx| {
+                                let _ = scroll_view.update(cx, |this, cx| {
+                                    if this.log_follow {
+                                        this.log_follow = false;
+                                        cx.notify();
+                                    }
+                                });
+                            })
                             .track_scroll(&self.log_scroll)
                             .overflow_y_scrollbar()
                             .p_3()

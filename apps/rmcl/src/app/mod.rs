@@ -417,9 +417,14 @@ impl LauncherApp {
                     }
                     Ok(TaskEvent::GameLog { task_id, line, log }) => {
                         let _ = this.update_in(cx, |view, _, cx| {
+                            let was_at_bottom = view.log_scroll.offset().y
+                                + view.log_scroll.max_offset().y
+                                <= px(1.);
                             if view.log_state.apply_log(task_id, line, log) {
-                                if view.log_follow {
+                                if view.log_follow && was_at_bottom {
                                     view.log_scroll.scroll_to_bottom();
+                                } else if view.log_follow {
+                                    view.log_follow = false;
                                 }
                                 cx.notify();
                             }
@@ -765,10 +770,6 @@ impl LauncherApp {
             resolution: None,
             demo: false,
         };
-        window.push_notification(
-            Notification::info(format!("正在启动 {version_id}。")).title("游戏启动"),
-            cx,
-        );
         self.spawn_command(Command::Launch(request), version_id, window, cx);
     }
 
@@ -940,22 +941,10 @@ impl LauncherApp {
             }
             TaskStatus::Exited => {
                 self.reload_versions(window, cx);
-                if !snapshot.stop_requested
-                    && !snapshot.exit.as_ref().is_some_and(|exit| exit.success)
-                {
+                let abnormal = !snapshot.stop_requested
+                    && !snapshot.exit.as_ref().is_some_and(|exit| exit.success);
+                if abnormal {
                     self.logs_attention = true;
-                }
-                if snapshot.stop_requested {
-                    window.push_notification(
-                        Notification::info("游戏已被停止。").title("游戏已退出"),
-                        cx,
-                    );
-                } else if snapshot.exit.as_ref().is_some_and(|exit| exit.success) {
-                    window.push_notification(
-                        Notification::success("游戏进程已正常退出。").title("游戏已退出"),
-                        cx,
-                    );
-                } else {
                     let detail = snapshot
                         .exit
                         .as_ref()
@@ -967,7 +956,7 @@ impl LauncherApp {
                         .unwrap_or_else(|| "未知退出状态".to_owned());
                     window.push_notification(
                         Notification::warning(format!("游戏异常退出（{detail}）。"))
-                            .title("游戏已退出"),
+                            .title("游戏异常退出"),
                         cx,
                     );
                 }
@@ -1078,7 +1067,7 @@ impl LauncherApp {
                             v_flex()
                                 .gap_1()
                                 .child(div().text_sm().font_medium().child("玩家名"))
-                                .child(div().px_1().child(Input::new(&input).w_full())),
+                                .child(div().p_1().child(Input::new(&input).w_full())),
                         ),
                 )
                 .footer(
