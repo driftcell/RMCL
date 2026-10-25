@@ -14,12 +14,12 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    AppError, ContentDownloadProgress, ContentInstallEvent, ContentInstallOutcome,
+    AppError, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
     ContentInstallPhase, ContentInstallRequest, ContentInstaller, CreateInstanceRequest,
     GameLaunchEvent, GameLaunchOutcome, GameLaunchRequest, GameLauncher, InstallDownloadProgress,
     InstallEvent, InstallOutcome, InstallPhase, InstanceCreateEvent, InstanceCreateOutcome,
-    InstanceCreatePhase, InstanceCreator, JavaEvent, VanillaInstallRequest, VanillaInstaller,
-    content::absolute_instance,
+    InstanceCreatePhase, InstanceCreator, JavaEvent, ModrinthClient, VanillaInstallRequest,
+    VanillaInstaller, content::absolute_instance, content::resolve_content_install_batch,
 };
 
 const GAME_LOG_CAPACITY: usize = 1024;
@@ -150,6 +150,7 @@ struct TaskInner {
     installer: VanillaInstaller,
     game: Option<GameLauncher>,
     content: Option<ContentInstaller>,
+    modrinth: Option<ModrinthClient>,
     instance_creator: Option<InstanceCreator>,
     next_id: AtomicU64,
     registry: Mutex<Registry>,
@@ -184,7 +185,7 @@ struct InstallKey {
 
 impl TaskManager {
     pub fn new(installer: VanillaInstaller, event_capacity: usize) -> Self {
-        Self::build(installer, None, None, None, event_capacity)
+        Self::build(installer, None, None, None, None, event_capacity)
     }
 
     pub fn with_java(
@@ -193,7 +194,7 @@ impl TaskManager {
         event_capacity: usize,
     ) -> Self {
         let game = GameLauncher::new(installer.clone(), java);
-        Self::build(installer, Some(game), None, None, event_capacity)
+        Self::build(installer, Some(game), None, None, None, event_capacity)
     }
 
     pub fn with_content(
@@ -203,7 +204,14 @@ impl TaskManager {
         event_capacity: usize,
     ) -> Self {
         let game = GameLauncher::new(installer.clone(), java);
-        Self::build(installer, Some(game), Some(content), None, event_capacity)
+        Self::build(
+            installer,
+            Some(game),
+            Some(content),
+            None,
+            None,
+            event_capacity,
+        )
     }
 
     pub fn with_full(
@@ -219,6 +227,26 @@ impl TaskManager {
             Some(game),
             Some(content),
             Some(instance_creator),
+            None,
+            event_capacity,
+        )
+    }
+
+    pub fn with_full_and_modrinth(
+        installer: VanillaInstaller,
+        java: crate::JavaService,
+        content: ContentInstaller,
+        instance_creator: InstanceCreator,
+        modrinth: ModrinthClient,
+        event_capacity: usize,
+    ) -> Self {
+        let game = GameLauncher::new(installer.clone(), java);
+        Self::build(
+            installer,
+            Some(game),
+            Some(content),
+            Some(instance_creator),
+            Some(modrinth),
             event_capacity,
         )
     }
@@ -229,7 +257,24 @@ impl TaskManager {
         content: ContentInstaller,
         event_capacity: usize,
     ) -> Self {
-        Self::build(installer, None, Some(content), None, event_capacity)
+        Self::build(installer, None, Some(content), None, None, event_capacity)
+    }
+
+    /// Enables remote content graphs without requiring a Java/game launcher.
+    pub fn with_content_and_modrinth(
+        installer: VanillaInstaller,
+        content: ContentInstaller,
+        modrinth: ModrinthClient,
+        event_capacity: usize,
+    ) -> Self {
+        Self::build(
+            installer,
+            None,
+            Some(content),
+            None,
+            Some(modrinth),
+            event_capacity,
+        )
     }
 
     /// Enables instance creation without requiring a Java/game launcher.
@@ -243,6 +288,7 @@ impl TaskManager {
             None,
             None,
             Some(instance_creator),
+            None,
             event_capacity,
         )
     }
@@ -252,6 +298,7 @@ impl TaskManager {
         game: Option<GameLauncher>,
         content: Option<ContentInstaller>,
         instance_creator: Option<InstanceCreator>,
+        modrinth: Option<ModrinthClient>,
         event_capacity: usize,
     ) -> Self {
         let (events, _) = broadcast::channel(event_capacity.max(1));
@@ -260,6 +307,7 @@ impl TaskManager {
                 installer,
                 game,
                 content,
+                modrinth,
                 instance_creator,
                 next_id: AtomicU64::new(1),
                 registry: Mutex::new(Registry::default()),
@@ -345,6 +393,47 @@ impl TaskManager {
         tokio::spawn(async move {
             manager
                 .run_content_install(id, content, request, cancellation, sender, receiver)
+                .await;
+        });
+        Ok(id)
+    }
+
+    /// Installs a Modrinth version together with its required dependencies.
+    ///
+    /// The graph is resolved inside the task so resolution failures share the
+    /// same task terminal state, cancellation and subject as the downloads.
+    pub async fn start_content_install_with_dependencies(
+        &self,
+        mut request: ContentGraphInstallRequest,
+    ) -> Result<TaskId, AppError> {
+        let Some(content) = self.inner.content.clone() else {
+            return Err(AppError::RemoteContentNotConfigured);
+        };
+        let Some(modrinth) = self.inner.modrinth.clone() else {
+            return Err(AppError::RemoteContentNotConfigured);
+        };
+        let key = prepare_content_graph_request(&mut request)?;
+        let subject = TaskSubject::Content {
+            instance_id: key.version_id.clone(),
+            kind: request.kind,
+            name: request.display_name.clone(),
+        };
+        let (id, cancellation) = self
+            .register(TaskKind::ContentInstall, key, Some(subject))
+            .await?;
+        let (sender, receiver) = mpsc::channel(128);
+        let manager = self.clone();
+        tokio::spawn(async move {
+            manager
+                .run_content_graph(
+                    id,
+                    content,
+                    modrinth,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                )
                 .await;
         });
         Ok(id)
@@ -546,6 +635,39 @@ impl TaskManager {
             }
         };
         let (result, ()) = tokio::join!(install, forward);
+        self.finish_content(id, result.map(|_| ())).await;
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_content_graph(
+        self,
+        id: TaskId,
+        installer: ContentInstaller,
+        modrinth: ModrinthClient,
+        request: ContentGraphInstallRequest,
+        cancellation: CancellationToken,
+        sender: mpsc::Sender<ContentInstallEvent>,
+        mut receiver: mpsc::Receiver<ContentInstallEvent>,
+    ) {
+        self.update_phase(id, TaskPhase::Content(ContentInstallPhase::Preparing))
+            .await;
+        let result = async {
+            let requests =
+                resolve_content_install_batch(&modrinth, &request, &cancellation).await?;
+            if requests.is_empty() {
+                return Ok(());
+            }
+            let install =
+                Box::pin(installer.install_batch(requests, cancellation.clone(), Some(sender)));
+            let forward = async {
+                while let Some(event) = receiver.recv().await {
+                    self.apply_content_event(id, event).await;
+                }
+            };
+            let (result, ()) = tokio::join!(install, forward);
+            result.map(|_| ())
+        }
+        .await;
         self.finish_content(id, result).await;
     }
 
@@ -784,7 +906,7 @@ impl TaskManager {
         let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
     }
 
-    async fn finish_content(self, id: TaskId, result: Result<ContentInstallOutcome, AppError>) {
+    async fn finish_content(self, id: TaskId, result: Result<(), AppError>) {
         let snapshot = {
             let mut registry = self.inner.registry.lock().await;
             registry.active_versions.retain(|active| active.id != id);
@@ -870,6 +992,16 @@ fn prepare_create_request(request: &mut CreateInstanceRequest) -> Result<Install
 }
 
 fn prepare_content_request(request: &mut ContentInstallRequest) -> Result<InstallKey, AppError> {
+    request.instance = absolute_instance(&request.instance)?;
+    Ok(InstallKey {
+        root: request.instance.repository().root().to_path_buf(),
+        version_id: request.instance.id().as_str().to_owned(),
+    })
+}
+
+fn prepare_content_graph_request(
+    request: &mut ContentGraphInstallRequest,
+) -> Result<InstallKey, AppError> {
     request.instance = absolute_instance(&request.instance)?;
     Ok(InstallKey {
         root: request.instance.repository().root().to_path_buf(),

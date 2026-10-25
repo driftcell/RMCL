@@ -93,6 +93,8 @@ pub enum AppError {
     },
     #[error("remote content operations are not configured")]
     RemoteContentNotConfigured,
+    #[error("required content dependency could not be resolved: {message}")]
+    ContentDependency { message: String },
     #[error("loader metadata request failed: {message}")]
     LoaderMetadata { message: String },
     #[error("invalid loader metadata: {message}")]

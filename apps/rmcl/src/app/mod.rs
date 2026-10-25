@@ -22,7 +22,7 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    AppError, ConflictPolicy, ContentInstallPhase, ContentInstallRequest, ContentKind,
+    AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase, ContentKind,
     ContentLibrary, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
     InstalledVersion, InstanceCreatePhase, JavaRuntime, JavaRuntimeSource, LoaderKind,
     LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
@@ -235,7 +235,7 @@ pub struct CatalogState {
 enum Command {
     Install(VanillaInstallRequest),
     CreateInstance(CreateInstanceRequest),
-    ContentInstall(ContentInstallRequest),
+    ContentInstall(ContentGraphInstallRequest),
     Launch(GameLaunchRequest),
 }
 
@@ -1121,7 +1121,7 @@ impl LauncherApp {
 
     fn start_content_install_task(
         &mut self,
-        request: ContentInstallRequest,
+        request: ContentGraphInstallRequest,
         instance_id: String,
         display_name: String,
         window: &mut Window,
@@ -1312,7 +1312,9 @@ impl LauncherApp {
                             command_manager.start_create_instance(request).await
                         }
                         Command::ContentInstall(request) => {
-                            command_manager.start_content_install(request).await
+                            command_manager
+                                .start_content_install_with_dependencies(request)
+                                .await
                         }
                         Command::Launch(request) => {
                             command_manager.start_launch_installed(request).await
@@ -3921,7 +3923,7 @@ impl LauncherApp {
         let Some(kind) = self.content_browser.kind else {
             return;
         };
-        let Some(file) = version.installable_file(kind).cloned() else {
+        let Some(file) = version.installable_file(kind) else {
             window.push_notification(
                 Notification::error("该版本没有适用于当前内容类型的文件。").title("无法安装"),
                 cx,
@@ -3946,12 +3948,17 @@ impl LauncherApp {
             .map(|project| project.title.clone())
             .unwrap_or_else(|| kind.label().to_owned());
         let display_name = format!("{project_title} {}", version.version_number);
-        let request = ContentInstallRequest {
+        let request = ContentGraphInstallRequest {
             instance: instance_layout,
             kind,
-            file,
+            version,
             display_name: display_name.clone(),
             conflict: ConflictPolicy::Rename,
+            game_version: instance.minecraft_version.clone(),
+            loader: instance
+                .loader
+                .as_ref()
+                .map(|loader| loader.kind.as_str().to_owned()),
         };
         self.start_content_install_task(
             request,
@@ -4629,12 +4636,17 @@ pub fn task_progress(snapshot: Option<&TaskSnapshot>) -> (f32, bool) {
         Some(TaskProgress::Download(progress)) if progress.total_files > 0 => {
             progress.completed_files as f32 / progress.total_files as f32 * 100.0
         }
-        Some(TaskProgress::Content(progress)) => progress
-            .total_bytes
-            .filter(|total| *total > 0)
-            .map_or(0.0, |total| {
-                progress.downloaded_bytes as f32 / total as f32 * 100.0
-            }),
+        Some(TaskProgress::Content(progress)) => {
+            let file_ratio = progress
+                .total_bytes
+                .filter(|total| *total > 0)
+                .map_or(0.0, |total| progress.downloaded_bytes as f32 / total as f32);
+            if progress.total_files > 1 {
+                (progress.completed_files as f32 + file_ratio) / progress.total_files as f32 * 100.0
+            } else {
+                file_ratio * 100.0
+            }
+        }
         Some(TaskProgress::Processors {
             completed, total, ..
         }) if *total > 0 => *completed as f32 / *total as f32 * 100.0,
@@ -4670,11 +4682,21 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| progress.current.display().to_string());
+            let position = if progress.total_files > 1 {
+                format!(
+                    "{}/{} · ",
+                    progress.completed_files + 1,
+                    progress.total_files
+                )
+            } else {
+                String::new()
+            };
             match progress.total_bytes {
-                Some(total) => {
-                    format!("{current} · {} / {} 字节", progress.downloaded_bytes, total)
-                }
-                None => format!("{current} · {} 字节", progress.downloaded_bytes),
+                Some(total) => format!(
+                    "{position}{current} · {} / {} 字节",
+                    progress.downloaded_bytes, total
+                ),
+                None => format!("{position}{current} · {} 字节", progress.downloaded_bytes),
             }
         }
         TaskProgress::Processors {

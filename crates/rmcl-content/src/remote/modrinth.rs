@@ -106,6 +106,26 @@ impl ModrinthClient {
         })
     }
 
+    /// Fetches one version by its Modrinth version ID.
+    pub async fn version(
+        &self,
+        version_id: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<RemoteVersion, RemoteContentError> {
+        let mut url = self.endpoint("v2/version/")?;
+        {
+            let mut segments =
+                url.path_segments_mut()
+                    .map_err(|_| RemoteContentError::InvalidResponse {
+                        provider: MODRINTH,
+                        message: "api base URL cannot contain version path segments".to_owned(),
+                    })?;
+            segments.pop_if_empty().push(version_id);
+        }
+        let response: VersionResponse = self.get_json(url, cancellation).await?;
+        RemoteVersion::try_from(response)
+    }
+
     pub async fn project_versions(
         &self,
         project_id: &str,
@@ -565,6 +585,49 @@ mod tests {
         assert_eq!(file.filename, "sodium-new.jar");
         assert_eq!(file.size, Some(30));
         assert!(file.sha1.is_some());
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn fetches_one_version_by_id() {
+        let router = Router::new().route(
+            "/v2/version/dep-version",
+            get(|| async {
+                Json(json!({
+                    "id": "dep-version",
+                    "project_id": "fabric-api",
+                    "name": "Fabric API 0.100.0",
+                    "version_number": "0.100.0",
+                    "version_type": "release",
+                    "game_versions": ["1.21.1"],
+                    "loaders": ["fabric"],
+                    "files": [{
+                        "hashes": {"sha1": "0123456789abcdef0123456789abcdef01234567"},
+                        "url": "https://cdn.modrinth.com/fabric-api.jar",
+                        "filename": "fabric-api.jar",
+                        "primary": true,
+                        "size": 42
+                    }],
+                    "dependencies": []
+                }))
+            }),
+        );
+        let (base, handle) = server(router).await;
+        let client = client(base);
+
+        let version = client
+            .version("dep-version", &CancellationToken::new())
+            .await
+            .unwrap();
+
+        assert_eq!(version.id, "dep-version");
+        assert_eq!(version.name, "Fabric API 0.100.0");
+        assert_eq!(
+            version
+                .installable_file(ContentKind::Mod)
+                .map(|file| file.filename.as_str()),
+            Some("fabric-api.jar")
+        );
         handle.abort();
     }
 

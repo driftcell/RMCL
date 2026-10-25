@@ -118,7 +118,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 - Microsoft 登录、专用 Quick Play 配置和账号令牌存储
 - 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
 - legacy Forge installer、特殊资产名称重建和镜像策略
-- CurseForge、依赖图自动安装、内容更新检查和整合包
+- CurseForge、可选依赖与冲突求解、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach
 - GPUI 页面或窗口生命周期（由 `apps/rmcl` 持有；`rmcl-app` 仍不依赖 GPUI）

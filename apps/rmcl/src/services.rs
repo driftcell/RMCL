@@ -53,9 +53,16 @@ impl Services {
         let forge = ForgeInstaller::new(DownloadConfig::default())?;
         let creator = InstanceCreator::new(installer.clone(), loaders.clone())
             .with_forge(forge, java.clone());
-        let tasks = TaskManager::with_full(installer, java.clone(), content, creator, 256);
         let catalog = VersionCatalog::official(DownloadConfig::default())?;
         let modrinth = ModrinthClient::official()?;
+        let tasks = TaskManager::with_full_and_modrinth(
+            installer,
+            java.clone(),
+            content,
+            creator,
+            modrinth.clone(),
+            256,
+        );
         let secrets = std::sync::Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
         let microsoft_accounts = MicrosoftAccountService::new(secrets)?;
         let skin_cache_dir = config_store

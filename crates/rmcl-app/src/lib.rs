@@ -22,9 +22,10 @@ pub use accounts::{
 };
 pub use catalog::VersionCatalog;
 pub use content::{
-    ContentDownloadProgress, ContentInstallEvent, ContentInstallEventSender, ContentInstallOutcome,
-    ContentInstallPhase, ContentInstallRequest, ContentInstaller, delete_instance_content,
-    import_instance_content, scan_instance_content, set_instance_content_enabled,
+    ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
+    ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallRequest,
+    ContentInstaller, delete_instance_content, import_instance_content,
+    resolve_content_install_batch, scan_instance_content, set_instance_content_enabled,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use forge::{ForgeInstallOutcome, ForgeInstallRequest, ForgeInstaller};
