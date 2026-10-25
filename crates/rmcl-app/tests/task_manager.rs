@@ -2,8 +2,8 @@ use std::{path::Path, time::Duration};
 
 use axum::{Router, routing::get};
 use rmcl_app::{
-    AppError, InstallPhase, TaskEvent, TaskId, TaskManager, TaskStatus, VanillaInstallRequest,
-    VanillaInstaller, VanillaSources, VersionSource,
+    AppError, InstallPhase, TaskEvent, TaskId, TaskManager, TaskPhase, TaskStatus,
+    VanillaInstallRequest, VanillaInstaller, VanillaSources, VersionSource,
 };
 use rmcl_domain::{OperatingSystem, Platform};
 use rmcl_net::DownloadConfig;
@@ -120,7 +120,7 @@ async fn wait_for_phase(
         loop {
             match receiver.recv().await {
                 Ok(TaskEvent::Snapshot(snapshot))
-                    if snapshot.id == id && snapshot.phase == Some(phase) =>
+                    if snapshot.id == id && snapshot.phase == Some(TaskPhase::Install(phase)) =>
                 {
                     return;
                 }
@@ -144,7 +144,10 @@ async fn terminal_snapshots_are_retained_and_ids_are_not_reused() {
     let first = manager.start_install(request.clone()).await.unwrap();
     let completed = wait_for_status(&mut events, first, TaskStatus::Completed).await;
     assert_eq!(completed.kind, rmcl_app::TaskKind::VanillaInstall);
-    assert_eq!(completed.phase, Some(InstallPhase::Completed));
+    assert_eq!(
+        completed.phase,
+        Some(TaskPhase::Install(InstallPhase::Completed))
+    );
     assert!(completed.error.is_none());
     assert_eq!(manager.snapshot(first).await, Some(completed));
 

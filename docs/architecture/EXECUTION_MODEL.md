@@ -6,7 +6,7 @@
 
 ## 应用级任务
 
-当前安装用例、稳定安装任务 ID、注册表和 Java ensure 见 [应用层 Vanilla 安装](APPLICATION.md)；游戏进程的统一生命周期仍属于下述目标架构。
+当前安装、稳定任务 ID、注册表、Java ensure 和游戏生命周期见 [应用层 Vanilla 安装与启动](APPLICATION.md)。
 
 下载、安装、修复、Java 获取和游戏进程都不属于某个临时页面。它们由应用层任务管理器持有，并使用稳定任务 ID 暴露状态。
 

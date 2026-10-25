@@ -6,10 +6,12 @@ license.workspace = true
 
 [dependencies]
 rmcl-archive.workspace = true
+rmcl-auth.workspace = true
 rmcl-domain.workspace = true
 rmcl-install.workspace = true
 rmcl-instance.workspace = true
 rmcl-java.workspace = true
+rmcl-launch.workspace = true
 rmcl-minecraft.workspace = true
 rmcl-net.workspace = true
 tempfile.workspace = true

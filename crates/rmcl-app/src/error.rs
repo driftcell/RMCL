@@ -74,4 +74,6 @@ pub enum AppError {
     SourceUrl(#[from] url::ParseError),
     #[error(transparent)]
     Java(#[from] rmcl_java::JavaError),
+    #[error(transparent)]
+    Launch(#[from] rmcl_launch::LaunchError),
 }

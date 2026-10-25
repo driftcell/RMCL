@@ -1,0 +1,339 @@
+#![cfg(unix)]
+
+use std::{path::Path, time::Duration};
+
+use axum::{Router, routing::get};
+use rmcl_app::{
+    AppError, GameLaunchEvent, GameLaunchRequest, GameLauncher, JavaService, JavaServiceConfig,
+    TaskEvent, TaskId, TaskManager, TaskPhase, TaskStatus, VanillaInstallRequest, VanillaInstaller,
+    VanillaSources, VersionSource,
+};
+use rmcl_auth::OfflineAccount;
+use rmcl_domain::{OperatingSystem, Platform};
+use rmcl_net::DownloadConfig;
+use serde_json::json;
+use sha1::{Digest, Sha1};
+use tempfile::TempDir;
+use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
+use url::Url;
+
+#[derive(Clone, Copy)]
+enum ScriptMode {
+    Exit,
+    Failure,
+    Sleep,
+    Noisy,
+}
+
+struct Fixture {
+    _temporary: TempDir,
+    root: std::path::PathBuf,
+    installer: VanillaInstaller,
+    java: JavaService,
+    request: GameLaunchRequest,
+}
+
+fn fixture(mode: ScriptMode) -> Fixture {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join(".minecraft");
+    write_metadata(&root);
+    let managed = temporary.path().join("managed");
+    write_java(&managed.join("bin/java"), mode);
+    let installer = VanillaInstaller::new(
+        DownloadConfig::default(),
+        VanillaSources {
+            manifest_url: Url::parse("https://example.invalid/manifest.json").unwrap(),
+            asset_object_base: Url::parse("https://example.invalid/objects/").unwrap(),
+        },
+    )
+    .unwrap();
+    let mut java_config = JavaServiceConfig::new(temporary.path().join("store"));
+    java_config.managed_roots.push(managed);
+    java_config.include_java_home = false;
+    java_config.include_path = false;
+    java_config.auto_install = false;
+    let java = JavaService::new(java_config).unwrap();
+    let install = VanillaInstallRequest {
+        minecraft_root: root.clone(),
+        version_id: "test".to_owned(),
+        platform: Platform::new(OperatingSystem::Linux, "6.1", "x86_64"),
+        source: VersionSource::Existing,
+    };
+    let request = GameLaunchRequest {
+        install,
+        account: OfflineAccount::new("Steve").unwrap(),
+        additional_jvm_arguments: Vec::new(),
+        additional_game_arguments: Vec::new(),
+        resolution: None,
+        demo: false,
+    };
+    Fixture {
+        _temporary: temporary,
+        root,
+        installer,
+        java,
+        request,
+    }
+}
+
+fn write_metadata(root: &Path) {
+    let client = b"client";
+    let index = b"{}";
+    let version = serde_json::to_vec(&json!({
+        "id": "test",
+        "mainClass": "example.Main",
+        "javaVersion": {"component": "java-runtime-delta", "majorVersion": 21},
+        "arguments": {
+            "jvm": ["-cp", "${classpath}"],
+            "game": ["--username", "${auth_player_name}", "--accessToken", "${auth_access_token}"]
+        },
+        "downloads": {
+            "client": {
+                "url": "https://example.invalid/client.jar",
+                "sha1": sha1(client),
+                "size": client.len()
+            }
+        },
+        "assetIndex": {
+            "id": "test-index",
+            "url": "https://example.invalid/index.json",
+            "sha1": sha1(index),
+            "size": index.len()
+        },
+        "libraries": []
+    }))
+    .unwrap();
+    std::fs::create_dir_all(root.join("versions/test")).unwrap();
+    std::fs::create_dir_all(root.join("assets/indexes")).unwrap();
+    std::fs::write(root.join("versions/test/test.json"), version).unwrap();
+    std::fs::write(root.join("versions/test/test.jar"), client).unwrap();
+    std::fs::write(root.join("assets/indexes/test-index.json"), index).unwrap();
+}
+
+fn write_java(path: &Path, mode: ScriptMode) {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let probe = "#!/bin/sh\nif [ \"$1\" = \"-XshowSettings:properties\" ]; then\n  printf 'java.version = 21.0.7\\nos.name = Linux\\nos.arch = amd64\\njava.vendor = TestVendor\\n' >&2\n  exit 0\nfi\n";
+    let game = match mode {
+        ScriptMode::Exit => {
+            "printf '%s\\n' \"$@\" > raw-args.txt\nfor argument in \"$@\"; do\n  printf 'out:%s\\n' \"$argument\"\ndone\nprintf 'err:%s\\n' \"$*\" >&2\nexit 0\n"
+        }
+        ScriptMode::Failure => "echo failure >&2\nexit 7\n",
+        ScriptMode::Sleep => "echo ready\nexec sleep 60\n",
+        ScriptMode::Noisy => {
+            "i=0\nwhile [ \"$i\" -lt 1100 ]; do\n  echo \"line-$i\"\n  i=$((i + 1))\ndone\nexit 0\n"
+        }
+    };
+    std::fs::write(path, format!("{probe}{game}")).unwrap();
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).unwrap();
+}
+
+fn drain(receiver: &mut mpsc::Receiver<GameLaunchEvent>) -> Vec<GameLaunchEvent> {
+    let mut events = Vec::new();
+    while let Ok(event) = receiver.try_recv() {
+        events.push(event);
+    }
+    events
+}
+
+async fn manifest_server(version: Vec<u8>) -> (Url, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let manifest = serde_json::to_vec(&json!({
+        "versions": [{
+            "id": "test",
+            "type": "release",
+            "url": base.join("version.json").unwrap().to_string(),
+            "sha1": sha1(&version)
+        }]
+    }))
+    .unwrap();
+    let router = Router::new()
+        .route(
+            "/manifest.json",
+            get(move || {
+                let manifest = manifest.clone();
+                async move { manifest }
+            }),
+        )
+        .route(
+            "/version.json",
+            get(move || {
+                let version = version.clone();
+                async move { version }
+            }),
+        );
+    let handle = tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, router).await {
+            eprintln!("test manifest server failed: {error}");
+        }
+    });
+    (base.join("manifest.json").unwrap(), handle)
+}
+
+#[tokio::test]
+async fn direct_launch_collects_redacted_logs_and_exit() {
+    let fixture = fixture(ScriptMode::Exit);
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+    let (sender, mut receiver) = mpsc::channel(512);
+
+    let outcome = launcher
+        .run(fixture.request, CancellationToken::new(), Some(sender))
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    assert!(!outcome.stop_requested);
+    let raw = std::fs::read_to_string(fixture.root.join("raw-args.txt")).unwrap();
+    let token_position = raw
+        .lines()
+        .position(|line| line == "--accessToken")
+        .unwrap();
+    let token = raw.lines().nth(token_position + 1).unwrap();
+    assert_eq!(token.len(), 32);
+    let events = drain(&mut receiver);
+    let logs = events
+        .iter()
+        .filter_map(|event| match event {
+            GameLaunchEvent::Output(log) => Some(log.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(logs.contains("example.Main"));
+    assert!(logs.contains("<redacted>"));
+    assert!(!logs.contains(token));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        GameLaunchEvent::Exited(exit) if exit.success
+    )));
+}
+
+async fn wait_for_phase(
+    receiver: &mut broadcast::Receiver<TaskEvent>,
+    id: TaskId,
+    phase: TaskPhase,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match receiver.recv().await {
+                Ok(TaskEvent::Snapshot(snapshot))
+                    if snapshot.id == id && snapshot.phase == Some(phase) =>
+                {
+                    return;
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => {
+                    panic!("task event channel closed")
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+async fn wait_for_status(
+    receiver: &mut broadcast::Receiver<TaskEvent>,
+    id: TaskId,
+    status: TaskStatus,
+) -> rmcl_app::TaskSnapshot {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match receiver.recv().await {
+                Ok(TaskEvent::Snapshot(snapshot))
+                    if snapshot.id == id && snapshot.status == status =>
+                {
+                    return snapshot;
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => {
+                    panic!("task event channel closed")
+                }
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn manifest_game_task_stops_drains_logs_and_releases_version() {
+    let mut fixture = fixture(ScriptMode::Sleep);
+    let version_json = std::fs::read(fixture.root.join("versions/test/test.json")).unwrap();
+    let (manifest_url, server) = manifest_server(version_json).await;
+    fixture.request.install.source = VersionSource::Manifest;
+    let installer = VanillaInstaller::new(
+        DownloadConfig::default(),
+        VanillaSources {
+            manifest_url,
+            asset_object_base: Url::parse("https://example.invalid/objects/").unwrap(),
+        },
+    )
+    .unwrap();
+    let manager = TaskManager::with_java(installer, fixture.java, 32);
+    let mut events = manager.subscribe();
+    let id = manager.start_launch(fixture.request.clone()).await.unwrap();
+    wait_for_phase(&mut events, id, TaskPhase::RunningGame).await;
+
+    let duplicate = manager.start_install(fixture.request.install.clone()).await;
+    assert!(matches!(
+        duplicate,
+        Err(AppError::TaskAlreadyRunning { existing }) if existing == id
+    ));
+    assert!(manager.cancel(id).await);
+    wait_for_status(&mut events, id, TaskStatus::Cancelling).await;
+    let exited = wait_for_status(&mut events, id, TaskStatus::Exited).await;
+    assert!(exited.stop_requested);
+    assert!(exited.exit.is_some_and(|exit| !exit.success));
+    assert!(exited.error.is_none());
+    assert!(manager.logs(id).await.is_some());
+
+    let install = manager
+        .start_install(fixture.request.install)
+        .await
+        .unwrap();
+    wait_for_status(&mut events, install, TaskStatus::Completed).await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn nonzero_game_exit_is_not_a_launcher_failure() {
+    let fixture = fixture(ScriptMode::Failure);
+    let manager = TaskManager::with_java(fixture.installer, fixture.java, 32);
+    let mut events = manager.subscribe();
+
+    let id = manager.start_launch(fixture.request).await.unwrap();
+    let exited = wait_for_status(&mut events, id, TaskStatus::Exited).await;
+
+    assert_eq!(exited.exit.and_then(|exit| exit.code), Some(7));
+    assert!(!exited.stop_requested);
+    assert!(exited.error.is_none());
+}
+
+#[tokio::test]
+async fn game_logs_are_bounded_and_do_not_depend_on_subscribers() {
+    let fixture = fixture(ScriptMode::Noisy);
+    let manager = TaskManager::with_java(fixture.installer, fixture.java, 8);
+    let mut events = manager.subscribe();
+
+    let id = manager.start_launch(fixture.request).await.unwrap();
+    let exited = wait_for_status(&mut events, id, TaskStatus::Exited).await;
+
+    assert!(exited.exit.is_some_and(|exit| exit.success));
+    assert_eq!(exited.log_lines, 1100);
+    let logs = manager.logs(id).await.unwrap();
+    assert_eq!(logs.len(), 1024);
+    assert_eq!(logs.first().unwrap().text, "line-76");
+    assert_eq!(logs.last().unwrap().text, "line-1099");
+}
+
+fn sha1(bytes: &[u8]) -> String {
+    hex::encode(Sha1::digest(bytes))
+}

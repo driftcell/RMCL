@@ -1,12 +1,12 @@
-# 应用层 Vanilla 安装
+# 应用层 Vanilla 安装与启动
 
-状态：`rmcl-app` 安装用例、安装任务管理和 Java ensure 已实现；启动编排尚未实现
+状态：`rmcl-app` 安装、安装任务、Java ensure 和游戏任务已实现
 
 日期：2026-10-25
 
 ## 边界
 
-`rmcl-app::VanillaInstaller` 组合现有元数据、安装计划、下载器和安全解压 API，不重复这些 crate 的领域规则，也不依赖 GPUI。
+`rmcl-app` 组合现有元数据、安装计划、下载器、安全解压、Java 和启动 API，不重复这些 crate 的领域规则，也不依赖 GPUI。`VanillaInstaller`、`JavaService`、`GameLauncher` 可独立调用，`TaskManager` 在它们之上提供应用级生命周期。
 
 `VanillaInstallRequest` 要求调用方提供 `.minecraft` 根、精确版本 ID、目标平台和 `VersionSource`：
 
@@ -52,15 +52,15 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 高频事件的界面合并由后续 UI 桥接负责；安装任务快照和广播由 `TaskManager` 提供。
 
-## 安装任务管理
+## 任务管理
 
-`TaskManager::start_install` 在应用级 Tokio 任务中持有安装 future，并暴露以下语义：
+`TaskManager::start_install` 和 `start_launch` 在应用级 Tokio 任务中持有对应 future，并暴露以下语义：
 
 - `TaskId` 在进程内单调分配，不随阶段变化，也不复用已结束 ID；当前不持久化。
 - 活动任务按“绝对化仓库根 + 版本 ID”互斥，不同平台目标也不能并发写同一版本的共享文件。重复请求返回已有任务 ID 对应的 `TaskAlreadyRunning`。
-- `TaskSnapshot` 包含任务类型、`Running`/`Cancelling`/`Completed`/`Cancelled`/`Failed`、最近阶段、下载或 native 进度和脱敏错误。
-- `cancel` 先发布 `Cancelling` 快照，再触发同一个协作式取消令牌；只有安装实际停止后才发布 `Cancelled`。终态任务上的取消是 no-op。
-- `TaskEvent` 使用有界 broadcast。慢订阅者可能收到 `Lagged` 并丢失中间快照，可以随时调用 `snapshot` 读取最新状态；订阅者关闭不会取消任务。
+- `TaskSnapshot` 包含任务类型、统一 `TaskPhase`、`Running`/`Cancelling`/`Completed`/`Cancelled`/`Failed`/`Exited`、进度、脱敏错误、可选退出状态、停止标记和累计游戏日志行数。
+- `cancel` 先发布 `Cancelling` 快照，再触发同一个协作式取消令牌。安装或 spawn 前取消最终为 `Cancelled`；游戏运行中取消会 kill 直接子进程、继续排空日志，最终以 `Exited` 和 `stop_requested` 返回。终态任务上的取消是 no-op。
+- `TaskEvent` 使用有界 broadcast。慢订阅者可能收到 `Lagged` 并丢失中间快照或日志事件，可以随时调用 `snapshot` 和 `logs` 读取当前状态；订阅者关闭不会取消任务。
 - 终态快照保留到 `dismiss`，dismiss 后发送移除事件；活动任务不能 dismiss。
 - `TaskManager` 和其克隆共享注册表，临时 View 可以只持有订阅，不拥有安装任务。
 
@@ -78,14 +78,35 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 `JavaServiceConfig` 要求显式 store 根，生产默认只允许官方 runtime URL；测试可使用本地 index 和 `AnyHttp`。Java 安装当前只有阶段事件，没有字节级进度。探测和 runtime 元数据获取不是完全可取消的，取消可能在当前操作返回后才被观察，调用方不能把请求取消当成已经停止。
 
+## 游戏启动与日志
+
+`GameLauncher::run` 按以下顺序拥有完整启动过程：
+
+1. 使用 `VanillaInstaller` 完成安装并保留 `InstallOutcome`。
+2. 从版本与平台构造唯一的 `JavaRequirement`，调用 `JavaService::ensure`。
+3. 从离线账号生成新的启动 token，使用安装结果构造 `LaunchOptions` 和 `LaunchPlan`。
+4. 发出 `Starting` 后创建 `GameProcess`，随后发出 `Started` 并持续转发 stdout/stderr。
+5. 等待自然退出或取消后的 kill，排空日志后返回 `GameLaunchOutcome`。
+
+`Started` 只表示 JVM 进程创建成功，不表示主类加载、窗口或主菜单已经就绪。游戏自身以非零码退出仍返回正常 `GameLaunchOutcome`，任务层记录为 `Exited`；安装、Java、计划、spawn 或进程 I/O 错误才记录为 `Failed`。当前不自动推断崩溃原因。
+
+`TaskManager::with_java` 启用 `start_launch`；安装专用构造器没有 Java 服务时会返回 `JavaNotConfigured`。游戏任务在整个运行期间保留版本互斥，防止同时重装相同版本。退出后互斥释放。
+
+每个游戏任务保留最近 1024 行已脱敏日志，`log_lines` 记录实际接收的总行数，`logs` 返回当前保留内容。日志事件广播不反压游戏进程，慢订阅者丢失事件不代表这些行超出环形缓冲。应用任务而非 View 持有 `GameProcess`；不承诺启动器退出后 detach 或进程树管理。
+
+大型安装/启动 future 在组合任务中显式 heap-pin，避免 worker 栈随嵌套编排增长；这不改变事件顺序或取消语义。
+
 ## 当前不包含
 
-- 启动任务和游戏日志环形缓冲
-- 实例隔离、配置与账号持久化
+- Microsoft 登录、专用 Quick Play 配置和账号持久化
+- 实例隔离与配置持久化
 - 版本继承、特殊资产名称重建、ModLoader 和镜像策略
 - 完整修复、native 清理、内容寻址缓存和断点续传
+- 日志文件导出、崩溃分析、进程树管理和启动器退出后的 detach
 - GPUI 页面或窗口生命周期
 
-本地测试使用 mock 覆盖远程 manifest、两阶段下载、两个 native JAR、重复安装复用、取消和本地 JSON 发布；这些测试不访问外部服务。
+本地测试使用 mock 和假 JVM 覆盖远程 manifest、两阶段下载、两个 native JAR、重复安装复用、任务互斥、取消、Java 自动安装、日志脱敏、自然非零退出、停止和有界日志；这些测试不访问外部服务。
 
-2026-10-25 使用官方 manifest 和已有真实仓库缓存验证了 `VanillaInstaller::official`：`26.3` 的 5229 个 base/asset 文件全部校验并跳过，`1.7.10` 的 708 个文件全部校验并跳过且 3 个 native JAR 完成合并。该结果验证官方来源解析与复用，不把缓存 smoke 描述为全新下载；新文件下载由上述本地 mock 覆盖。跨平台真实游戏启动仍单独验收。
+2026-10-25 使用官方 manifest 和已有真实仓库缓存验证了 `VanillaInstaller::official`：`26.3` 的 5229 个 base/asset 文件全部校验并跳过，`1.7.10` 的 708 个文件全部校验并跳过且 3 个 native JAR 完成合并。该结果验证官方来源解析与复用，不把缓存 smoke 描述为全新下载；新文件下载由上述本地 mock 覆盖。
+
+同日在 macOS ARM64、Temurin 25.0.5 上通过 `TaskManager::start_launch` 运行真实 Vanilla `26.3`：任务依次报告安装、Java 检查、启动和运行阶段，创建 Cocoa 窗口，运行 12 秒后由 smoke 调用 `cancel`，最终得到 `Exited`、`stop_requested = true` 和 45 行保留日志。主动 kill 产生的 signal 9 不是崩溃。Windows 和 Linux 的真实游戏启动仍需分别验收。
