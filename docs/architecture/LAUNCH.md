@@ -69,5 +69,6 @@ Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app`
 - Vanilla `26.3` 的 82 个游戏文件和 5147 个 asset objects 全部通过 SHA-1/size 校验；真实进程完成 LWJGL、Cocoa 窗口、OpenGL、资源管理器、纹理 atlas 和 OpenAL 初始化，并在 30 秒观察窗口后由测试主动终止。
 - Vanilla `1.7.10` 的 34 个游戏文件、674 个 asset objects 和 3 个 native JAR 完成下载与合并，进程进入真实主类并正确报告退出；其官方 LWJGL 2 native 只有 i386/x86_64，因缺少 ARM64 架构而无法完成启动。这不视为旧版本 ARM64 兼容已经实现。
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
+- 2026-10-25 使用真实 Microsoft 账户和正版 access token 在 macOS ARM64 启动 Vanilla，用户确认游戏正常进入运行阶段；正版会话的刷新和启动链路已验证。
 
 当前不包含版本继承和 ModLoader 参数合并、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。

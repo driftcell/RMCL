@@ -105,10 +105,10 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach
 - GPUI 页面或窗口生命周期（由 `apps/rmcl` 持有；`rmcl-app` 仍不依赖 GPUI）
 
-启动器偏好和离线账户由 `rmcl-store` 持久化，见 [启动器配置](CONFIGURATION.md)。`rmcl-app` 不读写该配置。
+启动器偏好和账户元数据由 `rmcl-store` 持久化，见 [启动器配置](CONFIGURATION.md)。`rmcl-app` 不读写该配置；Microsoft 令牌由系统凭据存储管理，见 [正版账号、令牌与皮肤](AUTHENTICATION.md)。
 
 本地测试使用 mock 和假 JVM 覆盖远程 manifest、两阶段下载、两个 native JAR、重复安装复用、快速启动跳过安装、缺失基础文件、任务互斥、取消、Java 自动安装、日志脱敏、自然非零退出、停止和有界日志；这些测试不访问外部服务。
 
 2026-10-25 使用官方 manifest 和已有真实仓库缓存验证了 `VanillaInstaller::official`：`26.3` 的 5229 个 base/asset 文件全部校验并跳过，`1.7.10` 的 708 个文件全部校验并跳过且 3 个 native JAR 完成合并。该结果验证官方来源解析与复用，不把缓存 smoke 描述为全新下载；新文件下载由上述本地 mock 覆盖。
 
-同日在 macOS ARM64、Temurin 25.0.5 上通过 `TaskManager::start_launch` 运行真实 Vanilla `26.3`：任务依次报告安装、Java 检查、启动和运行阶段，创建 Cocoa 窗口，运行 12 秒后由 smoke 调用 `cancel`，最终得到 `Exited`、`stop_requested = true` 和 45 行保留日志。主动 kill 产生的 signal 9 不是崩溃。Windows 和 Linux 的真实游戏启动仍需分别验收。
+同日在 macOS ARM64、Temurin 25.0.5 上通过 `TaskManager::start_launch` 运行真实 Vanilla `26.3`：任务依次报告安装、Java 检查、启动和运行阶段，创建 Cocoa 窗口，运行 12 秒后由 smoke 调用 `cancel`，最终得到 `Exited`、`stop_requested = true` 和 45 行保留日志。主动 kill 产生的 signal 9 不是崩溃。随后使用真实 Microsoft 账户和正版 access token 完成了一次真实 Vanilla 启动，用户确认游戏正常进入运行阶段。Windows 和 Linux 的真实游戏启动仍需分别验收。

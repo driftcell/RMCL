@@ -132,7 +132,8 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - `rmcl-auth` 的本地 mock server 测试覆盖设备代码请求、轮询、refresh 轮换、Xbox/XSTS/Minecraft 交换、所有权检查、profile/皮肤解析、Xbox 错误、取消和秘密脱敏。
 - `rmcl-app` 覆盖缓存 token 直接启动、凭据缺失、钥匙串读写/删除、schema 拒绝、官方皮肤下载、头像合成和缓存复用；另有手动 `--ignored` 测试访问真实官方皮肤纹理。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录，Keychain 写入成功，profile 与官方皮肤头像缓存成功生成。
-- 真实游戏启动使用正版 token 仍待单独验收；Windows 和 Linux 的凭据存储需要平台运行测试。
+- 使用正版 Minecraft access token 的真实 Vanilla 启动已由用户在 macOS ARM64 实际验证，游戏可以正常进入运行阶段。
+- Windows 和 Linux 的凭据存储与正版启动仍需平台运行测试。
 
 协议依据：
 

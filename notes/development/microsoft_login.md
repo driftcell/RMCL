@@ -82,11 +82,11 @@
 - `rmcl-platform`：内存存储测试；macOS Keychain ignored 测试手动通过。
 - 真实官方皮肤纹理 ignored 测试通过。
 - 2026-10-25 macOS ARM64：真实 Microsoft 账户设备代码登录成功，Keychain 写入成功，profile 与皮肤头像缓存生成。
+- 使用正版 access token 的真实 Vanilla 启动已由用户实际验证，游戏正常进入运行阶段。
 - 全 workspace：231 个 nextest 测试通过。
 
 ## 未决
 
-- 正版 token 启动真实 Vanilla 进程尚未单独验收。
-- Windows Credential Manager 和 Linux Secret Service 未运行验证。
+- Windows Credential Manager、Linux Secret Service 和这两个平台上的正版启动未运行验证。
 - 披风、皮肤上传、authlib-injector 和自有 Azure 应用注册未实现。
 - 公开客户端 ID 的长期可用性和发行合规需要后续评估。
