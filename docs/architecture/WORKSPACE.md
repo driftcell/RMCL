@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：`apps/rmcl` 提供最小 GPUI Vanilla 安装与启动窗口；`rmcl-app` 提供 headless Vanilla 安装、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期和有界日志；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
+RMCL 已是 Cargo workspace：`apps/rmcl` 提供 GPUI 启动器壳、主页、版本列表、远程下载、设置、离线账户和任务日志界面；`rmcl-app` 提供 headless Vanilla 安装、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期、已安装版本扫描、远程版本目录和有界日志；`rmcl-store` 提供 TOML 配置、离线账户和原子写入；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 
@@ -46,7 +46,8 @@ apps/rmcl-cli ─┘
 - `gpui-kit` 仅属于桌面应用及其 UI 组件。
 - 核心 crate 不出现 `Entity`、`Window`、`Context` 等 GPUI 类型。
 - `rmcl-minecraft` 的解析与计划生成尽量保持纯计算，不自行弹出 UI 或决定页面流程。
-- `rmcl-app` 持有应用级任务和状态；View 通过命令与只读快照交互。
+- `apps/rmcl` 持有应用级服务（Tokio runtime、任务、配置、版本目录）和 GPUI 页面状态；页面只通过命令与只读快照交互。
+- `rmcl-store` 只负责启动器配置的读取、schema 校验和原子写入，不依赖 GPUI 或安装逻辑。
 - `rmcl-cli` 与 GUI 复用同一核心能力，用于诊断、自动化测试和不依赖显示服务器的验证。
 
 ## GPUI 依赖约束

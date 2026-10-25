@@ -14,14 +14,15 @@
 - 各平台自动下载 Java 的供应、归档格式、校验与许可如何记录？
 - `.minecraft` 的实例隔离首版支持哪些模式？RMCL 自己新增的实例配置放在哪里，如何避免污染标准版本 JSON？
 - 修复范围中，client JAR、libraries、assets 和版本 JSON 分别采用存在性、大小、哈希还是容器完整性检查？
-- 最小 GPUI 界面需要哪些页面和交互？游戏运行时关闭启动器窗口的默认行为是什么？
-- GPUI Kit 已选定 0.8.0 / gpui-pre 0.3.9，平台约束和桥接方式见 [桌面界面与 GPUI 桥接](../../docs/architecture/USER_INTERFACE.md)；发布最低系统版本仍需逐平台运行和打包验证。
+- 启动器日志只在失败或异常退出时展示，是否需要单独的崩溃报告页和诊断包？
+- GPUI Kit 已选定 0.8.0 / gpui-pre 0.3.9，页面、配置和隐藏行为见 [桌面界面与 GPUI 桥接](../../docs/architecture/USER_INTERFACE.md) 与 [启动器配置](../../docs/architecture/CONFIGURATION.md)；发布最低系统版本仍需逐平台运行和打包验证。
+- 游戏运行时最小化启动器、退出后恢复，在 Windows 和 Linux 上分别是什么窗口语义？macOS 使用 `deminiaturize`，其他平台需要真实运行验收。
 
 ## 工程与发布前需要确定
 
 - MIT `LICENSE` 使用哪个版权主体或贡献者表述？
 - `rmcl-cli` 是内部诊断工具，还是长期公开支持的第二套接口？
-- 配置格式、配置目录、原子写入与迁移版本如何设计？
+- 配置已使用 `~/.config/rmcl/config.toml`（Windows 为 `%APPDATA%\rmcl\config.toml`），后续 schema 迁移和损坏文件备份策略如何设计？
 - GPUI 后台执行器与独立异步运行时如何桥接，哪些 crate 负责具体运行时？
 - 发布签名、公证、更新渠道和安装包格式由谁持有凭据并维护？
 

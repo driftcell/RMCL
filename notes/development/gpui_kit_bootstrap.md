@@ -30,3 +30,5 @@
 ## 原生 smoke
 
 使用独立临时 `.minecraft` 与 Java store，通过 macOS System Events 的 accessibility 树操作真实 RMCL 窗口。详细结果在完成后补充；该验证不修改用户日常仓库，也不依赖真实账号。
+
+后续已完成启动器壳、主页、版本、下载、设置和账户界面；页面结构、配置路径、启动器可见性和精准截图方法见 [界面重做与配置记录](ui_redesign.md)。

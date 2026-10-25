@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：最小 Vanilla 桌面窗口已实现
+状态：启动器壳、版本列表、下载、设置、离线账户和任务日志界面已实现
 
 日期：2026-10-25
 
@@ -8,57 +8,118 @@
 
 桌面应用使用 `gpui-kit = 0.8.0`，由其统一提供匹配的 `gpui-pre = 0.3.9`、Base、Component 和默认 assets。应用只直接依赖 `gpui-kit` 并导入 `gpui_kit::*`，不单独覆盖 GPUI 包或混用其他快照。
 
-首版启用默认 `component + assets`，不启用 `gpui-fast`、speech、tree-sitter、inspector 或 profiler。没有 mold/LTO 等二进制优化工作。
+应用启用默认 `component + assets`，并使用 `gpui_kit::assets::AllAssets` 获取完整 Lucide 图标目录（约多 1 MiB）。没有启用 `gpui-fast`、speech、tree-sitter、inspector 或 profiler，也没有 mold/LTO 等二进制优化。
 
 平台依据：[GPUI Kit Installation](https://gpui-kit.com/docs/installation)。macOS 需要 15+ 和 Xcode Command Line Tools；Windows 需要 Windows 10+、MSVC C++ 工具链、Windows SDK 和 CMake；Ubuntu 24.04 的 CI 安装文档列出的 fontconfig、Wayland、WebKitGTK、XKB/X11、SSL、zstd 和 Vulkan 开发库。Linux 显示窗口还需要图形会话和可用 Vulkan 驱动，headless CI 编译不能代替运行验证。
 
-调研记录：[GPUI Kit 技术验证](../../notes/development/gpui_kit_bootstrap.md)。
+调研记录：[GPUI Kit 技术验证](../../notes/development/gpui_kit_bootstrap.md)、[界面重做与配置记录](../../notes/development/ui_redesign.md)。
 
-## 所有权与执行器
+## 窗口与导航
+
+窗口使用 GPUI Kit 的 `TitleBar::window_options()` 自定义标题栏，默认尺寸 1180×780，最小 980×640。macOS 保留原生红绿灯；Windows 和 Linux 使用 TitleBar 自带的窗口控制。标题栏左侧只保留 RMCL 品牌和版本，右侧是任务阶段与明暗主题切换。
+
+主界面是常驻侧栏 + 内容区的桌面壳：
+
+- 侧栏宽 232px，包含“主页”“版本”“下载游戏”和“设置”。
+- “日志”不是主入口。正常安装和游戏运行时不需要看日志；只有任务失败或游戏异常退出时，状态栏和主页任务条才提供“查看日志”路径，设置页的“诊断”分组也提供入口。
+- 侧栏底部是当前离线账户卡片和编辑按钮，账户状态在所有页面可见。
+- 内容区底部是常驻 `StatusBar`，显示任务阶段、当前文件、进度、停止按钮和平台信息。切换页面不会丢失任务状态。
+- 页面之间使用即时切换，不做 HMCL 式转场动画。窗口内容和侧栏的圆角、间距、颜色都来自 GPUI Kit 语义 token。
+
+## 页面
+
+### 主页
+
+- 大号启动卡片：版本图标、版本 ID、类型和发布时间、游戏目录。
+- “启动配置”面板：可搜索的已安装版本下拉框、可搜索的账户下拉框、主启动按钮。
+- 没有版本时显示“安装第一个版本”入口；没有账户时显示添加账户入口，并禁用启动。
+- “最近版本”卡片列出最多三个已安装版本，可直接启动。
+- “快速操作”卡片提供安装新版本、打开游戏目录和管理离线账户。
+- 有任务时在启动卡片下方显示阶段、进度、当前文件、停止和按需出现的日志入口。
+
+### 版本
+
+- 扫描 `versions/<id>/<id>.json`，显示有效的已安装版本；按发布时间从新到旧排序。
+- 搜索框和“全部 / 正式版 / 快照 / 旧版”筛选。
+- 每行提供启动、检查并修复、打开版本目录。检查修复复用 `VersionSource::Existing`，不新增第二套安装逻辑。
+- 缺少客户端 JAR 的版本标记为“文件不完整”，仍可启动或修复；启动流程会补齐缺失文件。
+
+### 下载游戏
+
+- 首次打开时拉取并缓存 Mojang `version_manifest_v2.json`，显示版本总数和最后获取状态。
+- 搜索框按版本 ID 过滤，“全部 / 正式版 / 快照 / 旧版”按版本类型过滤。
+- 使用 `v_virtual_list` 渲染远程版本，避免一次绘制数百行。
+- 每行显示类型图标、版本 ID、类型标签、发布时间、已安装状态和安装 / 重新安装按钮。
+- 安装按钮打开确认对话框，确认后启动应用层安装任务；进度显示在状态栏和主页任务条，不弹出阻塞式进度窗口。
+
+### 日志
+
+- 仅在失败、异常退出或设置页“诊断”中进入。
+- 显示任务类型、状态、阶段、进度、错误、退出码或终止信号。
+- 日志使用等宽字体，支持自动滚动、复制、导出到配置目录下的 `logs/`、打开日志目录和清除当前任务记录。
+- 取消或异常退出后日志仍保留，直到用户清除或新任务开始。
+
+### 设置
+
+按卡片分组，不采用 HMCL 的八标签设置树：
+
+- **游戏**：Minecraft 目录、Java 目录、自动获取 Java。目录修改后立即重新扫描版本，不移动现有文件；Java 目录和自动获取设置重启后生效。
+- **启动行为**：启动器可见性。默认保持显示；选择“游戏运行时隐藏”后，游戏进入 `RunningGame` 阶段时最小化启动器，任务退出、失败或取消时恢复。
+- **外观**：跟随系统 / 浅色 / 深色，以及翡翠、海蓝、紫罗兰、琥珀、玫瑰五种强调色。修改立即应用并保存。
+- **诊断**：查看最近任务日志、打开日志目录。
+- **关于**：版本、配置路径、运行平台和 GPUI Kit 文档链接。
+
+## 离线账户
+
+离线账户由 `rmcl-auth` 生成稳定 UUID，界面不连接 Mojang 登录。账户保存在启动器配置中；侧栏卡片显示当前玩家名，编辑对话框支持新增、改名和切换。用户名允许非传统字符，但界面会按离线身份原样保留。
+
+当前不包含 Microsoft 登录、authlib-injector、皮肤上传、多账户删除确认和账户令牌存储。
+
+## 配置与路径
+
+启动器配置由 `rmcl-store` 持久化，默认路径：
+
+- macOS / Linux：`~/.config/rmcl/config.toml`，`XDG_CONFIG_HOME` 存在时优先使用它。
+- Windows：`%APPDATA%\rmcl\config.toml`。
+
+配置使用 TOML、schema 版本 1，并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
+
+Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。RMCL 不读取或改写 HMCL 配置。
+
+## 事件桥接与状态一致性
 
 `apps/rmcl` 在窗口根持有 `Rc<Services>`：
 
 - 一个 multi-thread Tokio `Runtime`，驱动 `rmcl-app` 的安装、Java 和游戏任务。
 - 一个 `TaskManager`，持有全部后台任务、取消令牌、快照和日志。
+- 一个 `VersionCatalog`，缓存远程版本清单。
+- 一个 `ConfigStore`，负责 TOML 配置。
 - 当前目标 `Platform`，供每个请求克隆使用。
 
-GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spawn` 调用 `start_install`、`start_launch` 或 `cancel`，并在 GPUI foreground task 中 await 返回的 `JoinHandle`，然后更新 View。传给 Tokio 的数据必须是 owned `Send` 数据，不捕获 GPUI Context 或 Window。
+GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spawn` 调用 `start_install`、`start_launch` 或 `cancel`，并在 GPUI foreground task 中 await 返回的 `JoinHandle`。传给 Tokio 的数据必须是 owned `Send` 数据，不捕获 GPUI Context 或 Window。
 
 `TaskManager` 的广播接收器直接移入一个持久保存的 GPUI foreground task。该 task 只处理事件和短 Entity 更新，不拥有安装或游戏 future。后台任务不依赖 View 是否正在显示日志。
 
-## 事件恢复与状态一致性
+版本选择和账户选择使用 `SelectState<SearchableVec<String>>`。安装完成或目录切换后通过 `set_items` 更新，不重建整个 View。版本请求带稳定 `TaskId`，终态只触发一次续期、版本重扫和通知。
 
-- 按钮启动返回 `TaskId` 后，UI 立即重新读取 `snapshot` 和 `logs`，避免快速任务在命令结果返回前已经完成导致状态缺失。
-- `TaskEvent::Snapshot` 驱动当前任务状态。运行中的任务不接受其他 ID 覆盖，终态后可以切换新任务；旧终态不能回写为 Running，Cancelling 不能回退为 Running。
-- 每条 `TaskEvent::GameLog` 携带任务内递增行号，View 拒绝重复行并保留最近 256 行；核心任务仍保留最近 1024 行。
-- 广播产生 `Lagged` 时不重新订阅，而是再次读取当前 `snapshot` 和 `logs`。恢复依靠快照和日志序号，避免通道残留事件造成状态回退或重复日志。
-- 慢订阅者可能丢失中间进度和日志事件，但不会反压游戏进程；可恢复的是当前快照和仍保留的日志，不承诺找回所有早期输出。
+## 明暗主题与系统外观
 
-## 当前窗口
+`gpui_kit::init` 提供默认浅色和深色主题。应用在启动和设置变化时调用：
 
-单一持续存在的窗口提供：
+- 跟随系统：`Theme::sync_system_appearance`，并让原生窗口外观跟随系统。
+- 浅色 / 深色：`Theme::change(ThemeMode::…)`，同时设置 macOS 原生窗口外观。
+- 强调色：在主题切换后通过 `Theme::update` 覆盖 `primary`、`button_primary*`、`sidebar_primary`、`sidebar_accent`、`ring` 和 `selection`。
 
-- Minecraft 目录、Vanilla 版本 ID、离线玩家名输入。
-- “安装”、“安装并启动”和“取消 / 停止”命令。
-- 当前阶段、文件或 native 进度、任务错误、运行/退出状态和日志滚动区域。
+标题栏的主题按钮在浅色和深色之间切换；选择“跟随系统”时，窗口外观变化会重新应用强调色。主题和强调色修改立即保存。
 
-默认目录为 `~/.minecraft`，Java store 为 `~/.rmcl/java`，不使用 HMCL 配置。当前示例默认版本为 `26.3`、玩家名 `Steve`，均可编辑。可用以下参数做隔离 smoke：
+## 当前不包含
 
-```text
---minecraft-root <PATH>
---java-store <PATH>
---version <ID>
---player <NAME>
-```
-
-`--help` 显示参数说明。首版没有远程版本列表、原生目录选择器、账号或配置持久化。
-
-## 关闭与当前非目标
-
-关闭窗口会释放应用服务和 Tokio runtime；正在停止的应用任务被中止，`GameProcess` 的 `kill_on_drop` 会终止直接游戏子进程。当前不承诺关闭启动器后游戏继续运行，也不管理进程树。
-
-当前不包含 Microsoft 登录、ModLoader、实例管理、修复界面、完整主题、国际化、崩溃分析、日志导出和发布打包。
+Microsoft 登录、authlib-injector、ModLoader、实例隔离和实例级配置、Mod/资源包/整合包、Java runtime 列表与显式覆盖、原生目录选择器、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
 
 ## 验证
 
-`apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入和有界缓冲，不需要图形环境。GPUI 依赖编译和原生窗口、按钮、真实游戏启动分别验证。
+- `apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入、有界缓冲和终态通知去重。
+- `rmcl-store` 覆盖 TOML 往返、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
+- `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消和安装/启动任务。
+- GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
+- 游戏运行时最小化、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复行为仍需逐平台验证。

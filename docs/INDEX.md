@@ -23,7 +23,8 @@
 - [Java 检测、探测与选择](architecture/JAVA_DISCOVERY.md)：真实 runtime 探测与兼容选择。
 - [Mojang runtime 元数据与安装](architecture/MOJANG_RUNTIME.md)：组件选择、raw 安装、链接、marker 与复用。
 - [启动计划与游戏进程](architecture/LAUNCH.md)：参数、离线身份、脱敏、日志、退出与真实验证范围。
-- [桌面界面与 GPUI 桥接](architecture/USER_INTERFACE.md)：GPUI Kit 基线、runtime 所有权、事件恢复与窗口行为。
+- [桌面界面与 GPUI 桥接](architecture/USER_INTERFACE.md)：GPUI Kit 基线、导航与页面、任务状态、隐藏与恢复、窗口行为。
+- [启动器配置](architecture/CONFIGURATION.md)：TOML 路径、schema、离线账户、原子写入与迁移边界。
 
 ## 兼容性
 
@@ -49,3 +50,4 @@
 - [HMCL 参考源码梳理](../notes/bootstrap/hmcl_reference_review.md)
 - [许可路线取舍](../notes/bootstrap/licensing_decision.md)
 - [当前未决问题](../notes/bootstrap/open_questions.md)
+- [界面重做与配置记录](../notes/development/ui_redesign.md)

@@ -1,0 +1,94 @@
+# 启动器配置
+
+状态：schema 1 已实现
+
+日期：2026-10-25
+
+## 边界
+
+启动器设置由 `rmcl-store` 持久化。它不依赖 GPUI，也不改写 `.minecraft` 版本 JSON 或 HMCL 配置。游戏文件、Java runtime 和任务日志仍由各自的模块管理。
+
+配置和游戏状态分离：删除或重建 `config.toml` 只会丢失启动器偏好、离线账户和选中项，不会删除 Minecraft 文件。
+
+## 路径
+
+| 平台 | 默认路径 |
+|---|---|
+| macOS / Linux | `$XDG_CONFIG_HOME/rmcl/config.toml`；未设置时使用 `~/.config/rmcl/config.toml` |
+| Windows | `%APPDATA%\rmcl\config.toml` |
+
+`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`。
+
+## Schema 1
+
+```toml
+schema_version = 1
+minecraft_root = "/Users/example/.minecraft"
+java_store = "/Users/example/.rmcl/java"
+selected_version = "1.21.1"
+selected_account = "Steve"
+auto_install_java = true
+launcher_visibility = "keep_visible"
+
+[[accounts]]
+username = "Steve"
+uuid = "5627dd98-e6be-3c21-b8a8-e92344183641"
+
+[appearance]
+theme = "system"
+accent = "emerald"
+```
+
+字段：
+
+- `minecraft_root`：标准 `.minecraft` 仓库根。修改后重新扫描版本，不移动文件。
+- `java_store`：RMCL 管理的 Java runtime store。启动时读取，修改后需重启。
+- `selected_version`：下一次启动使用的已安装版本 ID；不存在时界面回退到第一个有效版本。
+- `selected_account`：当前离线玩家名。
+- `accounts`：离线账户的玩家名和 UUID。UUID 使用离线身份规则生成并持久化；不保存访问令牌。
+- `auto_install_java`：缺少兼容 Java 时是否允许下载 Mojang runtime。当前在启动时读取。
+- `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时最小化启动器，任务终态恢复。
+- `appearance.theme`：`system`、`light` 或 `dark`。
+- `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
+
+缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1；0 或更高版本会被拒绝。
+
+## 原子写入
+
+保存流程：
+
+1. 创建配置目录。
+2. 在配置目录创建临时文件。
+3. 写入 TOML。
+4. `sync_all`。
+5. 原子替换目标文件。
+
+读取失败不会自动重写文件：
+
+- 不存在：返回默认配置。
+- TOML 无效：返回带路径的错误，界面显示“配置读取失败”，原文件保留。
+- 更高 schema：返回 `UnsupportedSchema`，原文件保留。
+- 后续用户主动修改设置时才可能写入当前 schema。
+
+配置文件只包含离线玩家名、UUID、路径和界面偏好，不包含 Microsoft 令牌、密码或认证服务器凭据。
+
+## 迁移
+
+当前只有 schema 1，没有历史版本迁移。升级 schema 时必须：
+
+- 明确旧版本到新版本的字段映射和默认值。
+- 保留未知字段或提供显式丢弃策略。
+- 对损坏文件和更高版本继续拒绝写入。
+- 在 `rmcl-store` 测试和本文件中同时记录。
+
+## 验证
+
+`rmcl-store` 的单元测试覆盖：
+
+- 默认路径不指向 HMCL 配置。
+- 缺失文件返回默认值。
+- TOML 往返保留账户、外观和启动器可见性。
+- 损坏 TOML 和更高 schema 不被重写。
+- 覆盖保存后内容可重新读取。
+
+跨平台路径与权限行为仍需在 Windows 和 Linux 上做真实运行验证。
