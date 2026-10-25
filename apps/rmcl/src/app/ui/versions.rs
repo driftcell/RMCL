@@ -57,12 +57,12 @@ impl LauncherApp {
                             ),
                     )
                     .child(
-                        Button::new("versions-install")
+                        Button::new("versions-create")
                             .primary()
-                            .icon(IconName::Plus)
-                            .label("安装新实例")
+                            .icon(IconName::PackagePlus)
+                            .label("新建实例")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.navigate(Page::Downloads, window, cx)
+                                this.open_create_instance(window, cx)
                             })),
                     ),
                 cx,

@@ -20,6 +20,7 @@
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
 - [本地内容管理](architecture/LOCAL_CONTENT.md)：Mod、资源包和光影的扫描、导入、删除、冲突策略与 `options.txt` 语义。
 - [远程内容与 Modrinth](architecture/REMOTE_CONTENT.md)：搜索、版本列表、文件校验、内容安装任务与 UI 流程。
+- [版本继承、Fabric/Quilt 与实例创建](architecture/LOADERS.md)：继承合并、jar 重定向、加载器 profile、实例创建事务与 UI。
 - [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
 - [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。
 - [ZIP 安全解压](architecture/ARCHIVE_EXTRACTION.md)：staging、条目校验、路径安全与取消。
@@ -60,3 +61,4 @@
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)
 - [远程内容与 Modrinth 取舍](../notes/development/remote_content.md)
+- [加载器安装与实例创建取舍](../notes/development/loader_installation.md)

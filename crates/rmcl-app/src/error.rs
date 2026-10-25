@@ -85,6 +85,12 @@ pub enum AppError {
     },
     #[error("remote content operations are not configured")]
     RemoteContentNotConfigured,
+    #[error("loader metadata request failed: {message}")]
+    LoaderMetadata { message: String },
+    #[error("invalid loader metadata: {message}")]
+    LoaderMetadataInvalid { message: String },
+    #[error("instance creator is not configured")]
+    InstanceCreatorNotConfigured,
     #[error(transparent)]
     RemoteContent(#[from] rmcl_content::RemoteContentError),
     #[error(transparent)]

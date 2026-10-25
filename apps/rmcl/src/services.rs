@@ -5,9 +5,9 @@ use std::{
 };
 
 use rmcl_app::{
-    AppError, ContentInstaller, JavaService, JavaServiceConfig, MICROSOFT_KEYRING_SERVICE,
-    MicrosoftAccountService, ModrinthClient, SkinCache, TaskManager, VanillaInstaller,
-    VersionCatalog,
+    AppError, ContentInstaller, InstanceCreator, JavaService, JavaServiceConfig, LoaderCatalog,
+    MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient, SkinCache, TaskManager,
+    VanillaInstaller, VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -26,6 +26,7 @@ pub struct Services {
     pub platform: Platform,
     pub catalog: VersionCatalog,
     pub modrinth: ModrinthClient,
+    pub loaders: LoaderCatalog,
     pub config_store: ConfigStore,
     pub microsoft_accounts: MicrosoftAccountService,
     pub skins: SkinCache,
@@ -47,7 +48,9 @@ impl Services {
         java_config.auto_install = config.auto_install_java;
         let java = JavaService::new(java_config)?;
         let content = ContentInstaller::official(DownloadConfig::default())?;
-        let tasks = TaskManager::with_content(installer, java, content, 256);
+        let loaders = LoaderCatalog::official()?;
+        let creator = InstanceCreator::new(installer.clone(), loaders.clone());
+        let tasks = TaskManager::with_full(installer, java, content, creator, 256);
         let catalog = VersionCatalog::official(DownloadConfig::default())?;
         let modrinth = ModrinthClient::official()?;
         let secrets = std::sync::Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
@@ -65,6 +68,7 @@ impl Services {
             platform: current_platform(),
             catalog,
             modrinth,
+            loaders,
             config_store,
             microsoft_accounts,
             skins,

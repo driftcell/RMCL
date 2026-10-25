@@ -13,6 +13,7 @@
 - client JAR 固定位于 classpath 最后。现代显式 native classifier 若已被安装计划归类为普通 `Library`，仍按元数据进入 classpath。
 - 生成启动计划时，游戏目录、共享 libraries、assets、natives 和 client JAR 统一转为绝对路径，避免切换工作目录后重复解析相对仓库前缀。
 - `${game_directory}` 来自实例游戏目录；`${library_directory}` 和 `${libraries_directory}` 来自仓库的共享 `libraries/`，不能从游戏目录推导。
+- 启动层消费 `resolve_version` 之后的独立 profile；Fabric/Quilt 的 mainClass、arguments 和 libraries 已合并，client JAR 按 `jar` 指向的基础版本读取。参见 [版本继承、Fabric/Quilt 与实例创建](LOADERS.md)。
 - Java 的最低/最高 major、OS 和架构必须满足 `JavaRequirement`，否则在 spawn 前返回 `IncompatibleJava`。
 
 [应用层 Vanilla 安装与启动](APPLICATION.md) 已组合下载、native 解压、Java ensure 和游戏任务。单独构造 `LaunchPlan` 不证明这些文件已经存在。
@@ -72,4 +73,4 @@ Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app`
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
 - 2026-10-25 使用真实 Microsoft 账户和正版 access token 在 macOS ARM64 启动 Vanilla，用户确认游戏正常进入运行阶段；正版会话的刷新和启动链路已验证。
 
-当前不包含版本继承和 ModLoader 参数合并、实例级 Java/内存/窗口覆盖、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Windows 和 Linux 的真实游戏启动仍需分别验收，不能由 CI 编译和脚本进程测试替代。
+当前不包含 Forge/NeoForge installer processors 及其加载器参数、实例级 Java/内存/窗口覆盖、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。Fabric/Quilt 的真实游戏启动仍需逐平台验收，不能由 CI 编译和脚本进程测试替代。

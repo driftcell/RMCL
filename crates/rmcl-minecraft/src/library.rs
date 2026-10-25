@@ -9,6 +9,11 @@ pub struct Library {
     pub name: String,
     #[serde(default)]
     pub url: Option<String>,
+    /// Fabric/Quilt launcher profiles put integrity fields at library level.
+    #[serde(default)]
+    pub sha1: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
     #[serde(default)]
     pub downloads: Option<LibraryDownloads>,
     #[serde(default)]

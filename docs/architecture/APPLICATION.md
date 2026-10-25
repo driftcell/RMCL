@@ -43,6 +43,8 @@
 
 旧实例迁移由 `migrate_instance_to_isolated` 提供：复制全局内容中实例尚不存在的文件，不覆盖、不跟随符号链接，最后写入 `isolation = "isolated"` 的 manifest；失败时实例保持共享。详见 [实例与版本隔离](INSTANCES.md)。
 
+`InstanceCreator` 组合基础版本安装、Fabric/Quilt 元数据 profile、实例 manifest 和最终继承计划下载。它复用 `VanillaInstaller` 的文件计划、校验、进度和取消，不引入第二套下载执行器；任务层以 `InstanceCreate` 持有整个创建过程。详见 [版本继承、Fabric/Quilt 与实例创建](LOADERS.md)。
+
 ## 执行顺序与副作用
 
 1. 解析、读取或保存版本 JSON；新安装同时建立实例 manifest。
@@ -69,11 +71,11 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 ## 任务管理
 
-`TaskManager::start_install`、`start_launch` 和 `start_launch_installed` 在应用级 Tokio 任务中持有对应 future，并暴露以下语义：
+`TaskManager::start_install`、`start_create_instance`、`start_content_install`、`start_launch` 和 `start_launch_installed` 在应用级 Tokio 任务中持有对应 future，并暴露以下语义：
 
 - `TaskId` 在进程内单调分配，不随阶段变化，也不复用已结束 ID；当前不持久化。
-- 活动任务按“绝对化仓库根 + 版本 ID”互斥，不同平台目标也不能并发写同一版本的共享文件。重复请求返回已有任务 ID 对应的 `TaskAlreadyRunning`。
-- `TaskSnapshot` 包含任务类型、统一 `TaskPhase`、`Running`/`Cancelling`/`Completed`/`Cancelled`/`Failed`/`Exited`、进度、脱敏错误、可选退出状态、停止标记和累计游戏日志行数。
+- 活动任务按“绝对化仓库根 + 实例 ID”互斥，不同平台目标也不能并发写同一实例的共享文件。重复请求返回已有任务 ID 对应的 `TaskAlreadyRunning`。
+- `TaskSnapshot` 包含任务类型、`TaskSubject`、统一 `TaskPhase`、`Running`/`Cancelling`/`Completed`/`Cancelled`/`Failed`/`Exited`、进度、脱敏错误、可选退出状态、停止标记和累计游戏日志行数。`TaskSubject` 区分版本、实例和内容安装目标，UI 不解析错误字符串来识别任务。
 - `cancel` 先发布 `Cancelling` 快照，再触发同一个协作式取消令牌。安装或 spawn 前取消最终为 `Cancelled`；游戏运行中取消会 kill 直接子进程、继续排空日志，最终以 `Exited` 和 `stop_requested` 返回。终态任务上的取消是 no-op。
 - `TaskEvent` 使用有界 broadcast。慢订阅者可能收到 `Lagged` 并丢失中间快照或日志事件，可以随时调用 `snapshot` 和 `logs` 读取当前状态；订阅者关闭不会取消任务。
 - 终态快照保留到 `dismiss`，dismiss 后发送移除事件；活动任务不能 dismiss。
@@ -115,7 +117,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 - Microsoft 登录、专用 Quick Play 配置和账号令牌存储
 - 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
-- 版本继承、特殊资产名称重建、ModLoader 和镜像策略
+- Forge/NeoForge installer processors、特殊资产名称重建和镜像策略
 - CurseForge、依赖图自动安装、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach

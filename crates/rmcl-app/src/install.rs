@@ -2,7 +2,9 @@ use std::{collections::HashSet, io::Write, path::Path};
 
 use rmcl_archive::{ArchiveExtractor, ExtractionError, ExtractionReport};
 use rmcl_domain::DownloadRequest;
-use rmcl_install::{InstallPlan, PlannedFileKind, plan_asset_objects_with_base, plan_vanilla};
+use rmcl_install::{
+    InstallPlan, PlannedFileKind, plan_asset_objects_with_base, plan_vanilla, resolve_version,
+};
 use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::{AssetCatalog, GameVersion, VersionManifest, VersionSummary};
 use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadReport, ProgressStage, progress_channel};
@@ -68,14 +70,15 @@ impl VanillaInstaller {
             .resolve_version_json(&request, &version_json_path, &cancellation, &events)
             .await?;
         let version_json = json_string(version_json, &version_json_path)?;
-        let version = GameVersion::from_json(&version_json)?;
-        if version.id != request.version_id {
+        let child = GameVersion::from_json(&version_json)?;
+        if child.id != request.version_id {
             return Err(AppError::VersionIdMismatch {
                 expected: request.version_id.clone(),
-                actual: version.id.clone(),
+                actual: child.id.clone(),
             });
         }
         let instance = resolve_instance_layout(&layout, &id, had_version_json, &request.source)?;
+        let version = resolve_version(&layout, &id)?;
 
         emit_phase(&events, InstallPhase::PlanningBase).await;
         check_cancelled(&cancellation)?;
@@ -164,17 +167,18 @@ impl VanillaInstaller {
         let version_json_path = layout.version_json_path(&id);
         let bytes = read_bytes(&version_json_path, "read existing version JSON").await?;
         let json = json_string(bytes, &version_json_path)?;
-        let version = GameVersion::from_json(&json)?;
-        if version.id != request.version_id {
+        let child = GameVersion::from_json(&json)?;
+        if child.id != request.version_id {
             return Err(AppError::VersionIdMismatch {
                 expected: request.version_id.clone(),
-                actual: version.id.clone(),
+                actual: child.id.clone(),
             });
         }
         let probe = layout.instance(id.clone(), IsolationMode::Shared);
         let manifest = probe.load_manifest()?;
         let isolation = manifest.map_or(IsolationMode::Shared, |manifest| manifest.isolation);
         let instance = layout.instance(id.clone(), isolation);
+        let version = resolve_version(&layout, &id)?;
 
         let base_plan = plan_vanilla(&layout, &version, &request.platform)?;
         let mut missing = Vec::new();

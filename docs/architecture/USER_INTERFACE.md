@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：启动器壳、实例列表与隔离迁移、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
+状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
 日期：2026-10-25
 
@@ -41,11 +41,20 @@
 - 扫描 `versions/<id>/<id>.json`，读取可选的 `rmcl.instance.toml`，显示有效实例；按发布时间从新到旧排序。
 - 搜索框按实例 ID、显示名称和基础 Minecraft 版本过滤，并提供“全部 / 正式版 / 快照 / 旧版”筛选。
 - 每行显示显示名称、基础版本、加载器（若有）、隔离模式和实际游戏目录。manifest 损坏时标记“配置异常”，但仍允许修复或删除。
-- 每行提供启动、管理内容、检查并修复、启用版本隔离、打开游戏目录和删除。检查修复复用 `VersionSource::Existing`，不新增第二套安装逻辑。
+- 顶部“新建实例”进入创建页；每行提供启动、管理内容、检查并修复、启用版本隔离、打开游戏目录和删除。检查修复复用 `VersionSource::Existing`，不新增第二套安装逻辑。
 - 有共享实例时页面顶部显示迁移提示；没有 manifest 的旧版本显示“共享”标签。点击启用隔离后弹出确认，确认后把全局 mods、资源包和光影中缺失的文件复制到实例，不覆盖已有文件，原全局内容保留。
 - 正常启动走已安装快速路径：读取版本 JSON、生成计划并检查 client、libraries、natives 和 asset index 是否存在，不重新下载或重新哈希 asset objects。缺少基础文件时返回“版本不完整，需要修复”，不会静默启动。
 - 删除只移除 `versions/<id>/`，保留共享 `libraries/` 和 `assets/`；隔离实例会同时删除自己的 mods、资源包、光影和存档，确认文案会明确说明。删除前要求版本 JSON 和 ID 匹配，并拒绝符号链接目录。
 - 缺少客户端 JAR 的实例标记为“文件不完整”，仍可启动或修复；修复流程会补齐缺失文件。
+
+### 新建实例
+
+- 输入 Minecraft 版本 ID，选择 Vanilla、Fabric 或 Quilt。
+- Fabric/Quilt 通过官方元数据获取加载器版本，稳定版默认优先。
+- 显示名称和实例 ID 可留空；ID 按基础版本和加载器自动生成，也可手动指定。
+- 创建过程显示基础版本安装、加载器元数据获取、实例配置写入和实例文件安装阶段。
+- 创建成功后自动选中新实例并进入实例详情。
+- Forge/NeoForge 暂未出现在加载器选项中，避免展示不可用入口。
 
 ### 实例详情
 
@@ -150,7 +159,7 @@ Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元
 
 ## 当前不包含
 
-authlib-injector、ModLoader、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
+authlib-injector、Forge/NeoForge 与 OptiFine 等加载器、给已有实例追加/升级/移除加载器、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
 
 ## 验证
 
@@ -159,6 +168,7 @@ authlib-injector、ModLoader、实例级 Java/启动参数/内存/窗口配置�
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
 - `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖解析、API 错误和取消。
 - `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态。
+- `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。
 - 游戏运行时最小化、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。

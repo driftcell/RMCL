@@ -26,15 +26,10 @@ pub fn plan_vanilla(
             inherits_from: inherits_from.clone(),
         });
     }
-    if let Some(jar) = &version.jar {
-        let jar_id = VersionId::new(jar.clone())?;
-        if jar_id != id {
-            return Err(InstallPlanError::UnsupportedClientJarRedirect {
-                id: version.id.clone(),
-                jar: jar.clone(),
-            });
-        }
-    }
+    let jar_id = match &version.jar {
+        Some(jar) => VersionId::new(jar.clone())?,
+        None => id.clone(),
+    };
 
     let client = version
         .downloads
@@ -49,7 +44,7 @@ pub fn plan_vanilla(
     let client_url = required_url(client.url.as_deref(), &format!("client for {}", version.id))?;
     builder.push_file(PlannedFile {
         kind: PlannedFileKind::Client,
-        destination: layout.client_jar_path(&id),
+        destination: layout.client_jar_path(&jar_id),
         sources: vec![client_url],
         sha1: optional_sha1(client.sha1.as_deref())?,
         size: client.size,
@@ -220,8 +215,12 @@ fn push_library_file(
         kind,
         destination: destination.clone(),
         sources: vec![url],
-        sha1: optional_sha1(download.and_then(|info| info.sha1.as_deref()))?,
-        size: download.and_then(|info| info.size),
+        sha1: optional_sha1(
+            download
+                .and_then(|info| info.sha1.as_deref())
+                .or(library.sha1.as_deref()),
+        )?,
+        size: download.and_then(|info| info.size).or(library.size),
     };
     builder.push_file(file)?;
     Ok(destination)

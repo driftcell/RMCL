@@ -16,6 +16,7 @@ rmcl-launch.workspace = true
 rmcl-minecraft.workspace = true
 rmcl-net.workspace = true
 rmcl-platform.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

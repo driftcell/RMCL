@@ -204,7 +204,10 @@ impl LauncherApp {
             .active(
                 self.page == page
                     || (page == Page::Versions
-                        && matches!(self.page, Page::Instance | Page::ContentBrowser)),
+                        && matches!(
+                            self.page,
+                            Page::Instance | Page::CreateInstance | Page::ContentBrowser
+                        )),
             )
             .on_click(cx.listener(move |this, _, window, cx| this.navigate(page, window, cx)))
     }

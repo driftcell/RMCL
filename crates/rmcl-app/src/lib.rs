@@ -6,8 +6,10 @@ mod content;
 mod error;
 mod game;
 mod install;
+mod instance_create;
 mod instances;
 mod java;
+mod loader;
 mod model;
 mod skins;
 mod task;
@@ -28,10 +30,15 @@ pub use game::{
     GameLaunchEvent, GameLaunchEventSender, GameLaunchOutcome, GameLaunchRequest, GameLauncher,
 };
 pub use install::VanillaInstaller;
+pub use instance_create::{
+    CreateInstanceRequest, InstanceCreateEvent, InstanceCreateEventSender, InstanceCreateOutcome,
+    InstanceCreatePhase, InstanceCreator, LoaderSelection,
+};
 pub use instances::migrate_instance_to_isolated;
 pub use java::{
     JavaEvent, JavaEventSender, JavaSelection, JavaSelectionOrigin, JavaService, JavaServiceConfig,
 };
+pub use loader::{LoaderCatalog, LoaderCatalogConfig, LoaderVersion};
 pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,

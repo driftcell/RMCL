@@ -15,9 +15,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     AppError, ContentDownloadProgress, ContentInstallEvent, ContentInstallOutcome,
-    ContentInstallPhase, ContentInstallRequest, ContentInstaller, GameLaunchEvent,
-    GameLaunchOutcome, GameLaunchRequest, GameLauncher, InstallDownloadProgress, InstallEvent,
-    InstallOutcome, InstallPhase, JavaEvent, VanillaInstallRequest, VanillaInstaller,
+    ContentInstallPhase, ContentInstallRequest, ContentInstaller, CreateInstanceRequest,
+    GameLaunchEvent, GameLaunchOutcome, GameLaunchRequest, GameLauncher, InstallDownloadProgress,
+    InstallEvent, InstallOutcome, InstallPhase, InstanceCreateEvent, InstanceCreateOutcome,
+    InstanceCreatePhase, InstanceCreator, JavaEvent, VanillaInstallRequest, VanillaInstaller,
     content::absolute_instance,
 };
 
@@ -45,6 +46,7 @@ impl std::fmt::Display for TaskId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskKind {
     VanillaInstall,
+    InstanceCreate,
     ContentInstall,
     GameLaunch,
 }
@@ -52,6 +54,7 @@ pub enum TaskKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPhase {
     Install(InstallPhase),
+    InstanceCreate(InstanceCreatePhase),
     Content(ContentInstallPhase),
     Inspecting,
     CheckingJava,
@@ -102,6 +105,10 @@ pub enum TaskSubject {
         kind: ContentKind,
         name: String,
     },
+    Instance {
+        id: String,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +145,7 @@ struct TaskInner {
     installer: VanillaInstaller,
     game: Option<GameLauncher>,
     content: Option<ContentInstaller>,
+    instance_creator: Option<InstanceCreator>,
     next_id: AtomicU64,
     registry: Mutex<Registry>,
     events: broadcast::Sender<TaskEvent>,
@@ -171,7 +179,7 @@ struct InstallKey {
 
 impl TaskManager {
     pub fn new(installer: VanillaInstaller, event_capacity: usize) -> Self {
-        Self::build(installer, None, None, event_capacity)
+        Self::build(installer, None, None, None, event_capacity)
     }
 
     pub fn with_java(
@@ -180,7 +188,7 @@ impl TaskManager {
         event_capacity: usize,
     ) -> Self {
         let game = GameLauncher::new(installer.clone(), java);
-        Self::build(installer, Some(game), None, event_capacity)
+        Self::build(installer, Some(game), None, None, event_capacity)
     }
 
     pub fn with_content(
@@ -190,7 +198,24 @@ impl TaskManager {
         event_capacity: usize,
     ) -> Self {
         let game = GameLauncher::new(installer.clone(), java);
-        Self::build(installer, Some(game), Some(content), event_capacity)
+        Self::build(installer, Some(game), Some(content), None, event_capacity)
+    }
+
+    pub fn with_full(
+        installer: VanillaInstaller,
+        java: crate::JavaService,
+        content: ContentInstaller,
+        instance_creator: InstanceCreator,
+        event_capacity: usize,
+    ) -> Self {
+        let game = GameLauncher::new(installer.clone(), java);
+        Self::build(
+            installer,
+            Some(game),
+            Some(content),
+            Some(instance_creator),
+            event_capacity,
+        )
     }
 
     /// Enables content installs without requiring a Java/game launcher.
@@ -199,13 +224,29 @@ impl TaskManager {
         content: ContentInstaller,
         event_capacity: usize,
     ) -> Self {
-        Self::build(installer, None, Some(content), event_capacity)
+        Self::build(installer, None, Some(content), None, event_capacity)
+    }
+
+    /// Enables instance creation without requiring a Java/game launcher.
+    pub fn with_creator_only(
+        installer: VanillaInstaller,
+        instance_creator: InstanceCreator,
+        event_capacity: usize,
+    ) -> Self {
+        Self::build(
+            installer,
+            None,
+            None,
+            Some(instance_creator),
+            event_capacity,
+        )
     }
 
     fn build(
         installer: VanillaInstaller,
         game: Option<GameLauncher>,
         content: Option<ContentInstaller>,
+        instance_creator: Option<InstanceCreator>,
         event_capacity: usize,
     ) -> Self {
         let (events, _) = broadcast::channel(event_capacity.max(1));
@@ -214,6 +255,7 @@ impl TaskManager {
                 installer,
                 game,
                 content,
+                instance_creator,
                 next_id: AtomicU64::new(1),
                 registry: Mutex::new(Registry::default()),
                 events,
@@ -241,6 +283,36 @@ impl TaskManager {
         tokio::spawn(async move {
             manager
                 .run_install(id, request, cancellation, sender, receiver)
+                .await;
+        });
+        Ok(id)
+    }
+
+    /// Creates an isolated Vanilla or Fabric/Quilt instance.
+    pub async fn start_create_instance(
+        &self,
+        mut request: CreateInstanceRequest,
+    ) -> Result<TaskId, AppError> {
+        let Some(creator) = self.inner.instance_creator.clone() else {
+            return Err(AppError::InstanceCreatorNotConfigured);
+        };
+        let key = prepare_create_request(&mut request)?;
+        let subject = TaskSubject::Instance {
+            id: key.version_id.clone(),
+            name: if request.name.trim().is_empty() {
+                key.version_id.clone()
+            } else {
+                request.name.trim().to_owned()
+            },
+        };
+        let (id, cancellation) = self
+            .register(TaskKind::InstanceCreate, key, Some(subject))
+            .await?;
+        let (sender, receiver) = mpsc::channel(128);
+        let manager = self.clone();
+        tokio::spawn(async move {
+            manager
+                .run_create_instance(id, creator, request, cancellation, sender, receiver)
                 .await;
         });
         Ok(id)
@@ -434,6 +506,25 @@ impl TaskManager {
         self.finish_install(id, result).await;
     }
 
+    async fn run_create_instance(
+        self,
+        id: TaskId,
+        creator: InstanceCreator,
+        request: CreateInstanceRequest,
+        cancellation: CancellationToken,
+        sender: mpsc::Sender<InstanceCreateEvent>,
+        mut receiver: mpsc::Receiver<InstanceCreateEvent>,
+    ) {
+        let create = Box::pin(creator.create(request, cancellation, Some(sender)));
+        let forward = async {
+            while let Some(event) = receiver.recv().await {
+                self.apply_instance_create_event(id, event).await;
+            }
+        };
+        let (result, ()) = tokio::join!(create, forward);
+        self.finish_create_instance(id, result).await;
+    }
+
     async fn run_content_install(
         self,
         id: TaskId,
@@ -512,6 +603,16 @@ impl TaskManager {
             record.snapshot.clone()
         };
         let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
+    }
+
+    async fn apply_instance_create_event(&self, id: TaskId, event: InstanceCreateEvent) {
+        match event {
+            InstanceCreateEvent::Phase(phase) => {
+                self.update_phase(id, TaskPhase::InstanceCreate(phase))
+                    .await;
+            }
+            InstanceCreateEvent::Install(event) => self.apply_install_event(id, event).await,
+        }
     }
 
     async fn apply_content_event(&self, id: TaskId, event: ContentInstallEvent) {
@@ -624,6 +725,38 @@ impl TaskManager {
         let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
     }
 
+    async fn finish_create_instance(
+        self,
+        id: TaskId,
+        result: Result<InstanceCreateOutcome, AppError>,
+    ) {
+        let snapshot = {
+            let mut registry = self.inner.registry.lock().await;
+            registry.active_versions.retain(|active| active.id != id);
+            let Some(record) = registry.tasks.get_mut(&id) else {
+                return;
+            };
+            match result {
+                Ok(_) => {
+                    record.snapshot.status = TaskStatus::Completed;
+                    record.snapshot.phase =
+                        Some(TaskPhase::InstanceCreate(InstanceCreatePhase::Completed));
+                    record.snapshot.error = None;
+                }
+                Err(AppError::Cancelled) => {
+                    record.snapshot.status = TaskStatus::Cancelled;
+                    record.snapshot.error = None;
+                }
+                Err(error) => {
+                    record.snapshot.status = TaskStatus::Failed;
+                    record.snapshot.error = Some(format_error(&error));
+                }
+            }
+            record.snapshot.clone()
+        };
+        let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
+    }
+
     async fn finish_content(self, id: TaskId, result: Result<ContentInstallOutcome, AppError>) {
         let snapshot = {
             let mut registry = self.inner.registry.lock().await;
@@ -692,6 +825,20 @@ fn prepare_request(request: &mut VanillaInstallRequest) -> Result<InstallKey, Ap
     Ok(InstallKey {
         root: request.minecraft_root.clone(),
         version_id: request.version_id.clone(),
+    })
+}
+
+fn prepare_create_request(request: &mut CreateInstanceRequest) -> Result<InstallKey, AppError> {
+    request.minecraft_root =
+        std::path::absolute(&request.minecraft_root).map_err(|source| AppError::Io {
+            operation: "resolve Minecraft root",
+            path: request.minecraft_root.clone(),
+            source,
+        })?;
+    VersionId::new(request.instance_id.clone())?;
+    Ok(InstallKey {
+        root: request.minecraft_root.clone(),
+        version_id: request.instance_id.clone(),
     })
 }
 

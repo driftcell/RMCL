@@ -6,15 +6,16 @@
 
 ## API 与阶段
 
-`rmcl-install` 提供两个纯规划入口：
+`rmcl-install` 提供纯规划入口：
 
+- `resolve_version`：读取版本 JSON 和 `inheritsFrom` 父链，合并成独立 profile；检测循环、缺失父版本和过深继承。
 - `plan_vanilla`：client JAR、普通 libraries、native libraries 和 asset index。
 - `plan_asset_objects`：下载并解析 asset index 后，根据 `AssetCatalog` 生成 content-addressed objects 计划。
 - `plan_asset_objects_with_base`：使用显式 asset object 来源根路径，保持相同 SHA-1/size 校验，供本地执行与未来的来源策略复用。
 
 两阶段分离允许执行器先取得 asset index，再规划其中的对象。计划本身不会读写文件、访问网络、修改版本 JSON 或执行解压；实际下载由 [下载执行器](DOWNLOAD_EXECUTOR.md) 提供。显式 asset base 不接受 query 或 fragment，避免把来源根配置误当成对象级签名 URL。
 
-`inheritsFrom` 版本会返回 `UnsupportedInheritance`，不会按不完整子清单生成 Vanilla 计划。`virtual: true` 和 `map_to_resources: true` 的 asset index 也明确报错；在对应名称重建实现前不静默生成不完整安装。
+`plan_vanilla` 要求传入已解析的 profile；直接传入仍带 `inheritsFrom` 的版本会返回 `UnsupportedInheritance`。合并后的 profile 允许 `jar != id`，此时 client JAR 计划到 `jar` 指向的基础版本目录，供 Fabric/Quilt 实例复用基础 client JAR。`virtual: true` 和 `map_to_resources: true` 的 asset index 仍明确报错。
 
 `InstallPlan` 包含：
 
@@ -29,6 +30,7 @@
 - 带 `natives` 的条目只生成匹配当前 OS 的 `NativeLibrary` 与提取计划，不额外下载基础 artifact。
 - `natives` 没有当前 OS key 时跳过整个 native 条目，不回退到基础 JAR。
 - `${arch}` 按目标平台的 JVM 指针宽度替换为 `32` 或 `64`；未知架构和未解析占位符报错。
+- 加载器 profile 的 library 顶层 `sha1` / `size` 会被保留，并在没有 `downloads` integrity 字段时用于校验。
 
 `downloads` 整体缺失时允许旧式 Maven 回退。一旦提供 `downloads`，就要求选中的 native classifier 存在于 `downloads.classifiers`，否则返回 `MissingNativeClassifier`，不静默合成矛盾元数据。
 
@@ -60,7 +62,7 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 
 - 内容寻址缓存、镜像策略与 HTTP Range 断点续传；通用下载、重试、取消和原子发布已在 [下载执行器](DOWNLOAD_EXECUTOR.md) 实现。
 - TAR 等其他归档格式；ZIP/JAR 解压、路径与 symlink 防护、同目录 native 合并已在 [ZIP 安全解压](ARCHIVE_EXTRACTION.md) 实现。
-- `inheritsFrom`、patches 和 `jar != id` 的 client 重定向。
+- Forge/NeoForge 的 installer processors、patches 和安装后处理；Fabric/Quilt profile 合并与实例创建见 [加载器与实例创建](LOADERS.md)。
 - 无 `assetIndex` 的旧版本内置回退表。
 - `virtual` / `map_to_resources` 资产名称重建。
 - 镜像选择、修复执行与应用层启动编排；[安装用例](APPLICATION.md)、Java 管理和启动参数分别由对应 crate 提供。

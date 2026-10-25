@@ -35,9 +35,9 @@ OS 名称使用 `windows`、`linux`、`macos`。架构使用 RMCL 归一化名�
 
 ## 版本与 client JAR
 
-版本 ID 必须是非空白、安全的单路径组件。当前 Vanilla planner 只接受 `jar` 缺失或 `jar == id`；`jar != id` 返回 `UnsupportedClientJarRedirect`，避免安装写入路径与后续启动读取路径不一致。启动层已经按版本 JSON 的 `jar` 选择 client JAR，但加载器安装和继承合并尚未实现。
+版本 ID 必须是非空白、安全的单路径组件。继承链由 `resolve_version` 合并；合并后的 profile 允许 `jar != id`，client JAR 计划到 `jar` 指向的基础版本目录，启动层也按同一路径读取。Fabric/Quilt 实例因此复用基础版本的 client JAR，不复制或静默覆盖其他版本的文件。
 
-继承场景中的 client 重定向需要未来单独定义，不能通过静默覆盖另一个版本的 JAR 实现。
+直接调用 `plan_vanilla` 时传入未解析的 `inheritsFrom` 仍会报错；加载器 profile 必须先解析继承链。
 
 ## 仓库相对路径
 

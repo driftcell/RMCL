@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use rmcl_install::resolve_version;
 use rmcl_instance::{InstanceLayout, InstanceLoader, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::GameVersion;
 
@@ -125,8 +126,23 @@ pub fn discover_installed_versions(
             |manifest| manifest.resolved_minecraft_version(&id).to_owned(),
         );
         let loader = manifest.and_then(|manifest| manifest.loader);
-        let jar_id = version
-            .jar
+        let resolved = version
+            .inherits_from
+            .as_ref()
+            .and_then(|_| resolve_version(&layout, &id).ok());
+        let jar = resolved
+            .as_ref()
+            .and_then(|resolved| resolved.jar.clone())
+            .or(version.jar);
+        let version_type = resolved
+            .as_ref()
+            .and_then(|resolved| resolved.version_type.clone())
+            .or(version.version_type);
+        let release_time = resolved
+            .as_ref()
+            .and_then(|resolved| resolved.release_time.clone())
+            .or(version.release_time);
+        let jar_id = jar
             .as_deref()
             .and_then(|jar| VersionId::new(jar).ok())
             .unwrap_or_else(|| id.clone());
@@ -134,8 +150,8 @@ pub fn discover_installed_versions(
             id,
             name,
             minecraft_version,
-            version_type: version.version_type,
-            release_time: version.release_time,
+            version_type,
+            release_time,
             version_dir: instance.root(),
             game_dir: instance.game_dir(),
             isolation,
@@ -321,6 +337,51 @@ mod tests {
         assert_eq!(
             version.loader.as_ref().map(|loader| loader.kind.as_str()),
             Some("fabric")
+        );
+    }
+
+    #[test]
+    fn loader_instance_uses_the_parent_client_jar() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        write_version(root, "1.21.1", "release", "2024-08-08T08:00:00+00:00", true);
+        let loader_dir = root.join("versions/fabric-test");
+        std::fs::create_dir_all(&loader_dir).unwrap();
+        std::fs::write(
+            loader_dir.join("fabric-test.json"),
+            br#"{"id":"fabric-test","inheritsFrom":"1.21.1","mainClass":"example.Loader"}"#,
+        )
+        .unwrap();
+        let mut manifest = rmcl_instance::InstanceManifest::new(
+            &VersionId::new("fabric-test").unwrap(),
+            IsolationMode::Isolated,
+        );
+        manifest.minecraft_version = "1.21.1".to_owned();
+        manifest.loader = Some(rmcl_instance::InstanceLoader {
+            kind: rmcl_instance::LoaderKind::Fabric,
+            version: "0.16.10".to_owned(),
+        });
+        MinecraftLayout::new(root)
+            .instance(
+                VersionId::new("fabric-test").unwrap(),
+                IsolationMode::Isolated,
+            )
+            .write_manifest(&manifest)
+            .unwrap();
+
+        let versions = discover_installed_versions(root).unwrap();
+
+        assert_eq!(versions.len(), 2);
+        let loader = versions
+            .iter()
+            .find(|version| version.id.as_str() == "fabric-test")
+            .unwrap();
+        assert!(loader.client_jar_present);
+        assert_eq!(loader.minecraft_version, "1.21.1");
+        assert_eq!(loader.version_type.as_deref(), Some("release"));
+        assert_eq!(
+            loader.release_time.as_deref(),
+            Some("2024-08-08T08:00:00+00:00")
         );
     }
 

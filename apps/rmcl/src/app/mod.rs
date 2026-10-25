@@ -22,13 +22,14 @@ use gpui_kit::{
 };
 use rmcl_app::{
     AppError, ConflictPolicy, ContentInstallPhase, ContentInstallRequest, ContentKind,
-    ContentLibrary, ContentSource, GameLaunchRequest, InstallPhase, InstalledVersion, LocalContent,
-    MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
-    RepositoryPath, ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase, TaskProgress,
-    TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest, VersionManifest, VersionSource,
-    VersionSummary, delete_installed_version, delete_instance_content, discover_installed_versions,
-    import_instance_content, migrate_instance_to_isolated, scan_instance_content,
-    set_instance_content_enabled,
+    ContentLibrary, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
+    InstalledVersion, InstanceCreatePhase, LoaderKind, LoaderSelection, LoaderVersion,
+    LocalContent, MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort,
+    RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount, TaskEvent, TaskKind, TaskPhase,
+    TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest, VersionManifest,
+    VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
+    discover_installed_versions, import_instance_content, migrate_instance_to_isolated,
+    scan_instance_content, set_instance_content_enabled,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -59,6 +60,7 @@ pub enum Page {
     Home,
     Versions,
     Instance,
+    CreateInstance,
     ContentBrowser,
     Downloads,
     Logs,
@@ -71,6 +73,7 @@ impl Page {
             Self::Home => "主页",
             Self::Versions => "实例",
             Self::Instance => "实例详情",
+            Self::CreateInstance => "新建实例",
             Self::ContentBrowser => "在线内容",
             Self::Downloads => "下载游戏",
             Self::Logs => "日志",
@@ -83,6 +86,7 @@ impl Page {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
+            Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
             Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
             Self::Downloads => "从 Mojang 官方源安装新的 Vanilla 版本。",
             Self::Logs => "查看安装、启动和游戏运行日志。",
@@ -95,6 +99,7 @@ impl Page {
             Self::Home => IconName::House,
             Self::Versions => IconName::Boxes,
             Self::Instance => IconName::Package,
+            Self::CreateInstance => IconName::PackagePlus,
             Self::ContentBrowser => IconName::Globe,
             Self::Downloads => IconName::Download,
             Self::Logs => IconName::ScrollText,
@@ -227,6 +232,7 @@ pub struct CatalogState {
 
 enum Command {
     Install(VanillaInstallRequest),
+    CreateInstance(CreateInstanceRequest),
     ContentInstall(ContentInstallRequest),
     Launch(GameLaunchRequest),
 }
@@ -293,6 +299,17 @@ pub struct LauncherApp {
     content_browser_request: u64,
     content_browser_cancel: Option<CancellationToken>,
     _content_browser_task: Option<Task<()>>,
+    create_base_input: Entity<InputState>,
+    create_name_input: Entity<InputState>,
+    create_id_input: Entity<InputState>,
+    create_loader: Option<LoaderKind>,
+    create_loader_versions: Vec<LoaderVersion>,
+    create_loader_version: Option<String>,
+    create_loader_loading: bool,
+    create_loader_error: Option<String>,
+    create_loader_cancel: Option<CancellationToken>,
+    create_loader_request: u64,
+    _create_task: Option<Task<()>>,
     _content_task: Option<Task<()>>,
     accounts: Vec<Account>,
     account_heads: HashMap<Uuid, PathBuf>,
@@ -455,6 +472,10 @@ impl LauncherApp {
         let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
         let remote_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
+        let create_base_input = cx.new(|cx| InputState::new(window, cx).placeholder("例如 1.21.1"));
+        let create_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
+        let create_id_input = cx.new(|cx| InputState::new(window, cx).placeholder("留空自动生成"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -482,6 +503,35 @@ impl LauncherApp {
         );
         subscriptions.push(
             cx.subscribe(&remote_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&create_base_input, |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    if let Some(cancellation) = this.create_loader_cancel.take() {
+                        cancellation.cancel();
+                    }
+                    this.create_loader_request = this.create_loader_request.wrapping_add(1);
+                    this.create_loader_loading = false;
+                    this.create_loader_versions.clear();
+                    this.create_loader_version = None;
+                    this.create_loader_error = None;
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&create_name_input, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&create_id_input, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
@@ -561,6 +611,17 @@ impl LauncherApp {
             content_browser_request: 0,
             content_browser_cancel: None,
             _content_browser_task: None,
+            create_base_input,
+            create_name_input,
+            create_id_input,
+            create_loader: None,
+            create_loader_versions: Vec::new(),
+            create_loader_version: None,
+            create_loader_loading: false,
+            create_loader_error: None,
+            create_loader_cancel: None,
+            create_loader_request: 0,
+            _create_task: None,
             _content_task: None,
             accounts,
             account_heads: HashMap::new(),
@@ -1219,6 +1280,9 @@ impl LauncherApp {
                 .spawn(async move {
                     match command {
                         Command::Install(request) => command_manager.start_install(request).await,
+                        Command::CreateInstance(request) => {
+                            command_manager.start_create_instance(request).await
+                        }
                         Command::ContentInstall(request) => {
                             command_manager.start_content_install(request).await
                         }
@@ -1343,6 +1407,24 @@ impl LauncherApp {
         }
         let version = self.active_task_version.clone();
         match snapshot.status {
+            TaskStatus::Completed if snapshot.kind == TaskKind::InstanceCreate => {
+                let (instance_id, name) = match snapshot.subject {
+                    Some(TaskSubject::Instance { id, name }) => (Some(id), name),
+                    _ => (None, "实例".to_owned()),
+                };
+                self.reload_versions(window, cx);
+                if let Some(instance_id) = instance_id {
+                    self.config.selected_version = Some(instance_id.clone());
+                    self.selected_instance = Some(instance_id);
+                    self.page = Page::Instance;
+                    self.save_config();
+                    self.load_instance_content(window, cx);
+                }
+                window.push_notification(
+                    Notification::success(format!("实例 {name} 已创建。")).title("实例创建完成"),
+                    cx,
+                );
+            }
             TaskStatus::Completed if snapshot.kind == TaskKind::ContentInstall => {
                 let (instance_id, name) = match snapshot.subject {
                     Some(TaskSubject::Content {
@@ -2851,6 +2933,210 @@ impl LauncherApp {
         self.load_instance_content(window, cx);
     }
 
+    fn open_create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(cancellation) = self.create_loader_cancel.take() {
+            cancellation.cancel();
+        }
+        self.page = Page::CreateInstance;
+        self.create_loader = None;
+        self.create_loader_versions.clear();
+        self.create_loader_version = None;
+        self.create_loader_loading = false;
+        self.create_loader_error = None;
+        let base = self
+            .selected_instance_version()
+            .map(|version| version.minecraft_version.clone())
+            .or_else(|| self.latest_release().map(str::to_owned))
+            .unwrap_or_default();
+        self.create_base_input.update(cx, |state, cx| {
+            state.set_value(base, window, cx);
+        });
+        self.create_name_input.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        self.create_id_input.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        cx.notify();
+    }
+
+    fn select_create_loader(
+        &mut self,
+        loader: Option<LoaderKind>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.create_loader == loader {
+            return;
+        }
+        self.create_loader = loader;
+        self.create_loader_versions.clear();
+        self.create_loader_version = None;
+        self.create_loader_error = None;
+        if let Some(cancellation) = self.create_loader_cancel.take() {
+            cancellation.cancel();
+        }
+        if loader.is_some() {
+            self.fetch_loader_versions(window, cx);
+        }
+        cx.notify();
+    }
+
+    fn fetch_loader_versions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(kind) = self.create_loader else {
+            return;
+        };
+        let base = self.create_base_input.read(cx).value().trim().to_owned();
+        if base.is_empty() {
+            self.create_loader_error = Some("请先填写 Minecraft 版本。".to_owned());
+            cx.notify();
+            return;
+        }
+        if let Some(cancellation) = self.create_loader_cancel.take() {
+            cancellation.cancel();
+        }
+        let cancellation = CancellationToken::new();
+        self.create_loader_cancel = Some(cancellation.clone());
+        self.create_loader_request = self.create_loader_request.wrapping_add(1);
+        let request = self.create_loader_request;
+        self.create_loader_loading = true;
+        self.create_loader_error = None;
+        let client = self.services.loaders.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._create_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move { client.versions(kind, &base, &cancellation).await })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.create_loader_request != request {
+                    return;
+                }
+                view.create_loader_loading = false;
+                match result {
+                    Ok(Ok(versions)) => {
+                        view.create_loader_version = versions
+                            .iter()
+                            .find(|version| version.stable)
+                            .or_else(|| versions.first())
+                            .map(|version| version.version.clone());
+                        view.create_loader_versions = versions;
+                        view.create_loader_error = None;
+                    }
+                    Ok(Err(error)) => {
+                        if !matches!(error, AppError::Cancelled) {
+                            view.create_loader_error = Some(error.to_string());
+                        }
+                    }
+                    Err(error) => {
+                        view.create_loader_error = Some(format!("后台任务失败: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn generated_instance_id(&self, cx: &App) -> String {
+        let base = self.create_base_input.read(cx).value().trim().to_owned();
+        if base.is_empty() {
+            return String::new();
+        }
+        match self.create_loader {
+            None => {
+                if self
+                    .installed_versions
+                    .iter()
+                    .any(|version| version.id.as_str() == base)
+                {
+                    format!("{base}-custom")
+                } else {
+                    base
+                }
+            }
+            Some(LoaderKind::Fabric) => {
+                let loader = self.create_loader_version.as_deref().unwrap_or("latest");
+                format!("fabric-loader-{loader}-{base}")
+            }
+            Some(LoaderKind::Quilt) => {
+                let loader = self.create_loader_version.as_deref().unwrap_or("latest");
+                format!("quilt-loader-{loader}-{base}")
+            }
+            Some(LoaderKind::Forge | LoaderKind::NeoForge) => base,
+        }
+    }
+
+    fn create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_start_operation() {
+            window.push_notification(
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
+                    .title("无法创建实例"),
+                cx,
+            );
+            return;
+        }
+        let base = self.create_base_input.read(cx).value().trim().to_owned();
+        if base.is_empty() {
+            window.push_notification(
+                Notification::error("请填写 Minecraft 版本。").title("无法创建实例"),
+                cx,
+            );
+            return;
+        }
+        let id = {
+            let entered = self.create_id_input.read(cx).value().trim().to_owned();
+            if entered.is_empty() {
+                self.generated_instance_id(cx)
+            } else {
+                entered
+            }
+        };
+        if id.is_empty() {
+            window.push_notification(
+                Notification::error("实例 ID 不能为空。").title("无法创建实例"),
+                cx,
+            );
+            return;
+        }
+        let name = self.create_name_input.read(cx).value().trim().to_owned();
+        let loader = match self.create_loader {
+            Some(kind) => {
+                let Some(version) = self.create_loader_version.clone() else {
+                    window.push_notification(
+                        Notification::error("请先获取并选择加载器版本。").title("无法创建实例"),
+                        cx,
+                    );
+                    return;
+                };
+                Some(LoaderSelection { kind, version })
+            }
+            None => None,
+        };
+        let request = CreateInstanceRequest {
+            minecraft_root: self.config.minecraft_root.clone(),
+            instance_id: id.clone(),
+            name,
+            base_version_id: base,
+            platform: self.services.platform.clone(),
+            loader,
+        };
+        self.start_create_instance_task(request, id, window, cx);
+    }
+
+    fn start_create_instance_task(
+        &mut self,
+        request: CreateInstanceRequest,
+        instance_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.push_notification(
+            Notification::info(format!("正在创建实例 {instance_id}。")).title("已开始创建"),
+            cx,
+        );
+        self.spawn_command(Command::CreateInstance(request), instance_id, window, cx);
+    }
+
     fn open_content_browser(
         &mut self,
         kind: ContentKind,
@@ -3562,6 +3848,7 @@ impl Render for LauncherApp {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
             Page::Instance => self.render_instance(cx).into_any_element(),
+            Page::CreateInstance => self.render_create_instance(cx).into_any_element(),
             Page::ContentBrowser => self.render_content_browser(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
@@ -3840,6 +4127,12 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::Preparing) => "准备实例",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingBase) => "安装基础版本",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::FetchingLoader) => "获取加载器元数据",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::WritingInstance) => "写入实例配置",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingLoader) => "安装实例文件",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::Completed) => "实例创建完成",
         TaskPhase::Content(ContentInstallPhase::Preparing) => "准备内容下载",
         TaskPhase::Content(ContentInstallPhase::Downloading) => "下载内容文件",
         TaskPhase::Content(ContentInstallPhase::Installing) => "写入实例内容",
@@ -3860,6 +4153,11 @@ pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
         Some(TaskStatus::Running) => "运行中".to_owned(),
         Some(TaskStatus::Cancelling) => "正在停止".to_owned(),
         Some(TaskStatus::Completed)
+            if snapshot.map(|snapshot| snapshot.kind) == Some(TaskKind::InstanceCreate) =>
+        {
+            "实例创建完成".to_owned()
+        }
+        Some(TaskStatus::Completed)
             if snapshot.map(|snapshot| snapshot.kind) == Some(TaskKind::ContentInstall) =>
         {
             "内容安装完成".to_owned()
@@ -3874,6 +4172,7 @@ pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
 pub fn task_kind_label(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::VanillaInstall => "安装",
+        TaskKind::InstanceCreate => "创建实例",
         TaskKind::ContentInstall => "安装内容",
         TaskKind::GameLaunch => "启动",
     }

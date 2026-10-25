@@ -1,5 +1,7 @@
+use std::path::PathBuf;
+
 use rmcl_instance::LayoutError;
-use rmcl_minecraft::{ParseSha1Error, RuleError};
+use rmcl_minecraft::{MetadataError, ParseSha1Error, RuleError};
 use thiserror::Error;
 
 use crate::MavenCoordinateError;
@@ -14,10 +16,32 @@ pub enum InstallPlanError {
     Coordinate(#[from] MavenCoordinateError),
     #[error(transparent)]
     Rule(#[from] RuleError),
-    #[error("version `{id}` inherits from unsupported parent `{inherits_from}`")]
+    #[error(transparent)]
+    Metadata(#[from] MetadataError),
+    #[error(
+        "version `{id}` still inherits from `{inherits_from}`; resolve the inheritance chain first"
+    )]
     UnsupportedInheritance { id: String, inherits_from: String },
-    #[error("version `{id}` redirects its client JAR to unsupported version `{jar}`")]
-    UnsupportedClientJarRedirect { id: String, jar: String },
+    #[error("version JSON `{0}` was not found")]
+    VersionNotFound(String),
+    #[error("failed to read version JSON `{path}`: {source}")]
+    VersionRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("version JSON `{path}` has id `{actual}`, expected `{expected}`")]
+    VersionIdMismatch {
+        path: String,
+        expected: String,
+        actual: String,
+    },
+    #[error("version `{id}` inherits from missing parent `{parent}`")]
+    MissingParent { id: String, parent: String },
+    #[error("version inheritance cycle involving `{id}`")]
+    InheritanceCycle { id: String },
+    #[error("version `{id}` exceeds the maximum inheritance depth of {max_depth}")]
+    InheritanceDepth { id: String, max_depth: usize },
     #[error("virtual asset indexes are not supported")]
     UnsupportedVirtualAssets,
     #[error("asset indexes with map_to_resources are not supported")]

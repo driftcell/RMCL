@@ -5492,6 +5492,7 @@ dependencies = [
  "rmcl-minecraft",
  "rmcl-net",
  "rmcl-platform",
+ "serde",
  "serde_json",
  "sha1",
  "tempfile",
@@ -5567,6 +5568,7 @@ dependencies = [
  "rmcl-instance",
  "rmcl-minecraft",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "url",
 ]

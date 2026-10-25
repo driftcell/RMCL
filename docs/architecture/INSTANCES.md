@@ -1,6 +1,6 @@
 # 实例与版本隔离
 
-状态：实例 manifest、目录布局、隔离启动和旧实例迁移已实现；加载器与内容管理尚未实现
+状态：实例 manifest、目录布局、隔离启动、旧实例迁移和实例创建已实现；加载器与内容管理见关联文档
 
 日期：2026-10-25
 
@@ -51,7 +51,7 @@ isolation = "isolated"
 - `name`：界面显示名称；空白时回退到实例 ID。
 - `minecraft_version`：实例基于的游戏版本；空白时回退到实例 ID。
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
-- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本；当前只持久化，不执行安装。
+- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。Fabric/Quilt 由实例创建流程写入；Forge/NeoForge 只保留字段，尚未执行安装。
 
 manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。
 
@@ -85,7 +85,8 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 
 ## 当前限制
 
-- 尚未实现版本继承、加载器安装和加载器启动合并；`loader` 字段目前只是持久化占位。
+- 版本继承合并、Fabric/Quilt 加载器安装和加载器启动合并已实现，见 [版本继承、Fabric/Quilt 与实例创建](LOADERS.md)；Forge/NeoForge 尚未实现。
+- 尚未实现给已有实例追加、升级或移除加载器。
 - 尚未实现实例级 Java、启动参数、窗口大小和内存设置。
 - 尚未实现实例复制、导入、导出和重命名。
 - 本地内容扫描与管理已由 [本地内容管理](LOCAL_CONTENT.md) 提供；远程下载、依赖和整合包尚未实现。
@@ -99,4 +100,5 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 - `rmcl-launch` 覆盖隔离实例的工作目录与 natives 目录、共享 `libraries/` 占位符和 client JAR 路径。
 - `rmcl-app` 的真实假 JVM 集成测试验证隔离实例的快照启动在实例目录写入游戏文件。
 - 本地内容扫描、导入、切换和删除由 `rmcl-content` 与 `rmcl-app` 测试覆盖，见 [本地内容管理](LOCAL_CONTENT.md)。
-- 真实 GPUI 窗口中的隔离实例安装、迁移确认、内容导入和启动仍需在 macOS、Windows、Linux 逐平台验收。
+- 版本继承、Fabric/Quilt profile、实例创建和 loader library 下载由 `rmcl-install`、`rmcl-minecraft` 与 `rmcl-app` 测试覆盖，见 [加载器与实例创建](LOADERS.md)。
+- 真实 GPUI 窗口中的隔离实例安装、加载器创建、迁移确认、内容导入和启动仍需在 macOS、Windows、Linux 逐平台验收。

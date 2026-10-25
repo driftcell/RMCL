@@ -251,7 +251,7 @@ fn rejects_unresolved_native_placeholder() {
 }
 
 #[test]
-fn rejects_inherited_versions_instead_of_planning_an_incomplete_client() {
+fn rejects_unresolved_inheritance_before_planning() {
     let mut inherited = base_version(json!([]));
     inherited["inheritsFrom"] = json!("parent");
 
@@ -262,13 +262,32 @@ fn rejects_inherited_versions_instead_of_planning_an_incomplete_client() {
 }
 
 #[test]
-fn rejects_client_redirect_and_missing_required_downloads() {
+fn plans_loader_style_library_integrity_from_top_level_fields() {
+    let plan = plan(base_version(json!([{
+        "name": "net.fabricmc:fabric-loader:0.16.10",
+        "url": "https://maven.fabricmc.net/",
+        "sha1": HASH_B,
+        "size": 42
+    }])));
+
+    let library = files(&plan, PlannedFileKind::Library)[0];
+    assert_eq!(
+        library.sha1.map(|hash| hash.to_string()).as_deref(),
+        Some(HASH_B)
+    );
+    assert_eq!(library.size, Some(42));
+}
+
+#[test]
+fn plans_client_redirect_and_rejects_missing_required_downloads() {
     let mut redirect = base_version(json!([]));
-    redirect["jar"] = json!("other");
-    assert!(matches!(
-        plan_vanilla(&layout(), &version(redirect), &linux()),
-        Err(InstallPlanError::UnsupportedClientJarRedirect { .. })
-    ));
+    redirect["jar"] = json!("base");
+    let plan = plan_vanilla(&layout(), &version(redirect), &linux()).unwrap();
+    let client = files(&plan, PlannedFileKind::Client)[0];
+    assert_eq!(
+        client.destination,
+        Path::new(".minecraft").join("versions/base/base.jar")
+    );
 
     let mut no_client = base_version(json!([]));
     no_client["downloads"] = json!({});
