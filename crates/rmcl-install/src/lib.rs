@@ -7,5 +7,6 @@ mod vanilla;
 
 pub use coordinate::{MavenCoordinate, MavenCoordinateError};
 pub use error::InstallPlanError;
-pub use plan::{ExtractionPlan, InstallPlan, PlannedFile, PlannedFileKind};
+pub use plan::{InstallPlan, PlannedFile, PlannedFileKind};
+pub use rmcl_domain::ExtractionPlan;
 pub use vanilla::{plan_asset_objects, plan_vanilla};

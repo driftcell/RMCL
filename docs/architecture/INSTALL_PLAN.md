@@ -56,7 +56,7 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 当前尚未实现：
 
 - 内容寻址缓存、镜像策略与 HTTP Range 断点续传；通用下载、重试、取消和原子发布已在 [下载执行器](DOWNLOAD_EXECUTOR.md) 实现。
-- 实际 ZIP/JAR 解压及 ZIP slip、symlink 防护。
+- TAR 等其他归档格式与已有目录合并；ZIP/JAR 解压及路径、symlink 防护已在 [ZIP 安全解压](ARCHIVE_EXTRACTION.md) 实现。
 - `inheritsFrom`、patches 和 `jar != id` 的 client 重定向。
 - 无 `assetIndex` 的旧版本内置回退表。
 - `virtual` / `map_to_resources` 资产名称重建。

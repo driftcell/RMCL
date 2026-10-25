@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use rmcl_domain::DownloadRequest;
+use rmcl_domain::{DownloadRequest, ExtractionPlan};
 use rmcl_minecraft::Sha1Hash;
 use url::Url;
 
@@ -50,13 +50,6 @@ pub enum PlannedFileKind {
     NativeLibrary,
     AssetIndex,
     AssetObject,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtractionPlan {
-    pub source: PathBuf,
-    pub destination: PathBuf,
-    pub exclude_prefixes: Vec<String>,
 }
 
 #[derive(Default)]
