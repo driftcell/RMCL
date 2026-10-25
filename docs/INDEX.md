@@ -44,6 +44,7 @@
 ## 发布
 
 - [平台与分发](release/DISTRIBUTION.md)：初始构建矩阵、原生构建和打包方向。
+- [macOS 签名与公证](release/MACOS_SIGNING.md)：Developer ID 证书、GitHub secrets、公证和验证流程。
 
 ## 初始调研记录
 

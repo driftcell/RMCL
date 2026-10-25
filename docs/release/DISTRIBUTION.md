@@ -70,7 +70,29 @@ RMCL 使用 GitHub Actions 构建并分发各平台原生二进制。首批目�
 - Release 资产保留 GitHub 自动生成的源码归档；构建 artifact 保留 7 天。
 - 工作流只使用内置 `GITHUB_TOKEN`，发布 job 才申请 `contents: write`；不需要额外 secrets。
 
-macOS 当前只做 ad-hoc 签名，未做 Developer ID 签名和公证；Windows 可执行文件未做 Authenticode 签名。下载后的 macOS 应用可能需要在 Finder 中右键“打开”，Windows 可能显示 SmartScreen 提示。签名和公证在取得凭据后单独加入。
+macOS 默认使用 ad-hoc 签名，未做 Developer ID 签名和公证时，从浏览器下载的 `.app` 会被 Gatekeeper 隔离。临时打开方式：
+
+```bash
+xattr -dr com.apple.quarantine RMCL.app
+open RMCL.app
+```
+
+这要求用户信任构建来源；不能把 ad-hoc 签名描述为可分发的正式签名。Windows 可执行文件未做 Authenticode 签名，可能显示 SmartScreen 提示。
+
+配置以下仓库 secrets 后，macOS job 会自动改用 Developer ID 签名、hardened runtime、时间戳、`notarytool` 公证和 stapling：
+
+| Secret | 内容 |
+| --- | --- |
+| `APPLE_CERTIFICATE_P12` | Developer ID Application 证书的 base64 编码 `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 密码 |
+| `APPLE_SIGNING_IDENTITY` | 例如 `Developer ID Application: Name (TEAMID)` |
+| `APPLE_ID` | Apple Developer 账户邮箱 |
+| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+缺少任一 secret 时 job 会打印 warning 并回退到 ad-hoc 签名；签名导入失败或公证失败会直接让 job 失败，不会静默发布未签名包。临时 keychain 在 job 结束时删除。正式签名需要加入 Apple Developer Program，凭据由仓库维护者持有，不能提交到仓库。
+
+完整的证书导出、secrets 配置和产物验证步骤见 [macOS 签名与公证](MACOS_SIGNING.md)。
 
 Runner 标签会随 GitHub 镜像退役而变化：`macos-15-intel` 是当前可用的 Intel 镜像，预计 2027 年退役；后续需要同步更新矩阵和本文。
 

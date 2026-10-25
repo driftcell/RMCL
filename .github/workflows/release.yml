@@ -126,9 +126,56 @@ jobs:
           Compress-Archive -Path $dir -DestinationPath "dist/$name.zip" -CompressionLevel Optimal -Force
           Remove-Item -Recurse -Force $dir
 
+      - name: Check macOS signing secrets
+        if: runner.os == 'macOS'
+        id: macos_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$APPLE_CERTIFICATE_P12" && -n "$APPLE_CERTIFICATE_PASSWORD" && -n "$APPLE_SIGNING_IDENTITY" && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=macOS signing skipped::Apple signing secrets are not configured; the app will be ad-hoc signed and Gatekeeper may block downloaded builds."
+          fi
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+          cert_path="$RUNNER_TEMP/rmcl-signing.p12"
+          echo "KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$keychain_password" >> "$GITHUB_ENV"
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 -D -o "$cert_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$cert_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security find-identity -v -p codesigning "$keychain_path"
+          rm -f "$cert_path"
+
       - name: Package macOS app
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_SIGNING_ENABLED: ${{ steps.macos_signing.outputs.enabled }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           app="dist/RMCL.app"
           rm -rf "${app}"
@@ -139,10 +186,31 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${app}/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "${app}/Contents/Info.plist"
           plutil -lint "${app}/Contents/Info.plist"
-          codesign --force --sign - "${app}"
-          codesign --verify --deep --strict "${app}"
+
+          if [[ "${APPLE_SIGNING_ENABLED}" == "true" ]]; then
+            codesign --force --options runtime --timestamp --sign "${APPLE_SIGNING_IDENTITY}" "${app}/Contents/MacOS/rmcl"
+            codesign --force --options runtime --timestamp --sign "${APPLE_SIGNING_IDENTITY}" "${app}"
+            codesign --verify --deep --strict "${app}"
+            ditto -c -k --norsrc --keepParent "${app}" "$RUNNER_TEMP/rmcl-notarize.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/rmcl-notarize.zip" \
+              --apple-id "${APPLE_ID}" \
+              --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
+              --team-id "${APPLE_TEAM_ID}" \
+              --wait
+            xcrun stapler staple "${app}"
+            xcrun stapler validate "${app}"
+          else
+            codesign --force --sign - "${app}"
+            codesign --verify --deep --strict "${app}"
+          fi
+
           ditto -c -k --norsrc --keepParent "${app}" "dist/RMCL-${VERSION}-${{ matrix.artifact }}.zip"
           rm -rf "${app}"
+
+      - name: Remove macOS signing keychain
+        if: always() && runner.os == 'macOS' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
+        run: security delete-keychain "${KEYCHAIN_PATH}" || true
 
       - name: Upload package
         uses: actions/upload-artifact@v4

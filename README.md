@@ -30,7 +30,18 @@ RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit �
 
 Release 构建由 GitHub Actions 生成，发布在 [Releases](https://github.com/driftcell/RMCL/releases)。
 
-当前提供 macOS（Intel / Apple Silicon）、Windows x86_64 和 Linux x86_64 产物。macOS 未做 Developer ID 签名和公证，Windows 未做 Authenticode 签名；macOS 首次打开可能需要在 Finder 中右键“打开”。
+当前提供 macOS（Intel / Apple Silicon）、Windows x86_64 和 Linux x86_64 产物。macOS 未做 Developer ID 签名和公证，Windows 未做 Authenticode 签名。
+
+### macOS 首次打开
+
+当前 macOS 产物使用 ad-hoc 签名，Gatekeeper 可能提示“已损坏”或阻止打开。解压后在终端执行：
+
+```bash
+xattr -dr com.apple.quarantine RMCL.app
+open RMCL.app
+```
+
+这是未公证构建的临时办法。配置 Apple Developer 签名凭据后，发布流程会自动改为 Developer ID 签名和 `notarytool` 公证。
 
 ## 从源码运行
 
