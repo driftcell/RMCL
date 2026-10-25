@@ -31,7 +31,7 @@ use rmcl_app::{
     VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
     delete_installed_version, delete_instance_content, discover_installed_versions,
     import_instance_content, migrate_instance_to_isolated, rename_instance, scan_instance_content,
-    set_instance_content_enabled, set_instance_java,
+    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -317,6 +317,9 @@ pub struct LauncherApp {
     java_dialog_target: Option<String>,
     java_path_input: Entity<InputState>,
     java_custom_probing: bool,
+    launch_memory_input: Entity<InputState>,
+    launch_width_input: Entity<InputState>,
+    launch_height_input: Entity<InputState>,
     _java_task: Option<Task<()>>,
     _create_task: Option<Task<()>>,
     _content_task: Option<Task<()>>,
@@ -490,6 +493,10 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
         let java_path_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("例如 /Library/Java/.../bin/java"));
+        let launch_memory_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用 JVM 默认值"));
+        let launch_width_input = cx.new(|cx| InputState::new(window, cx).placeholder("1280"));
+        let launch_height_input = cx.new(|cx| InputState::new(window, cx).placeholder("720"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -641,6 +648,9 @@ impl LauncherApp {
             java_dialog_target: None,
             java_path_input,
             java_custom_probing: false,
+            launch_memory_input,
+            launch_width_input,
+            launch_height_input,
             _java_task: None,
             _create_task: None,
             _content_task: None,
@@ -1244,11 +1254,14 @@ impl LauncherApp {
             );
             return;
         }
-        let java_executable = self
+        let selected = self
             .installed_versions
             .iter()
-            .find(|version| version.id.as_str() == version_id)
-            .and_then(|version| version.java.clone());
+            .find(|version| version.id.as_str() == version_id);
+        let java_executable = selected.and_then(|version| version.java.clone());
+        let max_memory_mb = selected.and_then(|version| version.max_memory_mb);
+        let resolution =
+            selected.and_then(|version| version.window_width.zip(version.window_height));
         let request = GameLaunchRequest {
             install: VanillaInstallRequest {
                 minecraft_root: self.config.minecraft_root.clone(),
@@ -1258,9 +1271,10 @@ impl LauncherApp {
             },
             account,
             java_executable,
+            max_memory_mb,
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
-            resolution: None,
+            resolution,
             demo: false,
         };
         self.spawn_command(Command::Launch(request), version_id, window, cx);
@@ -3074,6 +3088,189 @@ impl LauncherApp {
             Err(error) => {
                 window.push_notification(
                     Notification::error(error.to_string()).title("无法重命名实例"),
+                    cx,
+                );
+                false
+            }
+        }
+    }
+
+    fn open_launch_settings_dialog(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .cloned()
+        else {
+            return;
+        };
+        let memory = version
+            .max_memory_mb
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let width = version
+            .window_width
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let height = version
+            .window_height
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        self.launch_memory_input.update(cx, |state, cx| {
+            state.set_value(memory, window, cx);
+        });
+        self.launch_width_input.update(cx, |state, cx| {
+            state.set_value(width, window, cx);
+        });
+        self.launch_height_input.update(cx, |state, cx| {
+            state.set_value(height, window, cx);
+        });
+
+        let memory_input = self.launch_memory_input.clone();
+        let width_input = self.launch_width_input.clone();
+        let height_input = self.launch_height_input.clone();
+        let view = cx.entity().downgrade();
+        let first_focus = Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            if first_focus.replace(false) {
+                memory_input.read(cx).focus_handle(cx).focus(window, cx);
+            }
+            let save_view = view.clone();
+            let save_memory = memory_input.clone();
+            let save_width = width_input.clone();
+            let save_height = height_input.clone();
+            let save_id = version_id.clone();
+            dialog
+                .title("启动设置")
+                .width(px(460.))
+                .child(
+                    v_flex()
+                        .gap_4()
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(div().text_sm().font_medium().child("最大内存 (MiB)"))
+                                .child(div().child(Input::new(&memory_input).w_full()))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("留空使用 JVM 默认值；允许 256–262144。"),
+                                ),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(div().text_sm().font_medium().child("窗口尺寸"))
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .child(
+                                            div().flex_1().child(Input::new(&width_input).w_full()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("×"),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .child(Input::new(&height_input).w_full()),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            "宽高需同时填写，允许 320–16384；留空使用游戏默认。",
+                                        ),
+                                ),
+                        ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogAction::new()
+                                .child(Button::new("save-launch-settings").primary().label("保存")),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    let Some(view) = save_view.upgrade() else {
+                        return true;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.save_launch_settings(
+                            save_id.clone(),
+                            save_memory.read(cx).value().to_string(),
+                            save_width.read(cx).value().to_string(),
+                            save_height.read(cx).value().to_string(),
+                            window,
+                            cx,
+                        )
+                    })
+                })
+        });
+    }
+
+    fn save_launch_settings(
+        &mut self,
+        version_id: String,
+        memory: String,
+        width: String,
+        height: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let parse = |value: &str| -> Result<Option<u32>, ()> {
+            let value = value.trim();
+            if value.is_empty() {
+                Ok(None)
+            } else {
+                value.parse::<u32>().map(Some).map_err(|_| ())
+            }
+        };
+        let (Ok(memory), Ok(width), Ok(height)) = (parse(&memory), parse(&width), parse(&height))
+        else {
+            window.push_notification(
+                Notification::error("内存和窗口尺寸必须是整数。").title("无法保存启动设置"),
+                cx,
+            );
+            return false;
+        };
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .cloned()
+        else {
+            window.push_notification(
+                Notification::error("实例不存在或已被删除。").title("无法保存启动设置"),
+                cx,
+            );
+            return false;
+        };
+        let layout = version.instance_layout(self.config.minecraft_root.clone());
+        match set_instance_launch_settings(&layout, memory, width, height) {
+            Ok(()) => {
+                self.reload_versions(window, cx);
+                window.push_notification(
+                    Notification::info("内存和窗口设置已更新。").title("启动设置已保存"),
+                    cx,
+                );
+                true
+            }
+            Err(error) => {
+                window.push_notification(
+                    Notification::error(error.to_string()).title("无法保存启动设置"),
                     cx,
                 );
                 false

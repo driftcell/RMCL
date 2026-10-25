@@ -83,6 +83,50 @@ pub fn rename_instance(instance: &InstanceLayout, name: &str) -> Result<(), AppE
     Ok(())
 }
 
+/// Sets per-instance memory and window overrides.
+///
+/// `memory_mb = None` leaves the JVM default. Window dimensions must be either
+/// both present or both absent. Existing manifest fields are preserved.
+pub fn set_instance_launch_settings(
+    instance: &InstanceLayout,
+    memory_mb: Option<u32>,
+    window_width: Option<u32>,
+    window_height: Option<u32>,
+) -> Result<(), AppError> {
+    if !instance.version_json_path().is_file() {
+        return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
+    }
+    if let Some(memory) = memory_mb
+        && !(256..=262_144).contains(&memory)
+    {
+        return Err(AppError::InvalidRequest(
+            "instance memory must be between 256 and 262144 MiB".to_owned(),
+        ));
+    }
+    let window = match (window_width, window_height) {
+        (Some(width), Some(height))
+            if (320..=16_384).contains(&width) && (320..=16_384).contains(&height) =>
+        {
+            Some((width, height))
+        }
+        (None, None) => None,
+        _ => {
+            return Err(AppError::InvalidRequest(
+                "instance window width and height must both be present and within 320..=16384"
+                    .to_owned(),
+            ));
+        }
+    };
+    let mut manifest = instance
+        .load_manifest()?
+        .unwrap_or_else(|| InstanceManifest::new(instance.id(), instance.isolation()));
+    manifest.max_memory_mb = memory_mb;
+    manifest.window_width = window.map(|(width, _)| width);
+    manifest.window_height = window.map(|(_, height)| height);
+    instance.write_manifest(&manifest)?;
+    Ok(())
+}
+
 /// Sets or clears the explicit Java executable stored in an instance manifest.
 ///
 /// Existing manifest fields (name, isolation, loader) are preserved. Legacy
@@ -306,6 +350,43 @@ mod tests {
             instance.load_manifest().unwrap().unwrap().display_name(&id),
             "1.21.1"
         );
+    }
+
+    #[test]
+    fn launch_settings_validate_and_preserve_other_fields() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        write_version(root, "1.21.1");
+        let instance = MinecraftLayout::new(root)
+            .instance(VersionId::new("1.21.1").unwrap(), IsolationMode::Isolated);
+        let mut manifest =
+            InstanceManifest::new(&VersionId::new("1.21.1").unwrap(), IsolationMode::Isolated);
+        manifest.name = "Survival".to_owned();
+        manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
+        instance.write_manifest(&manifest).unwrap();
+
+        set_instance_launch_settings(&instance, Some(4096), Some(1280), Some(720)).unwrap();
+        let loaded = instance.load_manifest().unwrap().unwrap();
+        assert_eq!(loaded.max_memory_mb, Some(4096));
+        assert_eq!(loaded.window_width, Some(1280));
+        assert_eq!(loaded.window_height, Some(720));
+        assert_eq!(loaded.name, "Survival");
+        assert_eq!(loaded.java, manifest.java);
+
+        set_instance_launch_settings(&instance, None, None, None).unwrap();
+        let loaded = instance.load_manifest().unwrap().unwrap();
+        assert_eq!(loaded.max_memory_mb, None);
+        assert_eq!(loaded.window_width, None);
+        assert_eq!(loaded.window_height, None);
+
+        assert!(matches!(
+            set_instance_launch_settings(&instance, Some(1), None, None),
+            Err(AppError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            set_instance_launch_settings(&instance, None, Some(1280), None),
+            Err(AppError::InvalidRequest(_))
+        ));
     }
 
     #[test]

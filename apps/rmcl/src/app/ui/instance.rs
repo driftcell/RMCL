@@ -358,9 +358,17 @@ impl LauncherApp {
         let java_target = version.id.as_str().to_owned();
         let auto_target = java_target.clone();
         let java_custom = version.java.is_some();
+        let launch_target = java_target.clone();
         let java_label = version.java.as_ref().map_or_else(
             || "自动选择兼容 runtime".to_owned(),
             |path| path.display().to_string(),
+        );
+        let memory_label = version
+            .max_memory_mb
+            .map_or_else(|| "自动".to_owned(), |memory| format!("{memory} MiB"));
+        let resolution_label = version.window_width.zip(version.window_height).map_or_else(
+            || "自动".to_owned(),
+            |(width, height)| format!("{width} × {height}"),
         );
         card(cx)
             .child(
@@ -423,6 +431,37 @@ impl LauncherApp {
                                 })),
                         )
                     }),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("启动设置"),
+                            )
+                            .child(mono(
+                                format!("内存 {memory_label} · 窗口 {resolution_label}"),
+                                cx,
+                            )),
+                    )
+                    .child(
+                        Button::new("instance-launch-settings")
+                            .outline()
+                            .icon(IconName::Wrench)
+                            .label("调整")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_launch_settings_dialog(launch_target.clone(), window, cx)
+                            })),
+                    ),
             )
     }
 

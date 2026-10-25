@@ -22,6 +22,9 @@ pub struct InstalledVersion {
     pub loader: Option<InstanceLoader>,
     /// Explicit Java executable from the manifest; `None` means automatic.
     pub java: Option<PathBuf>,
+    pub max_memory_mb: Option<u32>,
+    pub window_width: Option<u32>,
+    pub window_height: Option<u32>,
     pub manifest_present: bool,
     pub manifest_error: Option<String>,
     pub client_jar_present: bool,
@@ -130,7 +133,14 @@ pub fn discover_installed_versions(
         let loader = manifest
             .as_ref()
             .and_then(|manifest| manifest.loader.clone());
-        let java = manifest.and_then(|manifest| manifest.java);
+        let java = manifest.as_ref().and_then(|manifest| manifest.java.clone());
+        let max_memory_mb = manifest
+            .as_ref()
+            .and_then(|manifest| manifest.max_memory_mb);
+        let window_width = manifest.as_ref().and_then(|manifest| manifest.window_width);
+        let window_height = manifest
+            .as_ref()
+            .and_then(|manifest| manifest.window_height);
         let resolved = version
             .inherits_from
             .as_ref()
@@ -162,6 +172,9 @@ pub fn discover_installed_versions(
             isolation,
             loader,
             java,
+            max_memory_mb,
+            window_width,
+            window_height,
             manifest_present,
             manifest_error,
             client_jar_present: layout.client_jar_path(&jar_id).is_file(),
@@ -327,6 +340,9 @@ mod tests {
             version: "0.16.10".to_owned(),
         });
         manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
+        manifest.max_memory_mb = Some(4096);
+        manifest.window_width = Some(1280);
+        manifest.window_height = Some(720);
         instance.write_manifest(&manifest).unwrap();
 
         let versions = discover_installed_versions(temporary.path()).unwrap();
@@ -349,6 +365,9 @@ mod tests {
             version.java.as_deref(),
             Some(Path::new("/opt/java/bin/java"))
         );
+        assert_eq!(version.max_memory_mb, Some(4096));
+        assert_eq!(version.window_width, Some(1280));
+        assert_eq!(version.window_height, Some(720));
     }
 
     #[test]

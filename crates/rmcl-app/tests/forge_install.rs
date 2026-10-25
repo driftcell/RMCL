@@ -459,6 +459,7 @@ async fn real_loader_launch(installer_url: &str, instance_id: &str, expected: &s
         install: install_request,
         account: LaunchAccount::from_offline(&OfflineAccount::new("LoaderSmoke").unwrap()),
         java_executable: Some(fixture.java.executable.clone()),
+        max_memory_mb: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
         resolution: None,

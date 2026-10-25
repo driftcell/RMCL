@@ -76,6 +76,14 @@ pub struct InstanceManifest {
     /// discovery and selection based on the game version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub java: Option<PathBuf>,
+    /// Optional `-Xmx` value in MiB. `None` leaves the JVM default in place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_memory_mb: Option<u32>,
+    /// Optional initial game window width; both dimensions must be present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_height: Option<u32>,
 }
 
 impl Default for InstanceManifest {
@@ -87,6 +95,9 @@ impl Default for InstanceManifest {
             isolation: IsolationMode::Isolated,
             loader: None,
             java: None,
+            max_memory_mb: None,
+            window_width: None,
+            window_height: None,
         }
     }
 }
@@ -102,6 +113,9 @@ impl InstanceManifest {
             isolation,
             loader: None,
             java: None,
+            max_memory_mb: None,
+            window_width: None,
+            window_height: None,
         }
     }
 
@@ -431,6 +445,9 @@ mod tests {
             version: "0.16.10".to_owned(),
         });
         manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
+        manifest.max_memory_mb = Some(4096);
+        manifest.window_width = Some(1280);
+        manifest.window_height = Some(720);
 
         instance.write_manifest(&manifest).unwrap();
 

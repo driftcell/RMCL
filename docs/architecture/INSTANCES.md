@@ -44,6 +44,9 @@ isolation = "isolated"
 # kind = "fabric"
 # version = "0.16.10"
 # java = "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java"
+# max_memory_mb = 4096
+# window_width = 1280
+# window_height = 720
 ```
 
 字段：
@@ -53,8 +56,10 @@ isolation = "isolated"
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
 - `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；Forge/NeoForge 在写入前先运行现代 installer processors。
 - `java`：可选的 Java 可执行文件绝对路径。缺省时按游戏版本自动发现、选择或下载；显式路径在启动前重新探测，不满足版本、系统或架构要求时拒绝启动，不静默回退。
+- `max_memory_mb`：可选的 `-Xmx` 值，单位 MiB，允许 256–262144；缺省使用 JVM 默认值。
+- `window_width` / `window_height`：可选初始窗口尺寸，必须同时存在，允许 320–16384；缺省使用游戏默认。
 
-manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。`java` 是向后兼容的可选字段，不改变 schema 版本；旧版 RMCL 会忽略它。
+manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。`java`、`max_memory_mb` 和窗口字段都是向后兼容的可选字段，不改变 schema 版本；旧版 RMCL 会忽略它们。
 
 ## 隔离语义
 
@@ -88,7 +93,7 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 
 - 版本继承合并、Fabric/Quilt/Forge/NeoForge 加载器安装和加载器启动合并已实现，见 [版本继承、加载器安装与实例创建](LOADERS.md)；legacy Forge installer 尚未实现。
 - 尚未实现给已有实例追加、升级或移除加载器。
-- 尚未实现实例级 Java、启动参数、窗口大小和内存设置。
+- 已支持实例级 Java、最大内存和窗口尺寸；任意 JVM/游戏启动参数和窗口位置尚未实现。
 - 尚未实现实例复制、导入和导出；重命名只修改 manifest 显示名称，不改目录。
 - 本地内容扫描与管理已由 [本地内容管理](LOCAL_CONTENT.md) 提供；远程下载和必需依赖解析见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，可选依赖和整合包尚未实现。
 - 旧实例迁移只复制三类内容目录，不复制 `options.txt`、`servers.dat` 或存档；需要保留全局游戏设置时由用户自行处理。

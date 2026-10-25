@@ -67,6 +67,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
         install,
         account: LaunchAccount::from_offline(&OfflineAccount::new("Steve").unwrap()),
         java_executable: None,
+        max_memory_mb: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
         resolution: None,
@@ -230,6 +231,23 @@ async fn direct_launch_collects_redacted_logs_and_exit() {
         event,
         GameLaunchEvent::Exited(exit) if exit.success
     )));
+}
+
+#[tokio::test]
+async fn instance_memory_and_resolution_reach_the_launch_plan() {
+    let mut fixture = fixture(ScriptMode::Exit);
+    fixture.request.max_memory_mb = Some(4096);
+    fixture.request.resolution = Some((1280, 720));
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    let raw = std::fs::read_to_string(fixture.root.join("raw-args.txt")).unwrap();
+    assert!(raw.lines().any(|line| line == "-Xmx4096M"));
 }
 
 #[tokio::test]

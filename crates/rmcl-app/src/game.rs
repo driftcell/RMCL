@@ -20,6 +20,8 @@ pub struct GameLaunchRequest {
     /// Explicit Java executable from the instance manifest. `None` uses
     /// automatic discovery and Mojang runtime installation.
     pub java_executable: Option<PathBuf>,
+    /// Optional `-Xmx` value in MiB.
+    pub max_memory_mb: Option<u32>,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
     pub resolution: Option<(u32, u32)>,
@@ -70,6 +72,7 @@ impl GameLauncher {
             install,
             account,
             java_executable,
+            max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -95,6 +98,7 @@ impl GameLauncher {
             install,
             account,
             java_executable,
+            max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -120,6 +124,7 @@ impl GameLauncher {
             install,
             account,
             java_executable,
+            max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -134,6 +139,7 @@ impl GameLauncher {
             install,
             account,
             java_executable,
+            max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
             resolution,
@@ -150,6 +156,7 @@ impl GameLauncher {
         install: InstallOutcome,
         account: LaunchAccount,
         java_executable: Option<PathBuf>,
+        max_memory_mb: Option<u32>,
         additional_jvm_arguments: Vec<String>,
         additional_game_arguments: Vec<String>,
         resolution: Option<(u32, u32)>,
@@ -200,6 +207,11 @@ impl GameLauncher {
             &install.base_plan,
         )?;
         options.additional_jvm_arguments = additional_jvm_arguments;
+        if let Some(memory) = max_memory_mb {
+            options
+                .additional_jvm_arguments
+                .push(format!("-Xmx{memory}M"));
+        }
         options.additional_game_arguments = additional_game_arguments;
         if let Some((width, height)) = resolution {
             options = options.with_resolution(width, height);
