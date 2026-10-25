@@ -26,4 +26,4 @@
 - 与 workflow 对应的格式、Clippy、nextest 和 doctest 命令已用于当前 workspace。
 - 当前 26 个 nextest 测试全部通过。
 
-GitHub 仓库 `https://github.com/driftcell/RMCL.git` 已配置为 origin。云端 Actions 结果必须在推送后另行确认，不能由本地 actionlint 或测试推断。
+GitHub 仓库 `git@github.com:driftcell/RMCL.git` 已配置为 origin。云端 Actions 结果必须在推送后另行确认，不能由本地 actionlint 或测试推断。
