@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::InstallPhase;
+use crate::{InstallPhase, task::TaskId};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,8 @@ pub struct InstallDownloadFailure {
 pub enum AppError {
     #[error("operation was cancelled")]
     Cancelled,
+    #[error("task {existing} is already installing this repository version")]
+    TaskAlreadyRunning { existing: TaskId },
     #[error("invalid application request: {0}")]
     InvalidRequest(String),
     #[error("version `{0}` was not found in the version manifest")]

@@ -1,6 +1,6 @@
 # 应用层 Vanilla 安装
 
-状态：`rmcl-app` 安装用例已实现；通用任务管理器和启动编排尚未实现
+状态：`rmcl-app` 安装用例与安装任务管理已实现；Java 和启动编排尚未实现
 
 日期：2026-10-25
 
@@ -16,7 +16,7 @@
 
 `VanillaSources` 允许注入 manifest 和 asset object 来源根，生产默认与本地 mock 使用同一执行路径。自定义 asset base 不降低 SHA-1/size 校验，也不是完整镜像策略。
 
-仓库根在任务开始转为绝对路径。当前调用方必须串行化同一仓库、版本和平台的安装；稳定任务 ID、重复任务拒绝和应用级任务注册表尚未实现。
+仓库根在任务开始转为绝对路径。直接使用 `VanillaInstaller` 时，调用方必须串行化同一仓库和版本的安装；`TaskManager` 则内置下述活动任务互斥。
 
 ## 版本元数据
 
@@ -50,11 +50,24 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 - `CancellationToken` 贯穿单文件下载、批量下载、阶段边界和 native 解压。请求取消与最终 `AppError::Cancelled` 分开，取消不映射为普通失败。
 - 批量错误只保留目标和脱敏消息，不把原始 `DownloadRequest` 或可能带 query 的 URL 放入应用错误。
 
-高频事件的界面合并、任务快照和广播订阅属于后续任务管理器，不由当前安装用例隐式提供。
+高频事件的界面合并由后续 UI 桥接负责；安装任务快照和广播由 `TaskManager` 提供。
+
+## 安装任务管理
+
+`TaskManager::start_install` 在应用级 Tokio 任务中持有安装 future，并暴露以下语义：
+
+- `TaskId` 在进程内单调分配，不随阶段变化，也不复用已结束 ID；当前不持久化。
+- 活动任务按“绝对化仓库根 + 版本 ID”互斥，不同平台目标也不能并发写同一版本的共享文件。重复请求返回已有任务 ID 对应的 `TaskAlreadyRunning`。
+- `TaskSnapshot` 包含任务类型、`Running`/`Cancelling`/`Completed`/`Cancelled`/`Failed`、最近阶段、下载或 native 进度和脱敏错误。
+- `cancel` 先发布 `Cancelling` 快照，再触发同一个协作式取消令牌；只有安装实际停止后才发布 `Cancelled`。终态任务上的取消是 no-op。
+- `TaskEvent` 使用有界 broadcast。慢订阅者可能收到 `Lagged` 并丢失中间快照，可以随时调用 `snapshot` 读取最新状态；订阅者关闭不会取消任务。
+- 终态快照保留到 `dismiss`，dismiss 后发送移除事件；活动任务不能 dismiss。
+- `TaskManager` 和其克隆共享注册表，临时 View 可以只持有订阅，不拥有安装任务。
+
+当前互斥不解决不同版本之间的所有共享 asset/library 并发写入，也不处理外部进程或符号链接别名指向同一仓库的情况。
 
 ## 当前不包含
 
-- 稳定 `TaskId`、任务快照、重复安装互斥和取消状态注册表
 - Java 检测后自动获取、启动任务和游戏日志环形缓冲
 - 实例隔离、配置与账号持久化
 - 版本继承、特殊资产名称重建、ModLoader 和镜像策略
