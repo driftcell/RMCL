@@ -5,3 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+gpui-kit.workspace = true
+rmcl-app.workspace = true
+rmcl-auth.workspace = true
+rmcl-domain.workspace = true
+rmcl-launch.workspace = true
+rmcl-net.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true

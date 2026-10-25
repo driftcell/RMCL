@@ -15,7 +15,7 @@
 - `.minecraft` 的实例隔离首版支持哪些模式？RMCL 自己新增的实例配置放在哪里，如何避免污染标准版本 JSON？
 - 修复范围中，client JAR、libraries、assets 和版本 JSON 分别采用存在性、大小、哈希还是容器完整性检查？
 - 最小 GPUI 界面需要哪些页面和交互？游戏运行时关闭启动器窗口的默认行为是什么？
-- GPUI Kit 当前 macOS 15+ 文档基线是否可接受？实际引入版本和最低系统版本需要在技术验证后确认。
+- GPUI Kit 已选定 0.8.0 / gpui-pre 0.3.9，平台约束和桥接方式见 [桌面界面与 GPUI 桥接](../../docs/architecture/USER_INTERFACE.md)；发布最低系统版本仍需逐平台运行和打包验证。
 
 ## 工程与发布前需要确定
 

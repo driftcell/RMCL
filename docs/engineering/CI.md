@@ -44,6 +44,7 @@ cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no
 
 - `.config/nextest.toml` 是仓库共享配置；本地默认 profile 输出失败上下文，CI profile 运行全部测试。
 - CI 使用 stable Rust、`Cargo.lock` 和 `--locked`，锁文件必须提交。
+- Ubuntu job 在 Rust 安装前安装 GPUI Kit 0.8.0 文档要求的 fontconfig、Wayland、WebKitGTK、XKB/X11、SSL、zstd 和 Vulkan 开发库；不启用 ALSA/speech 等可选 feature。
 - Rust 编译产物由 `Swatinem/rust-cache` 缓存，nextest 由 `taiki-e/install-action` 安装。
 - 不默认启用 `--all-features`，避免未来把互斥 feature 错当成必须兼容的组合。
 - 初始工作流不需要 secrets，不访问真实账号，也不上传发布产物。

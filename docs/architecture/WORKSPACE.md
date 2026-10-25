@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：占位应用位于 `apps/rmcl`；`rmcl-app` 提供 headless Vanilla 安装、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期和有界日志；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
+RMCL 已是 Cargo workspace：`apps/rmcl` 提供最小 GPUI Vanilla 安装与启动窗口；`rmcl-app` 提供 headless Vanilla 安装、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期和有界日志；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局；`rmcl-install` 提供纯 Vanilla 安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 
@@ -51,4 +51,4 @@ apps/rmcl-cli ─┘
 
 ## GPUI 依赖约束
 
-引入 GPUI Kit 时，在 workspace 统一管理版本并提交锁文件。应用通过 `gpui_kit::*` 使用与其匹配的 GPUI 快照，不另行混用不受该版本支持的 GPUI 包。GPUI Kit 升级单独进行并记录验证结果。
+当前使用 GPUI Kit 0.8.0 和匹配的 gpui-pre 0.3.9，在 workspace 统一管理版本并提交锁文件。应用通过 `gpui_kit::*` 使用与其匹配的 GPUI 快照，不另行混用不受该版本支持的 GPUI 包。GPUI Kit 升级单独进行并记录验证结果，桥接与窗口行为见 [桌面界面](USER_INTERFACE.md)。

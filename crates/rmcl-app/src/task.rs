@@ -24,7 +24,11 @@ const GAME_LOG_CAPACITY: usize = 1024;
 pub struct TaskId(u64);
 
 impl TaskId {
-    pub fn get(self) -> u64 {
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub const fn get(self) -> u64 {
         self.0
     }
 }
@@ -96,7 +100,11 @@ pub struct TaskSnapshot {
 #[derive(Debug, Clone)]
 pub enum TaskEvent {
     Snapshot(TaskSnapshot),
-    GameLog { task_id: TaskId, log: GameLog },
+    GameLog {
+        task_id: TaskId,
+        line: u64,
+        log: GameLog,
+    },
     Dismissed(TaskId),
 }
 
@@ -415,7 +423,7 @@ impl TaskManager {
     }
 
     async fn append_log(&self, id: TaskId, log: GameLog) {
-        {
+        let line = {
             let mut registry = self.inner.registry.lock().await;
             let Some(record) = registry.tasks.get_mut(&id) else {
                 return;
@@ -425,11 +433,13 @@ impl TaskManager {
             }
             record.logs.push_back(log.clone());
             record.snapshot.log_lines += 1;
-        }
-        let _ = self
-            .inner
-            .events
-            .send(TaskEvent::GameLog { task_id: id, log });
+            record.snapshot.log_lines
+        };
+        let _ = self.inner.events.send(TaskEvent::GameLog {
+            task_id: id,
+            line,
+            log,
+        });
     }
 
     async fn finish_install(self, id: TaskId, result: Result<InstallOutcome, AppError>) {
