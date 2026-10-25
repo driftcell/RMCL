@@ -48,7 +48,7 @@ isolation = "isolated"
 
 字段：
 
-- `name`：界面显示名称；空白时回退到实例 ID。
+- `name`：界面显示名称；空白时回退到实例 ID。实例详情页可修改，目录和版本 ID 保持不变。
 - `minecraft_version`：实例基于的游戏版本；空白时回退到实例 ID。
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
 - `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；Forge/NeoForge 在写入前先运行现代 installer processors。
@@ -89,7 +89,7 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 - 版本继承合并、Fabric/Quilt/Forge/NeoForge 加载器安装和加载器启动合并已实现，见 [版本继承、加载器安装与实例创建](LOADERS.md)；legacy Forge installer 尚未实现。
 - 尚未实现给已有实例追加、升级或移除加载器。
 - 尚未实现实例级 Java、启动参数、窗口大小和内存设置。
-- 尚未实现实例复制、导入、导出和重命名。
+- 尚未实现实例复制、导入和导出；重命名只修改 manifest 显示名称，不改目录。
 - 本地内容扫描与管理已由 [本地内容管理](LOCAL_CONTENT.md) 提供；远程下载、依赖和整合包尚未实现。
 - 旧实例迁移只复制三类内容目录，不复制 `options.txt`、`servers.dat` 或存档；需要保留全局游戏设置时由用户自行处理。
 - 共享实例之间仍会共享内容目录；这是 `shared` 的明确语义，不是隔离失效。

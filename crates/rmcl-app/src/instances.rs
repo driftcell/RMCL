@@ -66,6 +66,23 @@ pub async fn migrate_instance_to_isolated(
     Ok(())
 }
 
+/// Renames an instance without changing its directory or version ID.
+///
+/// A blank name is stored as-is: the manifest then falls back to the directory
+/// ID when displayed. Legacy versions without a manifest receive one using
+/// their current isolation mode.
+pub fn rename_instance(instance: &InstanceLayout, name: &str) -> Result<(), AppError> {
+    if !instance.version_json_path().is_file() {
+        return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
+    }
+    let mut manifest = instance
+        .load_manifest()?
+        .unwrap_or_else(|| InstanceManifest::new(instance.id(), instance.isolation()));
+    manifest.name = name.trim().to_owned();
+    instance.write_manifest(&manifest)?;
+    Ok(())
+}
+
 /// Sets or clears the explicit Java executable stored in an instance manifest.
 ///
 /// Existing manifest fields (name, isolation, loader) are preserved. Legacy
@@ -259,6 +276,36 @@ mod tests {
 
         set_instance_java(&shared, None).unwrap();
         assert_eq!(shared.load_manifest().unwrap().unwrap().java, None);
+    }
+
+    #[test]
+    fn rename_preserves_instance_settings_and_falls_back_when_blank() {
+        let temporary = TempDir::new().unwrap();
+        let root = temporary.path();
+        write_version(root, "1.21.1");
+        let layout = MinecraftLayout::new(root);
+        let instance = layout.instance(VersionId::new("1.21.1").unwrap(), IsolationMode::Isolated);
+        let mut manifest =
+            InstanceManifest::new(&VersionId::new("1.21.1").unwrap(), IsolationMode::Isolated);
+        manifest.loader = Some(rmcl_instance::InstanceLoader {
+            kind: rmcl_instance::LoaderKind::Fabric,
+            version: "0.16.10".to_owned(),
+        });
+        manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
+        instance.write_manifest(&manifest).unwrap();
+
+        rename_instance(&instance, "  生存世界  ").unwrap();
+        let renamed = instance.load_manifest().unwrap().unwrap();
+        assert_eq!(renamed.name, "生存世界");
+        assert_eq!(renamed.loader, manifest.loader);
+        assert_eq!(renamed.java, manifest.java);
+
+        rename_instance(&instance, "   ").unwrap();
+        let id = VersionId::new("1.21.1").unwrap();
+        assert_eq!(
+            instance.load_manifest().unwrap().unwrap().display_name(&id),
+            "1.21.1"
+        );
     }
 
     #[test]

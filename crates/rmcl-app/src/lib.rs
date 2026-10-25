@@ -36,7 +36,7 @@ pub use instance_create::{
     CreateInstanceRequest, InstanceCreateEvent, InstanceCreateEventSender, InstanceCreateOutcome,
     InstanceCreatePhase, InstanceCreator, LoaderSelection,
 };
-pub use instances::{migrate_instance_to_isolated, set_instance_java};
+pub use instances::{migrate_instance_to_isolated, rename_instance, set_instance_java};
 pub use java::{
     JavaEvent, JavaEventSender, JavaSelection, JavaSelectionOrigin, JavaService, JavaServiceConfig,
 };

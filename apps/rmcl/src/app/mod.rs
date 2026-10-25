@@ -30,7 +30,7 @@ use rmcl_app::{
     TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject,
     VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
     delete_installed_version, delete_instance_content, discover_installed_versions,
-    import_instance_content, migrate_instance_to_isolated, scan_instance_content,
+    import_instance_content, migrate_instance_to_isolated, rename_instance, scan_instance_content,
     set_instance_content_enabled, set_instance_java,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
@@ -332,6 +332,7 @@ pub struct LauncherApp {
     catalog: CatalogState,
     downloads_query: Entity<InputState>,
     versions_query: Entity<InputState>,
+    instance_name_input: Entity<InputState>,
     account_input: Entity<InputState>,
     downloads_filter: VersionFilter,
     versions_filter: VersionFilter,
@@ -483,6 +484,8 @@ impl LauncherApp {
         let create_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
         let create_id_input = cx.new(|cx| InputState::new(window, cx).placeholder("留空自动生成"));
+        let instance_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -649,6 +652,7 @@ impl LauncherApp {
             catalog: CatalogState::default(),
             downloads_query,
             versions_query,
+            instance_name_input,
             account_input,
             downloads_filter: VersionFilter::Release,
             versions_filter: VersionFilter::All,
@@ -2949,6 +2953,124 @@ impl LauncherApp {
             state.set_value("", window, cx);
         });
         self.load_instance_content(window, cx);
+    }
+
+    fn open_rename_instance_dialog(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .cloned()
+        else {
+            return;
+        };
+        let initial = if version.name.trim() == version.id.as_str() {
+            String::new()
+        } else {
+            version.name.clone()
+        };
+        self.instance_name_input.update(cx, |state, cx| {
+            state.set_value(initial, window, cx);
+        });
+
+        let input = self.instance_name_input.clone();
+        let view = cx.entity().downgrade();
+        let first_focus = Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            if first_focus.replace(false) {
+                input.read(cx).focus_handle(cx).focus(window, cx);
+            }
+            let save_view = view.clone();
+            let save_input = input.clone();
+            let save_id = version_id.clone();
+            dialog
+                .title("重命名实例")
+                .width(px(420.))
+                .child(
+                    v_flex().gap_3().child(
+                        v_flex()
+                            .gap_1()
+                            .child(div().text_sm().font_medium().child("显示名称"))
+                            .child(div().p_1().child(Input::new(&input).w_full()))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("留空时显示实例 ID；不会重命名目录。"),
+                            ),
+                    ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogAction::new()
+                                .child(Button::new("save-instance-name").primary().label("保存")),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    let Some(view) = save_view.upgrade() else {
+                        return true;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.save_instance_name(
+                            save_id.clone(),
+                            save_input.read(cx).value().to_string(),
+                            window,
+                            cx,
+                        )
+                    })
+                })
+        });
+    }
+
+    fn save_instance_name(
+        &mut self,
+        version_id: String,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == version_id)
+            .cloned()
+        else {
+            window.push_notification(
+                Notification::error("实例不存在或已被删除。").title("无法重命名实例"),
+                cx,
+            );
+            return false;
+        };
+        let layout = version.instance_layout(self.config.minecraft_root.clone());
+        match rename_instance(&layout, &name) {
+            Ok(()) => {
+                self.reload_versions(window, cx);
+                window.push_notification(
+                    Notification::info(if name.trim().is_empty() {
+                        version.id.as_str().to_owned()
+                    } else {
+                        name.trim().to_owned()
+                    })
+                    .title("实例已重命名"),
+                    cx,
+                );
+                true
+            }
+            Err(error) => {
+                window.push_notification(
+                    Notification::error(error.to_string()).title("无法重命名实例"),
+                    cx,
+                );
+                false
+            }
+        }
     }
 
     fn open_java_dialog(

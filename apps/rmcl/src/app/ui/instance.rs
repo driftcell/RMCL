@@ -222,6 +222,7 @@ impl LauncherApp {
         let id = version.id.as_str().to_owned();
         let launch_id = id.clone();
         let folder_id = id.clone();
+        let rename_id = id.clone();
         let loader = version.loader.clone();
         h_flex()
             .w_full()
@@ -320,6 +321,16 @@ impl LauncherApp {
                             .accessibility_label("打开实例目录")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_instance_folder(folder_id.as_str(), window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("instance-rename")
+                            .ghost()
+                            .icon(IconName::Pencil)
+                            .tooltip("重命名实例")
+                            .accessibility_label("重命名实例")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_rename_instance_dialog(rename_id.clone(), window, cx)
                             })),
                     )
                     .child(
