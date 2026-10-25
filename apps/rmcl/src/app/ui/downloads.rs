@@ -72,15 +72,16 @@ impl LauncherApp {
                             .child(
                                 TabBar::new("downloads-filter")
                                     .segmented()
-                                    .selected_index(self.downloads_filter.index())
+                                    .selected_index(self.downloads_filter.download_index())
                                     .on_click(cx.listener(|this, index: &usize, _, cx| {
-                                        this.downloads_filter = VersionFilter::from_index(*index);
+                                        this.downloads_filter =
+                                            VersionFilter::from_download_index(*index);
                                         this.downloads_scroll
                                             .scroll_to_item(0, ScrollStrategy::Top);
                                         cx.notify();
                                     }))
                                     .children(
-                                        VersionFilter::ALL
+                                        VersionFilter::DOWNLOADS
                                             .into_iter()
                                             .map(|filter| Tab::new().label(filter.label())),
                                     ),
@@ -175,9 +176,12 @@ impl LauncherApp {
                     "试试更换搜索词或筛选条件。",
                     Button::new("downloads-clear")
                         .outline()
-                        .label("查看全部版本")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.downloads_filter = VersionFilter::All;
+                        .label("查看正式版")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.downloads_filter = VersionFilter::Release;
+                            this.downloads_query
+                                .update(cx, |state, cx| state.set_value("", window, cx));
+                            this.downloads_scroll.scroll_to_item(0, ScrollStrategy::Top);
                             cx.notify();
                         })),
                     cx,
@@ -267,9 +271,20 @@ impl LauncherApp {
                     .text_color(cx.theme().muted_foreground)
                     .child(date),
             )
-            .child(div().w(px(86.)).when(installed, |this| {
-                this.child(Tag::success().child("已安装").small())
-            }))
+            .child(
+                div()
+                    .w(px(86.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .when(installed, |this| {
+                        this.child(
+                            Icon::new(IconName::CircleCheck)
+                                .with_size(Size::Medium)
+                                .text_color(cx.theme().success),
+                        )
+                    }),
+            )
             .child(
                 div().w(px(104.)).child(
                     Button::new(format!("downloads-install-{id}"))

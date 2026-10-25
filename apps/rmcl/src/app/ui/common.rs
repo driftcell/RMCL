@@ -30,6 +30,7 @@ pub fn page_header(page: Page, actions: impl IntoElement, cx: &App) -> impl Into
 pub fn card(cx: &App) -> Div {
     v_flex()
         .w_full()
+        .items_stretch()
         .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(cx.theme().border)

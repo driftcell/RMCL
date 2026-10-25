@@ -92,6 +92,7 @@ pub enum VersionFilter {
 
 impl VersionFilter {
     pub const ALL: [Self; 4] = [Self::All, Self::Release, Self::Snapshot, Self::Old];
+    pub const DOWNLOADS: [Self; 3] = [Self::Release, Self::Snapshot, Self::Old];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -113,6 +114,19 @@ impl VersionFilter {
 
     fn from_index(index: usize) -> Self {
         Self::ALL.get(index).copied().unwrap_or(Self::All)
+    }
+
+    fn download_index(self) -> usize {
+        match self {
+            Self::Release => 0,
+            Self::Snapshot => 1,
+            Self::Old => 2,
+            Self::All => 0,
+        }
+    }
+
+    fn from_download_index(index: usize) -> Self {
+        Self::DOWNLOADS.get(index).copied().unwrap_or(Self::Release)
     }
 
     fn matches(self, version_type: Option<&str>) -> bool {
@@ -364,7 +378,7 @@ impl LauncherApp {
             downloads_query,
             versions_query,
             account_input,
-            downloads_filter: VersionFilter::All,
+            downloads_filter: VersionFilter::Release,
             versions_filter: VersionFilter::All,
             downloads_scroll: VirtualListScrollHandle::new(),
             active_task_version: None,
@@ -979,43 +993,58 @@ impl LauncherApp {
     }
 
     fn browse_minecraft_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let prompt = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some("选择 Minecraft 目录".into()),
-        });
-        self._prompt_task = Some(
-            cx.spawn_in(window, async move |this, cx| match prompt.await {
-                Ok(Ok(Some(paths))) => {
-                    if let Some(path) = paths.into_iter().next() {
-                        let _ = this.update_in(cx, |view, window, cx| {
-                            view.set_minecraft_root(path, window, cx)
+        #[cfg(target_os = "macos")]
+        {
+            match pick_directory_macos(&self.config.minecraft_root) {
+                Ok(Some(path)) => self.set_minecraft_root(path, window, cx),
+                Ok(None) => {}
+                Err(error) => {
+                    window.push_notification(Notification::error(error).title("选择目录失败"), cx)
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let prompt = cx.prompt_for_paths(PathPromptOptions {
+                files: false,
+                directories: true,
+                multiple: false,
+                prompt: Some("选择 Minecraft 目录".into()),
+            });
+            self._prompt_task = Some(cx.spawn_in(
+                window,
+                async move |this, cx| match prompt.await {
+                    Ok(Ok(Some(paths))) => {
+                        if let Some(path) = paths.into_iter().next() {
+                            let _ = this.update_in(cx, |view, window, cx| {
+                                view.set_minecraft_root(path, window, cx)
+                            });
+                        }
+                    }
+                    Ok(Ok(None)) => {}
+                    Ok(Err(error)) => {
+                        let _ = this.update_in(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::error(format!("无法打开目录选择器: {error}"))
+                                    .title("选择目录失败"),
+                                cx,
+                            );
                         });
                     }
-                }
-                Ok(Ok(None)) => {}
-                Ok(Err(error)) => {
-                    let _ = this.update_in(cx, |_, window, cx| {
-                        window.push_notification(
-                            Notification::error(format!("无法打开目录选择器: {error}"))
-                                .title("选择目录失败"),
-                            cx,
-                        );
-                    });
-                }
-                Err(_) => {
-                    let _ = this.update_in(cx, |_, window, cx| {
-                        window.push_notification(
-                            Notification::error("目录选择器已取消或窗口已关闭。")
-                                .title("选择目录失败"),
-                            cx,
-                        );
-                    });
-                }
-            }),
-        );
-        cx.notify();
+                    Err(_) => {
+                        let _ = this.update_in(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::error("目录选择器已取消或窗口已关闭。")
+                                    .title("选择目录失败"),
+                                cx,
+                            );
+                        });
+                    }
+                },
+            ));
+            cx.notify();
+        }
     }
 
     fn set_minecraft_root(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1466,13 +1495,13 @@ impl LauncherApp {
 }
 
 impl Render for LauncherApp {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = match self.page {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
-            Page::Settings => self.render_settings(cx).into_any_element(),
+            Page::Settings => self.render_settings(window, cx).into_any_element(),
         };
 
         v_flex()
@@ -1686,4 +1715,36 @@ fn deminiaturize_windows() {
             window.deminiaturize(None);
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn pick_directory_macos(start: &std::path::Path) -> Result<Option<PathBuf>, String> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+    use objc2_foundation::{NSString, NSURL};
+
+    let marker =
+        MainThreadMarker::new().ok_or_else(|| "目录选择器必须在主线程打开。".to_owned())?;
+    let panel = NSOpenPanel::openPanel(marker);
+    panel.setCanChooseDirectories(true);
+    panel.setCanChooseFiles(false);
+    panel.setAllowsMultipleSelection(false);
+    panel.setCanCreateDirectories(true);
+    panel.setResolvesAliases(false);
+
+    let initial = if start.is_dir() {
+        Some(start)
+    } else {
+        start.parent().filter(|parent| parent.is_dir())
+    };
+    if let Some(initial) = initial
+        && let Some(url) = NSURL::from_directory_path(initial)
+    {
+        panel.setDirectoryURL(Some(&url));
+    }
+    panel.setPrompt(Some(&NSString::from_str("选择")));
+    if panel.runModal() != NSModalResponseOK {
+        return Ok(None);
+    }
+    Ok(panel.URLs().iter().find_map(|url| url.to_file_path()))
 }

@@ -18,9 +18,13 @@ use super::super::{LauncherApp, Page};
 use super::common::{card, field_label, mono, page_header, section_title};
 
 impl LauncherApp {
-    pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content_width = (window.viewport_size().width - px(232.) - px(48.)).max(px(560.));
+        let row_width = (content_width - px(40.)).max(px(400.));
         let auto_java_view = cx.entity().downgrade();
         v_flex()
+            .w_full()
+            .items_stretch()
             .flex_1()
             .min_h_0()
             .p_6()
@@ -29,6 +33,8 @@ impl LauncherApp {
             .child(
                 v_flex()
                     .id("settings-body")
+                    .w(content_width)
+                    .items_stretch()
                     .flex_1()
                     .min_h_0()
                     .gap_5()
@@ -56,7 +62,7 @@ impl LauncherApp {
                                     .child(field_label("Minecraft 目录"))
                                     .child(
                                         h_flex()
-                                            .w_full()
+                                            .w(row_width)
                                             .gap_2()
                                             .child(
                                                 div()
@@ -105,8 +111,7 @@ impl LauncherApp {
                             )
                             .child(
                                 h_flex()
-                                    .w_full()
-                                    .justify_between()
+                                    .w(row_width)
                                     .gap_4()
                                     .child(
                                         v_flex()
@@ -140,8 +145,7 @@ impl LauncherApp {
                             ))
                             .child(
                                 h_flex()
-                                    .w_full()
-                                    .justify_between()
+                                    .w(row_width)
                                     .gap_4()
                                     .child(
                                         v_flex()
@@ -152,13 +156,14 @@ impl LauncherApp {
                                             .child(mono("游戏退出后自动恢复。", cx)),
                                     )
                                     .child(
-                                        Select::new(&self.visibility_select)
-                                            .accessibility_label("启动器可见性")
-                                            .menu_width(px(200.))
-                                            .menu_max_h(px(200.))
-                                            .flex_shrink_0()
-                                            .cleanable(false)
-                                            .w(px(180.)),
+                                        div().flex_shrink_0().w(px(180.)).child(
+                                            Select::new(&self.visibility_select)
+                                                .accessibility_label("启动器可见性")
+                                                .menu_width(px(200.))
+                                                .menu_max_h(px(200.))
+                                                .cleanable(false)
+                                                .w_full(),
+                                        ),
                                     ),
                             ),
                     )
@@ -167,8 +172,7 @@ impl LauncherApp {
                             .child(section_title("外观", "修改后立即生效。", cx))
                             .child(
                                 h_flex()
-                                    .w_full()
-                                    .justify_between()
+                                    .w(row_width)
                                     .gap_4()
                                     .child(
                                         v_flex()
@@ -179,19 +183,19 @@ impl LauncherApp {
                                             .child(mono("跟随系统、浅色或深色。", cx)),
                                     )
                                     .child(
-                                        Select::new(&self.theme_select)
-                                            .accessibility_label("主题")
-                                            .menu_width(px(200.))
-                                            .menu_max_h(px(200.))
-                                            .flex_shrink_0()
-                                            .cleanable(false)
-                                            .w(px(180.)),
+                                        div().flex_shrink_0().w(px(180.)).child(
+                                            Select::new(&self.theme_select)
+                                                .accessibility_label("主题")
+                                                .menu_width(px(200.))
+                                                .menu_max_h(px(200.))
+                                                .cleanable(false)
+                                                .w_full(),
+                                        ),
                                     ),
                             )
                             .child(
                                 h_flex()
-                                    .w_full()
-                                    .justify_between()
+                                    .w(row_width)
                                     .gap_4()
                                     .child(
                                         v_flex()
@@ -202,13 +206,14 @@ impl LauncherApp {
                                             .child(mono("主按钮和选中状态的颜色。", cx)),
                                     )
                                     .child(
-                                        Select::new(&self.accent_select)
-                                            .accessibility_label("强调色")
-                                            .menu_width(px(200.))
-                                            .menu_max_h(px(200.))
-                                            .flex_shrink_0()
-                                            .cleanable(false)
-                                            .w(px(180.)),
+                                        div().flex_shrink_0().w(px(180.)).child(
+                                            Select::new(&self.accent_select)
+                                                .accessibility_label("强调色")
+                                                .menu_width(px(200.))
+                                                .menu_max_h(px(200.))
+                                                .cleanable(false)
+                                                .w_full(),
+                                        ),
                                     ),
                             ),
                     )
