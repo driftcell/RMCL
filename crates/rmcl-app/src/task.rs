@@ -48,6 +48,7 @@ pub enum TaskKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPhase {
     Install(InstallPhase),
+    Inspecting,
     CheckingJava,
     InstallingJava,
     PreparingLaunch,
@@ -198,17 +199,39 @@ impl TaskManager {
         Ok(id)
     }
 
-    pub async fn start_launch(&self, mut request: GameLaunchRequest) -> Result<TaskId, AppError> {
+    pub async fn start_launch(&self, request: GameLaunchRequest) -> Result<TaskId, AppError> {
+        self.start_launch_with(request, false).await
+    }
+
+    /// Launches an installed version without the ensure/repair pass.
+    ///
+    /// The caller must provide a version whose base files are present. Missing
+    /// files fail the task with a structured incomplete-installation error.
+    pub async fn start_launch_installed(
+        &self,
+        request: GameLaunchRequest,
+    ) -> Result<TaskId, AppError> {
+        self.start_launch_with(request, true).await
+    }
+
+    async fn start_launch_with(
+        &self,
+        mut request: GameLaunchRequest,
+        installed: bool,
+    ) -> Result<TaskId, AppError> {
         let Some(game) = self.inner.game.clone() else {
             return Err(AppError::JavaNotConfigured);
         };
         let key = prepare_request(&mut request.install)?;
         let (id, cancellation) = self.register(TaskKind::GameLaunch, key).await?;
         let (sender, receiver) = mpsc::channel(128);
+        if installed {
+            self.update_phase(id, TaskPhase::Inspecting).await;
+        }
         let manager = self.clone();
         tokio::spawn(async move {
             manager
-                .run_launch(id, game, request, cancellation, sender, receiver)
+                .run_launch(id, game, request, cancellation, sender, receiver, installed)
                 .await;
         });
         Ok(id)
@@ -330,6 +353,7 @@ impl TaskManager {
         self.finish_install(id, result).await;
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_launch(
         self,
         id: TaskId,
@@ -338,9 +362,17 @@ impl TaskManager {
         cancellation: CancellationToken,
         sender: mpsc::Sender<GameLaunchEvent>,
         mut receiver: mpsc::Receiver<GameLaunchEvent>,
+        installed: bool,
     ) {
         // NOTE: Keep the larger install-to-exit future off the worker stack as well.
-        let run = Box::pin(game.run(request, cancellation, Some(sender)));
+        let run = Box::pin(async move {
+            if installed {
+                game.run_installed(request, cancellation, Some(sender))
+                    .await
+            } else {
+                game.run(request, cancellation, Some(sender)).await
+            }
+        });
         let forward = async {
             while let Some(event) = receiver.recv().await {
                 self.apply_game_event(id, event).await;
@@ -385,6 +417,9 @@ impl TaskManager {
     async fn apply_game_event(&self, id: TaskId, event: GameLaunchEvent) {
         match event {
             GameLaunchEvent::Install(event) => self.apply_install_event(id, event).await,
+            GameLaunchEvent::Inspecting => {
+                self.update_phase(id, TaskPhase::Inspecting).await;
+            }
             GameLaunchEvent::Java(JavaEvent::Checking) => {
                 self.update_phase(id, TaskPhase::CheckingJava).await;
             }

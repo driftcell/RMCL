@@ -213,6 +213,53 @@ async fn direct_launch_collects_redacted_logs_and_exit() {
     )));
 }
 
+#[tokio::test]
+async fn installed_launch_skips_the_install_pipeline() {
+    let fixture = fixture(ScriptMode::Exit);
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+    let (sender, mut receiver) = mpsc::channel(512);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), Some(sender))
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    let events = drain(&mut receiver);
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, GameLaunchEvent::Inspecting))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, GameLaunchEvent::Install(_)))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, GameLaunchEvent::Started))
+    );
+}
+
+#[tokio::test]
+async fn installed_launch_reports_missing_base_files() {
+    let fixture = fixture(ScriptMode::Exit);
+    std::fs::remove_file(fixture.root.join("versions/test/test.jar")).unwrap();
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let error = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        AppError::InstallationIncomplete { ref version, .. } if version == "test"
+    ));
+}
+
 async fn wait_for_phase(
     receiver: &mut broadcast::Receiver<TaskEvent>,
     id: TaskId,

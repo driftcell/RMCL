@@ -25,6 +25,7 @@ pub struct GameLaunchRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameLaunchEvent {
     Install(InstallEvent),
+    Inspecting,
     Java(JavaEvent),
     Preparing,
     Starting,
@@ -85,6 +86,68 @@ impl GameLauncher {
             let (outcome, ()) = tokio::join!(install, forward);
             outcome?
         };
+        self.finish_launch(
+            install,
+            account,
+            additional_jvm_arguments,
+            additional_game_arguments,
+            resolution,
+            demo,
+            cancellation,
+            events,
+        )
+        .await
+    }
+
+    /// Launches an already installed version without re-planning downloads.
+    ///
+    /// Base files and the natives directory are checked for existence, but
+    /// asset objects are not re-hashed. Use [`Self::run`] when the caller needs
+    /// the full repair pipeline.
+    pub async fn run_installed(
+        &self,
+        request: GameLaunchRequest,
+        cancellation: CancellationToken,
+        events: Option<GameLaunchEventSender>,
+    ) -> Result<GameLaunchOutcome, AppError> {
+        let GameLaunchRequest {
+            install,
+            account,
+            additional_jvm_arguments,
+            additional_game_arguments,
+            resolution,
+            demo,
+        } = request;
+        emit(&events, GameLaunchEvent::Inspecting).await;
+        let install = self
+            .installer
+            .inspect_existing(&install, cancellation.clone())
+            .await?;
+        self.finish_launch(
+            install,
+            account,
+            additional_jvm_arguments,
+            additional_game_arguments,
+            resolution,
+            demo,
+            cancellation,
+            events,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn finish_launch(
+        &self,
+        install: InstallOutcome,
+        account: OfflineAccount,
+        additional_jvm_arguments: Vec<String>,
+        additional_game_arguments: Vec<String>,
+        resolution: Option<(u32, u32)>,
+        demo: bool,
+        cancellation: CancellationToken,
+        events: Option<GameLaunchEventSender>,
+    ) -> Result<GameLaunchOutcome, AppError> {
         let requirement = JavaRequirement::for_version(&install.version, &install.platform);
         let java = {
             let (sender, mut receiver) = mpsc::channel(8);

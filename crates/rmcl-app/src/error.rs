@@ -28,6 +28,14 @@ pub enum AppError {
     VersionNotFound(String),
     #[error("version JSON ID `{actual}` does not match requested ID `{expected}`")]
     VersionIdMismatch { expected: String, actual: String },
+    #[error(
+        "version `{version}` is incomplete and needs repair ({missing_count} required files missing; first: {first_missing})"
+    )]
+    InstallationIncomplete {
+        version: String,
+        missing_count: usize,
+        first_missing: String,
+    },
     #[error("{phase:?} download failed: {source}")]
     Download {
         phase: InstallPhase,

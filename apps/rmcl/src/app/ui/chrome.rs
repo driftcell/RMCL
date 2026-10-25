@@ -7,7 +7,6 @@ use gpui_kit::{
         progress::Progress as ProgressBar,
         sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuItem},
         spinner::Spinner,
-        status_bar::StatusBar,
         tag::Tag,
         v_flex,
     },
@@ -73,6 +72,12 @@ impl LauncherApp {
     }
 
     pub fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let running = self.log_state.snapshot.as_ref().is_some_and(|snapshot| {
+            matches!(
+                snapshot.status,
+                rmcl_app::TaskStatus::Running | rmcl_app::TaskStatus::Cancelling
+            )
+        });
         let account_name = self
             .selected_account()
             .map(|account| account.username().to_owned())
@@ -97,6 +102,30 @@ impl LauncherApp {
                         .child(self.nav_item(Page::Home, cx))
                         .child(self.nav_item(Page::Versions, cx))
                         .child(self.nav_item(Page::Downloads, cx)),
+                ),
+            )
+            .child(
+                SidebarGroup::new("工具").child(
+                    SidebarMenu::new().child(
+                        SidebarMenuItem::new(Page::Logs.title())
+                            .icon(Page::Logs.icon())
+                            .active(self.page == Page::Logs)
+                            .when(running, |this| {
+                                this.suffix(|_, cx| {
+                                    Spinner::new()
+                                        .with_size(Size::XSmall)
+                                        .color(cx.theme().primary)
+                                })
+                            })
+                            .when(!running && self.logs_attention, |this| {
+                                this.suffix(|_, cx| {
+                                    div().size(px(6.)).rounded_full().bg(cx.theme().danger)
+                                })
+                            })
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.navigate(Page::Logs, window, cx)
+                            })),
+                    ),
                 ),
             )
             .child(
@@ -202,79 +231,119 @@ impl LauncherApp {
                     && !snapshot.stop_requested
                     && !snapshot.exit.as_ref().is_some_and(|exit| exit.success))
         });
-
-        let mut bar = StatusBar::new().left(
-            h_flex()
-                .gap_2()
-                .when(running, |this| {
-                    this.child(
-                        Spinner::new()
-                            .with_size(Size::XSmall)
-                            .color(cx.theme().primary),
-                    )
-                })
-                .child(state),
-        );
         let current = task_current_item(snapshot);
-        if !current.is_empty() {
-            bar = bar.child(
-                div()
-                    .max_w(px(520.))
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .child(current),
-            );
+        let percentage = if loading {
+            "准备中".to_owned()
         } else {
-            bar = bar.child(format!("{version_count} 个已安装版本"));
-        }
-        if running {
-            bar = bar.right(
-                ProgressBar::new("status-progress")
-                    .value(value)
-                    .loading(loading)
-                    .w(px(120.)),
-            );
-            if can_cancel {
-                bar = bar.right(
-                    Button::new("status-stop")
-                        .danger()
-                        .xsmall()
-                        .label("停止")
-                        .on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))),
-                );
-            }
-        } else if show_logs {
-            bar = bar.right(
-                Button::new("status-open-logs")
-                    .danger()
-                    .xsmall()
-                    .label("查看日志")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.navigate(Page::Logs, window, cx)),
+            format!("{value:.0}%")
+        };
+
+        v_flex()
+            .w_full()
+            .border_t_1()
+            .border_color(cx.theme().status_bar_border)
+            .bg(cx.theme().status_bar)
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_3()
+                    .px_3()
+                    .py_2()
+                    .when(running, |this| {
+                        this.child(
+                            Spinner::new()
+                                .with_size(Size::XSmall)
+                                .color(cx.theme().primary),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .font_medium()
+                            .text_color(cx.theme().foreground)
+                            .child(state),
+                    )
+                    .when(running, |this| {
+                        this.child(
+                            ProgressBar::new("status-progress")
+                                .value(value)
+                                .loading(loading)
+                                .flex_1()
+                                .min_w(px(120.)),
+                        )
+                        .child(div().flex_shrink_0().child(percentage))
+                    })
+                    .when(!running, |this| {
+                        this.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .child(format!("{version_count} 个已安装版本")),
+                        )
+                    })
+                    .when(running && can_cancel, |this| {
+                        this.child(
+                            Button::new("status-stop")
+                                .danger()
+                                .xsmall()
+                                .label("停止")
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.cancel(window, cx)),
+                                ),
+                        )
+                    })
+                    .when(!running && show_logs, |this| {
+                        this.child(
+                            Button::new("status-open-logs")
+                                .danger()
+                                .xsmall()
+                                .label("查看日志")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.navigate(Page::Logs, window, cx)
+                                })),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .child(super::super::platform_label(&self.services.platform)),
                     ),
-            );
-        }
-        bar.right(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(super::super::platform_label(&self.services.platform)),
-        )
+            )
+            .when(running && !current.is_empty(), |this| {
+                this.child(
+                    h_flex()
+                        .w_full()
+                        .min_w_0()
+                        .gap_2()
+                        .px_3()
+                        .pb_2()
+                        .child(
+                            Icon::new(IconName::File)
+                                .xsmall()
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(current)),
+                )
+            })
     }
 }
 
 fn brand_mark(cx: &App) -> impl IntoElement {
     div()
-        .size_8()
+        .size_5()
         .flex_shrink_0()
-        .rounded(px(10.))
+        .rounded(px(6.))
         .bg(cx.theme().primary)
         .flex()
         .items_center()
         .justify_center()
         .child(
             Icon::new(IconName::Boxes)
-                .small()
+                .with_size(Size::XSmall)
                 .text_color(cx.theme().primary_foreground),
         )
 }

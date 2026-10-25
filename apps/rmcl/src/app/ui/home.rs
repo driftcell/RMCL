@@ -4,22 +4,17 @@ use gpui_kit::{
         ActiveTheme, Disableable, Icon, Sizable, Size, StyledExt,
         button::{Button, ButtonVariants},
         h_flex,
-        progress::Progress,
         scroll::ScrollableElement,
         select::Select,
-        spinner::Spinner,
         tag::Tag,
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
-use rmcl_app::{InstalledVersion, TaskSnapshot, TaskStatus};
+use rmcl_app::InstalledVersion;
 
-use super::super::{
-    LauncherApp, Page, short_date, task_current_item, task_phase_label, task_progress,
-    task_status_label, version_tile, version_type_label,
-};
+use super::super::{LauncherApp, Page, short_date, version_tile, version_type_label};
 use super::common::{card, page_header, section_title, type_tag};
 
 impl LauncherApp {
@@ -109,7 +104,6 @@ impl LauncherApp {
         can_start: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let snapshot = self.log_state.snapshot.clone();
         div()
             .relative()
             .w_full()
@@ -313,103 +307,6 @@ impl LauncherApp {
                                 )
                             }),
                     ),
-            )
-            .when_some(snapshot, |this, snapshot| {
-                this.child(div().mt_5().child(self.render_activity(&snapshot, cx)))
-            })
-    }
-
-    fn render_activity(&self, snapshot: &TaskSnapshot, cx: &mut Context<Self>) -> impl IntoElement {
-        let running = matches!(
-            snapshot.status,
-            TaskStatus::Running | TaskStatus::Cancelling
-        );
-        let show_logs = matches!(snapshot.status, TaskStatus::Failed)
-            || (snapshot.status == TaskStatus::Exited
-                && !snapshot.stop_requested
-                && !snapshot.exit.as_ref().is_some_and(|exit| exit.success));
-        let (value, loading) = task_progress(Some(snapshot));
-        let error = snapshot.error.clone();
-        div()
-            .rounded(cx.theme().radius)
-            .border_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background.opacity(0.72))
-            .p_3()
-            .child(
-                h_flex()
-                    .gap_3()
-                    .when(running, |this| {
-                        this.child(
-                            Spinner::new()
-                                .with_size(Size::Small)
-                                .color(cx.theme().primary),
-                        )
-                    })
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_1()
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_medium()
-                                            .child(task_phase_label(Some(snapshot))),
-                                    )
-                                    .child(
-                                        Tag::new()
-                                            .outline()
-                                            .child(task_status_label(Some(snapshot)))
-                                            .small(),
-                                    ),
-                            )
-                            .when(running, |this| {
-                                this.child(
-                                    Progress::new("home-activity-progress")
-                                        .value(value)
-                                        .loading(loading)
-                                        .w_full(),
-                                )
-                            })
-                            .when_some(error, |this, error| {
-                                this.child(
-                                    div().text_xs().text_color(cx.theme().danger).child(error),
-                                )
-                            })
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .truncate()
-                                    .child(task_current_item(Some(snapshot))),
-                            ),
-                    )
-                    .when(show_logs, |this| {
-                        this.child(
-                            Button::new("home-view-logs")
-                                .outline()
-                                .small()
-                                .label("查看日志")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.navigate(Page::Logs, window, cx)
-                                })),
-                        )
-                    })
-                    .when(running && self.log_state.can_cancel(), |this| {
-                        this.child(
-                            Button::new("home-stop")
-                                .danger()
-                                .small()
-                                .label("停止")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.cancel(window, cx)),
-                                ),
-                        )
-                    }),
             )
     }
 

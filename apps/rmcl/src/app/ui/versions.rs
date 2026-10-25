@@ -158,6 +158,7 @@ impl LauncherApp {
         let play_id = id.clone();
         let repair_id = id.clone();
         let folder_id = id.clone();
+        let delete_id = id.clone();
         h_flex()
             .w_full()
             .gap_3()
@@ -224,6 +225,7 @@ impl LauncherApp {
                             .icon(IconName::Wrench)
                             .tooltip("检查并修复")
                             .accessibility_label("检查并修复")
+                            .disabled(!can_start)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.start_repair(repair_id.clone(), window, cx)
                             })),
@@ -237,6 +239,18 @@ impl LauncherApp {
                             .accessibility_label("打开版本目录")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_version_folder(folder_id.as_str(), window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(format!("versions-delete-{delete_id}"))
+                            .ghost()
+                            .small()
+                            .icon(IconName::Trash)
+                            .tooltip("删除版本")
+                            .accessibility_label("删除版本")
+                            .disabled(!can_start)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_delete_version(delete_id.clone(), window, cx)
                             })),
                     ),
             )

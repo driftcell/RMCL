@@ -27,4 +27,4 @@ pub use rmcl_net::ProgressStage as DownloadStage;
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
 };
-pub use versions::{InstalledVersion, discover_installed_versions};
+pub use versions::{InstalledVersion, delete_installed_version, discover_installed_versions};

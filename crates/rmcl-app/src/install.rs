@@ -125,6 +125,91 @@ impl VanillaInstaller {
         })
     }
 
+    /// Loads an installed plan and verifies required base files without downloading.
+    ///
+    /// Asset objects are planned but not re-hashed; launch tolerates missing
+    /// optional assets, while a missing client, library, native JAR, native
+    /// directory, or asset index is reported as incomplete.
+    pub async fn inspect_existing(
+        &self,
+        request: &VanillaInstallRequest,
+        cancellation: CancellationToken,
+    ) -> Result<InstallOutcome, AppError> {
+        if !matches!(request.source, VersionSource::Existing) {
+            return Err(AppError::InvalidRequest(
+                "fast launch requires VersionSource::Existing".to_owned(),
+            ));
+        }
+        check_cancelled(&cancellation)?;
+        let root = std::path::absolute(&request.minecraft_root).map_err(|source| AppError::Io {
+            operation: "resolve Minecraft root",
+            path: request.minecraft_root.clone(),
+            source,
+        })?;
+        let layout = MinecraftLayout::new(root);
+        let id = VersionId::new(request.version_id.clone())?;
+        let version_json_path = layout.version_json_path(&id);
+        let bytes = read_bytes(&version_json_path, "read existing version JSON").await?;
+        let json = json_string(bytes, &version_json_path)?;
+        let version = GameVersion::from_json(&json)?;
+        if version.id != request.version_id {
+            return Err(AppError::VersionIdMismatch {
+                expected: request.version_id.clone(),
+                actual: version.id.clone(),
+            });
+        }
+
+        let base_plan = plan_vanilla(&layout, &version, &request.platform)?;
+        let mut missing = Vec::new();
+        for file in &base_plan.files {
+            if !tokio::fs::try_exists(&file.destination)
+                .await
+                .map_err(|source| AppError::Io {
+                    operation: "check installed file",
+                    path: file.destination.clone(),
+                    source,
+                })?
+            {
+                missing.push(file.destination.clone());
+            }
+        }
+        if !base_plan.extractions.is_empty() {
+            let natives = layout.natives_dir(&id, &request.platform);
+            if !natives.is_dir() {
+                missing.push(natives);
+            }
+        }
+        if !missing.is_empty() {
+            return Err(AppError::InstallationIncomplete {
+                version: request.version_id.clone(),
+                missing_count: missing.len(),
+                first_missing: missing[0].display().to_string(),
+            });
+        }
+
+        let asset_index = base_plan
+            .files
+            .iter()
+            .find(|file| file.kind == PlannedFileKind::AssetIndex)
+            .ok_or_else(|| AppError::InvalidRequest("base plan has no asset index".to_owned()))?;
+        let catalog_json = read_bytes(&asset_index.destination, "read asset index").await?;
+        let catalog_json = json_string(catalog_json, &asset_index.destination)?;
+        let catalog = AssetCatalog::from_json(&catalog_json)?;
+        let asset_plan =
+            plan_asset_objects_with_base(&layout, &catalog, &self.sources.asset_object_base)?;
+        check_cancelled(&cancellation)?;
+        Ok(InstallOutcome {
+            layout,
+            platform: request.platform.clone(),
+            version,
+            version_json_path,
+            base_plan,
+            asset_plan,
+            downloads: DownloadSummary::default(),
+            natives: Vec::new(),
+        })
+    }
+
     async fn resolve_version_json(
         &self,
         request: &VanillaInstallRequest,

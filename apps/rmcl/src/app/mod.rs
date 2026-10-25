@@ -6,7 +6,7 @@ use gpui_kit::{
     assets::IconName,
     component::{
         ActiveTheme, Icon, IndexPath, Sizable, Size, StyledExt, VirtualListScrollHandle, WindowExt,
-        button::{Button, ButtonVariants},
+        button::{Button, ButtonVariant, ButtonVariants},
         dialog::{DialogAction, DialogClose, DialogFooter},
         h_flex,
         input::{Input, InputEvent, InputState},
@@ -19,7 +19,7 @@ use gpui_kit::{
 use rmcl_app::{
     AppError, GameLaunchRequest, InstallPhase, InstalledVersion, TaskEvent, TaskKind, TaskPhase,
     TaskProgress, TaskSnapshot, TaskStatus, VanillaInstallRequest, VersionManifest, VersionSource,
-    VersionSummary, discover_installed_versions,
+    VersionSummary, delete_installed_version, discover_installed_versions,
 };
 use rmcl_auth::OfflineAccount;
 use rmcl_domain::{Architecture, OperatingSystem, Platform};
@@ -165,6 +165,7 @@ pub struct LauncherApp {
     downloads_scroll: VirtualListScrollHandle,
     active_task_version: Option<String>,
     launcher_hidden: bool,
+    logs_attention: bool,
     _event_task: Task<()>,
     _command_task: Option<Task<()>>,
     _catalog_task: Option<Task<()>>,
@@ -373,6 +374,7 @@ impl LauncherApp {
             downloads_scroll: VirtualListScrollHandle::new(),
             active_task_version: None,
             launcher_hidden: false,
+            logs_attention: false,
             _event_task: event_task,
             _command_task: None,
             _catalog_task: None,
@@ -631,6 +633,9 @@ impl LauncherApp {
 
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         self.page = page;
+        if page == Page::Logs {
+            self.logs_attention = false;
+        }
         if page == Page::Downloads && self.catalog.manifest.is_none() && !self.catalog.loading {
             self.load_catalog(false, window, cx);
         }
@@ -787,6 +792,7 @@ impl LauncherApp {
                 .spawn(async move { manager.dismiss(previous).await });
         }
         self.log_state.begin_command();
+        self.logs_attention = false;
         self.active_task_version = Some(version_id);
         cx.notify();
 
@@ -799,7 +805,9 @@ impl LauncherApp {
                 .spawn(async move {
                     match command {
                         Command::Install(request) => command_manager.start_install(request).await,
-                        Command::Launch(request) => command_manager.start_launch(request).await,
+                        Command::Launch(request) => {
+                            command_manager.start_launch_installed(request).await
+                        }
                     }
                 })
                 .await;
@@ -932,6 +940,11 @@ impl LauncherApp {
             }
             TaskStatus::Exited => {
                 self.reload_versions(window, cx);
+                if !snapshot.stop_requested
+                    && !snapshot.exit.as_ref().is_some_and(|exit| exit.success)
+                {
+                    self.logs_attention = true;
+                }
                 if snapshot.stop_requested {
                     window.push_notification(
                         Notification::info("游戏已被停止。").title("游戏已退出"),
@@ -960,6 +973,7 @@ impl LauncherApp {
                 }
             }
             TaskStatus::Failed => {
+                self.logs_attention = true;
                 window.push_notification(
                     Notification::error(
                         snapshot
@@ -1064,7 +1078,7 @@ impl LauncherApp {
                             v_flex()
                                 .gap_1()
                                 .child(div().text_sm().font_medium().child("玩家名"))
-                                .child(Input::new(&input).w_full()),
+                                .child(div().px_1().child(Input::new(&input).w_full())),
                         ),
                 )
                 .footer(
@@ -1159,12 +1173,6 @@ impl LauncherApp {
                                                 .child(format!("{type_label} · {date}")),
                                         ),
                                 ),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("已验证的文件会跳过。"),
                         )
                         .child(
                             v_flex()
@@ -1293,6 +1301,79 @@ impl LauncherApp {
         self.log_state = LauncherState::new();
         self.active_task_version = None;
         self.log_scroll.set_offset(point(px(0.), px(0.)));
+        cx.notify();
+    }
+
+    fn confirm_delete_version(
+        &mut self,
+        version_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            alert
+                .confirm()
+                .title(format!("删除版本 {version_id}？"))
+                .description("将删除整个版本目录；共享 libraries 和 assets 不受影响。")
+                .ok_text("删除")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok({
+                    let version_id = version_id.clone();
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let Some(view) = view.upgrade() else {
+                            return true;
+                        };
+                        view.update(cx, |this, cx| {
+                            this.delete_version(version_id.clone(), window, cx)
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
+    fn delete_version(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.log_state.can_start() {
+            window.push_notification(
+                Notification::warning("请先等待当前任务结束。").title("无法删除版本"),
+                cx,
+            );
+            return;
+        }
+        let display = version_id.clone();
+        let root = self.config.minecraft_root.clone();
+        let services = self.services.clone();
+        self._command_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move { delete_installed_version(root, &version_id).await })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| match result {
+                Ok(Ok(())) => {
+                    view.reload_versions(window, cx);
+                    view.save_config();
+                    window.push_notification(
+                        Notification::success(format!("已删除版本 {display}。"))
+                            .title("版本已删除"),
+                        cx,
+                    );
+                }
+                Ok(Err(error)) => {
+                    window.push_notification(
+                        Notification::error(error.to_string()).title("删除版本失败"),
+                        cx,
+                    );
+                }
+                Err(error) => {
+                    window.push_notification(
+                        Notification::error(format!("后台任务失败: {error}")).title("删除版本失败"),
+                        cx,
+                    );
+                }
+            });
+        }));
         cx.notify();
     }
 
@@ -1541,6 +1622,7 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
+        TaskPhase::Inspecting => "检查版本文件",
         TaskPhase::CheckingJava => "检查 Java",
         TaskPhase::InstallingJava => "安装 Java",
         TaskPhase::PreparingLaunch => "准备启动参数",
