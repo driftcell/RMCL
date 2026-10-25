@@ -271,6 +271,147 @@ async fn rejects_legacy_installer_profiles() {
     server.abort();
 }
 
+struct RealSmokeFixture {
+    _temporary: TempDir,
+    root: PathBuf,
+    base_version: GameVersion,
+    java: JavaRuntime,
+    platform: Platform,
+}
+
+#[ignore = "downloads official Minecraft and installer artifacts"]
+async fn real_smoke_fixture() -> RealSmokeFixture {
+    let client = reqwest::Client::builder()
+        .user_agent("RMCL-loader-smoke")
+        .build()
+        .unwrap();
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join(".minecraft");
+    std::fs::create_dir_all(root.join("versions/1.21.1")).unwrap();
+
+    let manifest: serde_json::Value = client
+        .get("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json")
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let version_url = manifest["versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|version| version["id"] == "1.21.1")
+        .and_then(|version| version["url"].as_str())
+        .unwrap();
+    let version_json: serde_json::Value = client
+        .get(version_url)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let client_url = version_json["downloads"]["client"]["url"].as_str().unwrap();
+    let client_jar = client
+        .get(client_url)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    std::fs::write(root.join("versions/1.21.1/1.21.1.jar"), &client_jar).unwrap();
+    let base_version = GameVersion::from_json(&version_json.to_string()).unwrap();
+
+    let java_path = std::env::var_os("JAVA_HOME")
+        .map(|home| PathBuf::from(home).join("bin/java"))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from("/usr/bin/java"));
+    let java = rmcl_java::probe(java_path, JavaRuntimeSource::System)
+        .await
+        .unwrap();
+    let platform = Platform::new(
+        if cfg!(target_os = "macos") {
+            OperatingSystem::MacOs
+        } else {
+            OperatingSystem::Linux
+        },
+        "test",
+        std::env::consts::ARCH,
+    );
+    RealSmokeFixture {
+        _temporary: temporary,
+        root,
+        base_version,
+        java,
+        platform,
+    }
+}
+
+async fn run_real_installer(fixture: &RealSmokeFixture, installer_url: &str) -> String {
+    let installer = ForgeInstaller::new(DownloadConfig::default()).unwrap();
+    let outcome = installer
+        .install(
+            ForgeInstallRequest {
+                minecraft_root: fixture.root.clone(),
+                base_version_id: VersionId::new("1.21.1").unwrap(),
+                base_version: fixture.base_version.clone(),
+                platform: fixture.platform.clone(),
+                java: fixture.java.clone(),
+                installer_url: Url::parse(installer_url).unwrap(),
+            },
+            CancellationToken::new(),
+            &None,
+        )
+        .await
+        .unwrap();
+    assert!(outcome.processor_count >= 3);
+    outcome.version_json
+}
+
+#[tokio::test]
+#[ignore = "downloads official Minecraft and Forge artifacts"]
+async fn real_forge_installer_runs_processor_chain() {
+    let fixture = real_smoke_fixture().await;
+    let version_json = run_real_installer(
+        &fixture,
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-installer.jar",
+    )
+    .await;
+
+    assert!(version_json.contains("net.minecraftforge"));
+    let generated = fixture
+        .root
+        .join("libraries/net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-client.jar");
+    assert!(generated.is_file());
+    assert!(zip::ZipArchive::new(std::fs::File::open(generated).unwrap()).is_ok());
+}
+
+#[tokio::test]
+#[ignore = "downloads official Minecraft and NeoForge artifacts"]
+async fn real_neoforge_installer_runs_processor_chain() {
+    let fixture = real_smoke_fixture().await;
+    let version_json = run_real_installer(
+        &fixture,
+        "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.80/neoforge-21.1.80-installer.jar",
+    )
+    .await;
+
+    assert!(version_json.contains("neoforge"));
+    let generated = fixture
+        .root
+        .join("libraries/net/neoforged/neoforge/21.1.80/neoforge-21.1.80-client.jar");
+    assert!(generated.is_file());
+    assert!(zip::ZipArchive::new(std::fs::File::open(generated).unwrap()).is_ok());
+}
+
 #[test]
 fn sha1_helper_is_stable() {
     assert_eq!(

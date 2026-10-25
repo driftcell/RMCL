@@ -123,7 +123,7 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 - 不自动安装 Fabric API / Quilt API / Forge 配套 Mod。
 - 不校验加载器版本与基础版本的完整兼容矩阵；以元数据返回的版本列表为准。
 - 基础版本可能作为独立实例出现；尚未隐藏纯依赖实例。
-- 没有真实 Forge/NeoForge 游戏启动验收；当前验证覆盖 processor 执行、输出校验和实例创建，真实安装器 smoke 只覆盖 Forge 1.21.1。
+- 没有真实 Forge/NeoForge 游戏启动验收；当前验证覆盖 processor 执行、输出校验和实例创建，真实安装器 smoke 覆盖 Forge 1.21.1-52.1.20 和 NeoForge 21.1.80。
 
 ## 验证
 
@@ -131,4 +131,5 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 - `rmcl-minecraft` 覆盖 Fabric/Quilt 风格库的顶层 `sha1`/`size` 解析。
 - `rmcl-app` 覆盖 Fabric/Quilt/Forge/NeoForge 元数据与 installer URL、profile 改写、基础版本复用、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务快照。
 - `forge_install` 使用 mock installer 和 fake Java 覆盖 `DOWNLOAD_MOJMAPS`、processor 执行、输出校验、data 文件复制和 legacy installer 拒绝；仅在 Unix 运行。
-- 2026-10-25 对真实 Fabric/Quilt/Forge 元数据 endpoint 做了只读 smoke，并用真实 Forge `1.21.1-52.1.20` installer 确认 `spec=1`、processors、`DOWNLOAD_MOJMAPS` 和内嵌 maven 结构；未执行真实加载器游戏启动。真实 NeoForge installer 下载因 `maven.neoforged.net` SSL 失败未完成。
+- 标记为 `#[ignore]` 的真实网络 smoke 使用官方 Minecraft 1.21.1 client JAR 和真实 installer，运行完整 Forge `1.21.1-52.1.20`、NeoForge `21.1.80` processor 链，并确认生成的 client JAR 是有效 ZIP。2026-10-25 两者均在本机通过。
+- 2026-10-25 对真实 Fabric/Quilt/Forge/NeoForge 元数据 endpoint 做了只读 smoke；未执行真实加载器游戏启动。
