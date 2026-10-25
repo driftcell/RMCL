@@ -352,9 +352,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmcl-domain"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "thiserror",
+ "url",
+]
+
+[[package]]
 name = "rmcl-install"
 version = "0.1.0"
 dependencies = [
+ "rmcl-domain",
  "rmcl-instance",
  "rmcl-minecraft",
  "serde_json",
@@ -375,8 +385,8 @@ dependencies = [
 name = "rmcl-minecraft"
 version = "0.1.0"
 dependencies = [
- "hex",
  "regex",
+ "rmcl-domain",
  "serde",
  "serde_json",
  "thiserror",

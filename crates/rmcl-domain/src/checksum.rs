@@ -7,6 +7,10 @@ use thiserror::Error;
 pub struct Sha1Hash([u8; 20]);
 
 impl Sha1Hash {
+    pub const fn from_bytes(bytes: [u8; 20]) -> Self {
+        Self(bytes)
+    }
+
     pub fn as_bytes(&self) -> &[u8; 20] {
         &self.0
     }
@@ -54,6 +58,12 @@ mod tests {
         let hash: Sha1Hash = "0123456789abcdef0123456789abcdef01234567".parse().unwrap();
         assert_eq!(hash.to_string(), "0123456789abcdef0123456789abcdef01234567");
         assert_eq!(hash.as_bytes()[0], 0x01);
+    }
+
+    #[test]
+    fn constructs_from_raw_digest() {
+        let hash = Sha1Hash::from_bytes([0xab; 20]);
+        assert_eq!(hash.as_bytes(), &[0xab; 20]);
     }
 
     #[test]

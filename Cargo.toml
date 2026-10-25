@@ -2,6 +2,7 @@
 members = [
     "apps/rmcl",
     "crates/rmcl-auth",
+    "crates/rmcl-domain",
     "crates/rmcl-instance",
     "crates/rmcl-install",
     "crates/rmcl-minecraft",
@@ -20,6 +21,7 @@ md-5 = "0.10"
 regex = "1"
 relative-path = "2"
 rmcl-auth = { path = "crates/rmcl-auth" }
+rmcl-domain = { path = "crates/rmcl-domain" }
 rmcl-instance = { path = "crates/rmcl-instance" }
 rmcl-install = { path = "crates/rmcl-install" }
 rmcl-minecraft = { path = "crates/rmcl-minecraft" }

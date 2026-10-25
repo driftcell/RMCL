@@ -1,7 +1,6 @@
 //! Minecraft metadata models and headless compatibility rules.
 
 mod asset;
-mod checksum;
 mod download;
 mod error;
 mod library;
@@ -10,11 +9,11 @@ mod rules;
 mod version;
 
 pub use asset::{AssetCatalog, AssetObject};
-pub use checksum::{ParseSha1Error, Sha1Hash};
 pub use download::DownloadInfo;
 pub use error::MetadataError;
 pub use library::{ExtractRules, Library, LibraryDownloads};
 pub use manifest::{LatestVersions, VersionManifest, VersionSummary};
+pub use rmcl_domain::{ParseSha1Error, Sha1Hash};
 pub use rules::{
     Architecture, FeatureMap, OperatingSystem, Platform, Rule, RuleAction, RuleError,
     evaluate_rules,

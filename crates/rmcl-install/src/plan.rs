@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use rmcl_domain::DownloadRequest;
 use rmcl_minecraft::Sha1Hash;
 use url::Url;
 
@@ -18,6 +19,28 @@ pub struct PlannedFile {
     pub sources: Vec<Url>,
     pub sha1: Option<Sha1Hash>,
     pub size: Option<u64>,
+}
+
+impl From<PlannedFile> for DownloadRequest {
+    fn from(file: PlannedFile) -> Self {
+        Self {
+            sources: file.sources,
+            destination: file.destination,
+            sha1: file.sha1,
+            size: file.size,
+        }
+    }
+}
+
+impl From<&PlannedFile> for DownloadRequest {
+    fn from(file: &PlannedFile) -> Self {
+        Self {
+            sources: file.sources.clone(),
+            destination: file.destination.clone(),
+            sha1: file.sha1,
+            size: file.size,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,5 +109,31 @@ impl InstallPlanBuilder {
 fn conflict(file: &PlannedFile) -> InstallPlanError {
     InstallPlanError::ConflictingDownload {
         path: file.destination.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_planned_files_to_download_requests() {
+        let hash = "0123456789abcdef0123456789abcdef01234567".parse().unwrap();
+        let file = PlannedFile {
+            kind: PlannedFileKind::Client,
+            destination: PathBuf::from("versions/example/example.jar"),
+            sources: vec![Url::parse("https://example.invalid/client.jar").unwrap()],
+            sha1: Some(hash),
+            size: Some(42),
+        };
+
+        let request = DownloadRequest::from(&file);
+        assert_eq!(request.destination, file.destination);
+        assert_eq!(request.sources, file.sources);
+        assert_eq!(request.sha1, Some(hash));
+        assert_eq!(request.size, Some(42));
+
+        let owned = DownloadRequest::from(file);
+        assert_eq!(owned, request);
     }
 }
