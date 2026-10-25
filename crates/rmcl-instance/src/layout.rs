@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rmcl_minecraft::{Platform, Sha1Hash};
+use rmcl_domain::{Platform, Sha1Hash};
 
 use crate::{LayoutError, RepositoryPath, VersionId, path::validate_segment};
 
@@ -85,7 +85,7 @@ mod tests {
     fn maps_standard_repository_paths() {
         let layout = MinecraftLayout::new(".minecraft");
         let id = VersionId::new("1.21.1").unwrap();
-        let platform = Platform::new(rmcl_minecraft::OperatingSystem::Linux, "6.1", "x86_64");
+        let platform = Platform::new(rmcl_domain::OperatingSystem::Linux, "6.1", "x86_64");
 
         assert_eq!(
             layout.version_json_path(&id),
@@ -109,8 +109,8 @@ mod tests {
     fn separates_native_directories_by_platform() {
         let layout = MinecraftLayout::new(".minecraft");
         let id = VersionId::new("example").unwrap();
-        let windows = Platform::new(rmcl_minecraft::OperatingSystem::Windows, "10", "x86");
-        let mac = Platform::new(rmcl_minecraft::OperatingSystem::MacOs, "15", "arm64");
+        let windows = Platform::new(rmcl_domain::OperatingSystem::Windows, "10", "x86");
+        let mac = Platform::new(rmcl_domain::OperatingSystem::MacOs, "15", "arm64");
 
         assert_eq!(
             layout.natives_dir(&id, &windows),

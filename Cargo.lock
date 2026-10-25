@@ -980,7 +980,7 @@ name = "rmcl-instance"
 version = "0.1.0"
 dependencies = [
  "relative-path",
- "rmcl-minecraft",
+ "rmcl-domain",
  "thiserror",
 ]
 

@@ -6,5 +6,5 @@ license.workspace = true
 
 [dependencies]
 relative-path.workspace = true
-rmcl-minecraft.workspace = true
+rmcl-domain.workspace = true
 thiserror.workspace = true
