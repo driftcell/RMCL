@@ -40,17 +40,7 @@ impl LauncherApp {
             .min_h_0()
             .p_6()
             .gap_6()
-            .child(page_header(
-                Page::Home,
-                Button::new("home-install")
-                    .outline()
-                    .icon(IconName::Plus)
-                    .label("安装新版本")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.navigate(Page::Downloads, window, cx)
-                    })),
-                cx,
-            ))
+            .child(page_header(Page::Home, div(), cx))
             .child(
                 v_flex()
                     .id("home-body")
