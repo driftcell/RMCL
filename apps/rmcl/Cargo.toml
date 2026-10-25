@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 gpui-kit.workspace = true
+image.workspace = true
 rmcl-app.workspace = true
 rmcl-auth.workspace = true
 rmcl-domain.workspace = true
@@ -20,5 +21,5 @@ uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSOpenPanel", "NSSavePanel", "NSWindow"] }
-objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSImage", "NSOpenPanel", "NSSavePanel", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSString", "NSURL"] }

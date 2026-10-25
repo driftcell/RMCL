@@ -1,0 +1,57 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="top" x1="512" y1="200" x2="512" y2="510" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2B5F46"/>
+      <stop offset="1" stop-color="#173B2A"/>
+    </linearGradient>
+    <linearGradient id="logo-face" x1="373" y1="355" x2="373" y2="810" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1C2822"/>
+      <stop offset="1" stop-color="#0B120F"/>
+    </linearGradient>
+    <linearGradient id="blank-face" x1="373" y1="355" x2="373" y2="810" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#18231E"/>
+      <stop offset="1" stop-color="#090E0B"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="560" y1="520" x2="780" y2="680" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8AF7BC"/>
+      <stop offset="0.42" stop-color="#4ADE94"/>
+      <stop offset="1" stop-color="#21B96D"/>
+    </linearGradient>
+    <filter id="ground" x="160" y="720" width="704" height="210" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+  </defs>
+
+  <g transform="translate(512 512) scale(1.2) translate(-512 -512)">
+    <ellipse cx="512" cy="820" rx="238" ry="40" fill="#000000" fill-opacity="0.34" filter="url(#ground)"/>
+
+    <!-- Top face -->
+    <path d="M512 200 L790 355 L512 510 L234 355 Z" fill="url(#top)" stroke="#8AF7BC" stroke-opacity="0.4" stroke-width="4"/>
+    <g stroke="#D6FFE9" stroke-opacity="0.18" stroke-width="3" stroke-linecap="round">
+      <path d="M604.67 251.67 L326.67 406.67"/>
+      <path d="M697.33 303.33 L419.33 458.33"/>
+      <path d="M419.33 251.67 L697.33 406.67"/>
+      <path d="M326.67 303.33 L604.67 458.33"/>
+    </g>
+
+    <!-- Left face -->
+    <path d="M234 355 L512 510 L512 810 L234 655 Z" fill="url(#blank-face)" stroke="#4ADE94" stroke-opacity="0.22" stroke-width="3"/>
+
+    <!-- Right face with the R mark -->
+    <path d="M512 510 L790 355 L790 655 L512 810 Z" fill="url(#logo-face)" stroke="#4ADE94" stroke-opacity="0.2" stroke-width="3"/>
+    <path d="M528.68 518.7 L773.32 382.3 L773.32 664.3 L528.68 800.7 Z" fill="#0A110E" fill-opacity="0.72"/>
+    <path d="M528.68 518.7 L773.32 382.3 L773.32 664.3 L528.68 800.7 Z" stroke="#4ADE94" stroke-opacity="0.38" stroke-width="4"/>
+    <g transform="matrix(2.0016 -1.116 0 2.16 567.6 521.0)" fill="url(#mark)">
+      <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M6 4 H50 L78 24 V44 L50 64 H6 Z M28 20 L56 34 L28 48 Z"/>
+      <rect x="6" y="4" width="22" height="92"/>
+      <path d="M16 50 H38 L78 96 H52 Z"/>
+    </g>
+
+    <!-- Edges -->
+    <g stroke="#A8FFD2" stroke-linecap="round">
+      <path d="M234 355 L512 510 L790 355" stroke-opacity="0.4" stroke-width="4"/>
+      <path d="M512 510 L512 810" stroke-opacity="0.24" stroke-width="3"/>
+    </g>
+  </g>
+</svg>

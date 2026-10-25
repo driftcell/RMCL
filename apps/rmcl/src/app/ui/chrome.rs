@@ -338,8 +338,10 @@ fn brand_mark(cx: &App) -> impl IntoElement {
         .items_center()
         .justify_center()
         .child(
-            Icon::new(IconName::Boxes)
-                .with_size(Size::XSmall)
-                .text_color(cx.theme().primary_foreground),
+            div()
+                .text_sm()
+                .font_semibold()
+                .text_color(cx.theme().primary_foreground)
+                .child("R"),
         )
 }

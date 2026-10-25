@@ -16,7 +16,7 @@
 
 ## 窗口与导航
 
-窗口使用 GPUI Kit 的 `TitleBar::window_options()` 自定义标题栏，默认尺寸 1180×780，最小 980×640。macOS 保留原生红绿灯；Windows 和 Linux 使用 TitleBar 自带的窗口控制。标题栏左侧只保留 RMCL 品牌和版本，右侧是任务阶段与明暗主题切换。
+窗口使用 GPUI Kit 的 `TitleBar::window_options()` 自定义标题栏，默认尺寸 1180×780，最小 980×640。macOS 保留原生红绿灯；Windows 和 Linux 使用 TitleBar 自带的窗口控制。标题栏左侧只保留 RMCL 品牌标记（简化 R）、名称和版本，右侧是任务阶段与明暗主题切换。
 
 主界面是常驻侧栏 + 内容区的桌面壳：
 

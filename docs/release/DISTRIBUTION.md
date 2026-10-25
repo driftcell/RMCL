@@ -35,6 +35,21 @@ RMCL 使用 GitHub Actions 构建并分发各平台原生二进制。首批目�
 
 安装包、便携包和包管理器拥有不同的更新边界。自动更新不得只替换一个二进制而破坏 macOS 签名 bundle 或系统包数据库。
 
+## 应用图标
+
+图标源文件和生成物位于 `packaging/icons/`：
+
+- `rmcl.svg`：透明背景的 3D 等距方块，右面为 R/播放三角标记，128px 及以上使用。
+- `rmcl-small.svg`：高对比 2D R，16–64px 使用，避免 3D 细节在小尺寸下模糊。
+- `rmcl.icns`、`rmcl.ico` 和 `png/` 由 `packaging/icons/generate.sh` 生成。
+- 图标为原创资产，不包含 Mojang、HMCL 或其他项目的纹理和模型。
+
+平台接入：
+
+- macOS：`.app` 的 `Info.plist` 使用 `rmcl.icns`；直接运行开发二进制时由 `NSApplication.setApplicationIconImage` 设置 Dock 图标。
+- Windows：`rmcl.ico` 需要嵌入可执行文件资源，窗口图标不能代替 exe 图标。
+- Linux：PNG 安装到 `hicolor/<size>x<size>/apps/rmcl.png`，运行时同时设置 X11 窗口图标。
+
 ## GPUI Kit 平台约束
 
 RMCL 当前已引入 GPUI Kit 0.8.0 / gpui-pre 0.3.9。其文档列出 macOS 15+、Windows 10+，Linux 图形环境需要 Wayland/X11 与可用 Vulkan 驱动，并将 Ubuntu 24.04 作为验证环境。CI 按该依赖列表安装 Linux 开发库；实际最低系统要求和打包依赖仍需逐平台运行验证，不能提前宣称与 HMCL 相同。
