@@ -47,8 +47,8 @@ pub enum InstallPlanError {
     },
     #[error("download URL `{url}` for `{artifact}` cannot be used as a base URL")]
     UrlCannotBeBase { artifact: String, url: String },
-    #[error("asset object base URL `{url}` must not contain a query or fragment")]
-    InvalidAssetObjectBase { url: String },
+    #[error("asset object base URL must not contain a query or fragment")]
+    InvalidAssetObjectBase,
     #[error("unsupported download URL scheme `{scheme}` for `{artifact}`")]
     UnsupportedUrlScheme { artifact: String, scheme: String },
     #[error("conflicting download requirements for `{path}`")]

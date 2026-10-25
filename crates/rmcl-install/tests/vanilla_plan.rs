@@ -482,10 +482,9 @@ fn rejects_unsupported_asset_layouts_and_unsafe_source_roots() {
 
     let catalog = AssetCatalog::default();
     let signed = url::Url::parse("https://example.invalid/assets/?token=secret").unwrap();
-    assert!(matches!(
-        plan_asset_objects_with_base(&layout(), &catalog, &signed),
-        Err(InstallPlanError::InvalidAssetObjectBase { .. })
-    ));
+    let error = plan_asset_objects_with_base(&layout(), &catalog, &signed).unwrap_err();
+    assert!(matches!(error, InstallPlanError::InvalidAssetObjectBase));
+    assert!(!error.to_string().contains("secret"));
 }
 
 #[test]

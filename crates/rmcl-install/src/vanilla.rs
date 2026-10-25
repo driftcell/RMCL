@@ -102,9 +102,7 @@ pub fn plan_asset_objects_with_base(
         });
     }
     if base.query().is_some() || base.fragment().is_some() {
-        return Err(InstallPlanError::InvalidAssetObjectBase {
-            url: base.to_string(),
-        });
+        return Err(InstallPlanError::InvalidAssetObjectBase);
     }
 
     let mut builder = InstallPlanBuilder::default();
