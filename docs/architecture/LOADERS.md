@@ -67,7 +67,7 @@ Forge 列表中的 Maven 版本带有 `<game>-` 前缀，界面显示去掉前�
 
 `ForgeInstaller` 执行现代 `install_profile.json`（`spec=1`）描述的客户端安装：
 
-1. 下载 installer 到独立临时目录，并用现有安全 ZIP 解压器解压；拒绝路径穿越和超限归档。
+1. 下载 installer 到独立临时目录，先读取 Maven 的 `.sha1` sidecar 校验 installer；缺失 sidecar 时容忍，存在但无效或请求失败则中止。随后用现有安全 ZIP 解压器解压；拒绝路径穿越和超限归档。
 2. 读取 `install_profile.json`。缺少 `spec` 的 legacy installer 返回 `LoaderInstaller` 错误；`minecraft` 必须等于基础版本。
 3. 读取 `json` 指向的内嵌版本 JSON，校验后作为实例 profile 的基础；`inheritsFrom` 仍指向基础版本。
 4. 将 installer 内嵌 `maven/` 复制到实例 `libraries/`，其余 install profile libraries 通过 `plan_libraries` 下载和校验。
@@ -81,7 +81,7 @@ Forge 列表中的 Maven 版本带有 `<game>-` 前缀，界面显示去掉前�
 8. `DOWNLOAD_MOJMAPS` processor 不启动 Java，而是按基础版本的 `client_mappings` 下载官方映射，写入 processor 声明的输出路径并校验 SHA-1。
 9. 所有 processor 输出都位于实例 `libraries/` 内；输出已存在且哈希匹配时跳过执行，哈希不匹配时删除后重跑。
 
-processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或安装运行时。processor 的 stdout/stderr 在失败时截取尾部进入错误信息；取消会终止子进程。
+processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或安装运行时。processor 在临时 data 目录中运行，避免向启动器工作目录写入文件；stdout/stderr 在失败时截取尾部进入错误信息；取消会终止子进程。
 
 生成的部分 Forge client JAR 无法保证压缩后字节一致，因此 JAR 输出在 SHA-1 不匹配时还会做 ZIP 结构校验；非 JAR 输出必须严格匹配 SHA-1。
 
@@ -130,7 +130,7 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 - `rmcl-install` 覆盖父子字段合并、libraries 顺序、arguments 顺序、jar 解析、循环、缺失父版本、最大深度、loader 风格顶层哈希和空 URL 生成文件。
 - `rmcl-minecraft` 覆盖 Fabric/Quilt 风格库的顶层 `sha1`/`size` 解析。
 - `rmcl-app` 覆盖 Fabric/Quilt/Forge/NeoForge 元数据与 installer URL、profile 改写、基础版本复用、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务快照。
-- `forge_install` 使用 mock installer 和 fake Java 覆盖 `DOWNLOAD_MOJMAPS`、processor 执行、输出校验、data 文件复制和 legacy installer 拒绝；仅在 Unix 运行。
+- `forge_install` 使用 mock installer 和 fake Java 覆盖 `DOWNLOAD_MOJMAPS`、processor 执行、输出校验、data 文件复制、installer SHA-1 不匹配和 legacy installer 拒绝；仅在 Unix 运行。
 - 标记为 `#[ignore]` 的真实网络 smoke 使用官方 Minecraft 1.21.1 client JAR 和真实 installer，运行完整 Forge `1.21.1-52.1.20`、NeoForge `21.1.80` processor 链，并确认生成的 client JAR 是有效 ZIP。2026-10-25 两者均在本机通过。
 - 同一 smoke 在 macOS ARM64 使用真实 Java 启动安装后的实例，日志进入 ModLauncher 初始化并出现对应加载器标记后主动终止；这验证了安装结果、版本继承和启动参数，但不等于主菜单或游戏内验收。
 - 2026-10-25 对真实 Fabric/Quilt/Forge/NeoForge 元数据 endpoint 做了只读 smoke。

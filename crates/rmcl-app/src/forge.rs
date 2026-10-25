@@ -4,10 +4,11 @@ use std::{
     io::Read,
     path::{Component, Path, PathBuf},
     process::Stdio,
+    time::Duration,
 };
 
 use rmcl_archive::ArchiveExtractor;
-use rmcl_domain::{DownloadRequest, ExtractionPlan};
+use rmcl_domain::{DownloadRequest, ExtractionPlan, Sha1Hash};
 use rmcl_install::{MavenCoordinate, plan_libraries};
 use rmcl_instance::{MinecraftLayout, VersionId};
 use rmcl_java::JavaRuntime;
@@ -51,13 +52,26 @@ pub struct ForgeInstallOutcome {
 pub struct ForgeInstaller {
     downloader: DownloadExecutor,
     extractor: ArchiveExtractor,
+    metadata: reqwest::Client,
 }
 
 impl ForgeInstaller {
     pub fn new(config: DownloadConfig) -> Result<Self, AppError> {
+        let metadata = reqwest::Client::builder()
+            .user_agent(concat!(
+                "RMCL/",
+                env!("CARGO_PKG_VERSION"),
+                " (https://github.com/driftcell/RMCL)"
+            ))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|source| AppError::LoaderInstaller {
+                message: format!("failed to build installer metadata client: {source}"),
+            })?;
         Ok(Self {
             downloader: DownloadExecutor::new(config)?,
             extractor: ArchiveExtractor::default(),
+            metadata,
         })
     }
 
@@ -93,11 +107,14 @@ impl ForgeInstaller {
             source,
         })?;
         let installer = temporary.path().join("installer.jar");
+        let installer_sha1 = self
+            .installer_sha1(&request.installer_url, &cancellation)
+            .await?;
         self.download_single(
             DownloadRequest {
                 sources: vec![request.installer_url.clone()],
                 destination: installer.clone(),
-                sha1: None,
+                sha1: installer_sha1,
                 size: None,
             },
             InstallPhase::DownloadingLoader,
@@ -270,6 +287,7 @@ impl ForgeInstaller {
                 &classpath,
                 &main_class,
                 &args,
+                &data_directory,
                 &cancellation,
             )
             .await?;
@@ -315,6 +333,58 @@ impl ForgeInstaller {
         )
         .await?;
         Ok(true)
+    }
+
+    /// Maven publishes a `.sha1` sidecar next to Forge/NeoForge installers.
+    /// A missing sidecar is tolerated for mirrors and test fixtures; a present
+    /// but malformed or failed sidecar aborts the install rather than silently
+    /// skipping integrity verification.
+    async fn installer_sha1(
+        &self,
+        url: &Url,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<Sha1Hash>, AppError> {
+        let sha_url =
+            Url::parse(&format!("{url}.sha1")).map_err(|source| AppError::LoaderInstaller {
+                message: format!("invalid installer SHA-1 URL: {source}"),
+            })?;
+        let response = tokio::select! {
+            _ = cancellation.cancelled() => return Err(AppError::Cancelled),
+            response = self.metadata.get(sha_url).send() => response.map_err(|source| {
+                AppError::LoaderInstaller {
+                    message: format!("failed to fetch installer SHA-1: {source}"),
+                }
+            })?,
+        };
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(AppError::LoaderInstaller {
+                message: format!(
+                    "installer SHA-1 request failed with HTTP {}",
+                    response.status().as_u16()
+                ),
+            });
+        }
+        let text = tokio::select! {
+            _ = cancellation.cancelled() => return Err(AppError::Cancelled),
+            text = response.text() => text.map_err(|source| AppError::LoaderInstaller {
+                message: format!("failed to read installer SHA-1: {source}"),
+            })?,
+        };
+        let value = text
+            .split_whitespace()
+            .next()
+            .ok_or_else(|| AppError::LoaderInstaller {
+                message: "installer SHA-1 response is empty".to_owned(),
+            })?;
+        value
+            .parse()
+            .map(Some)
+            .map_err(|source| AppError::LoaderInstaller {
+                message: format!("invalid installer SHA-1 `{value}`: {source}"),
+            })
     }
 
     async fn download_single(
@@ -788,6 +858,7 @@ async fn run_processor(
     classpath: &[PathBuf],
     main_class: &str,
     args: &[String],
+    working_directory: &Path,
     cancellation: &CancellationToken,
 ) -> Result<(), AppError> {
     let classpath =
@@ -796,6 +867,7 @@ async fn run_processor(
         })?;
     let mut command = Command::new(java);
     command
+        .current_dir(working_directory)
         .arg("-cp")
         .arg(classpath)
         .arg(main_class)

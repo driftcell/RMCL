@@ -112,12 +112,20 @@ fn installer_jar(path: &Path, profile: serde_json::Value, input: &[u8], processo
 async fn server(installer: Vec<u8>, mappings: Vec<u8>) -> (Url, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let installer_sha1 = sha1_text(&installer);
     let router = Router::new()
         .route(
             "/installer.jar",
             get(move || {
                 let installer = installer.clone();
                 async move { installer }
+            }),
+        )
+        .route(
+            "/installer.jar.sha1",
+            get(move || {
+                let hash = installer_sha1.clone();
+                async move { hash }
             }),
         )
         .route(
@@ -384,6 +392,55 @@ async fn run_real_installer(fixture: &RealSmokeFixture, installer_url: &str) -> 
         .unwrap();
     assert!(outcome.processor_count >= 3);
     outcome.version_json
+}
+
+#[tokio::test]
+async fn rejects_installer_hash_mismatch() {
+    let installer = b"not really an installer".to_vec();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let router = Router::new()
+        .route(
+            "/installer.jar",
+            get(move || {
+                let installer = installer.clone();
+                async move { installer }
+            }),
+        )
+        .route(
+            "/installer.jar.sha1",
+            get(|| async { "0000000000000000000000000000000000000000" }),
+        );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join(".minecraft");
+    std::fs::create_dir_all(root.join("versions/1.21.1")).unwrap();
+    std::fs::write(root.join("versions/1.21.1/1.21.1.jar"), b"client").unwrap();
+    let installer = ForgeInstaller::new(DownloadConfig::default()).unwrap();
+
+    let error = installer
+        .install(
+            ForgeInstallRequest {
+                minecraft_root: root,
+                base_version_id: VersionId::new("1.21.1").unwrap(),
+                base_version: GameVersion::from_json(
+                    r#"{"id":"1.21.1","mainClass":"example.Main"}"#,
+                )
+                .unwrap(),
+                platform: platform(),
+                java: java(PathBuf::from("/bin/false")),
+                installer_url: base.join("installer.jar").unwrap(),
+            },
+            CancellationToken::new(),
+            &None,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, rmcl_app::AppError::LoaderDownload { .. }));
+    server.abort();
 }
 
 #[tokio::test]
