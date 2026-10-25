@@ -4,7 +4,6 @@ use gpui_kit::{
         ActiveTheme, Disableable, Sizable,
         button::{Button, ButtonVariants},
         h_flex,
-        input::Input,
         scroll::ScrollableElement,
         select::Select,
         switch::Switch,
@@ -63,15 +62,33 @@ impl LauncherApp {
                                                 div()
                                                     .flex_1()
                                                     .min_w_0()
-                                                    .child(Input::new(&self.minecraft_root_input)),
+                                                    .truncate()
+                                                    .rounded(cx.theme().radius)
+                                                    .border_1()
+                                                    .border_color(cx.theme().border)
+                                                    .bg(cx.theme().group_box)
+                                                    .px_3()
+                                                    .py_2()
+                                                    .font_family(
+                                                        cx.theme().mono_font_family.clone(),
+                                                    )
+                                                    .text_sm()
+                                                    .child(
+                                                        self.config
+                                                            .minecraft_root
+                                                            .display()
+                                                            .to_string(),
+                                                    ),
                                             )
                                             .child(
-                                                Button::new("settings-apply-root")
-                                                    .primary()
-                                                    .label("应用")
+                                                Button::new("settings-browse-root")
+                                                    .outline()
+                                                    .icon(IconName::FolderOpen)
+                                                    .label("选择目录")
+                                                    .disabled(!self.log_state.can_start())
                                                     .on_click(cx.listener(
                                                         |this, _, window, cx| {
-                                                            this.apply_minecraft_root(window, cx)
+                                                            this.browse_minecraft_root(window, cx)
                                                         },
                                                     )),
                                             ),

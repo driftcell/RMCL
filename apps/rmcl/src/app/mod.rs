@@ -158,7 +158,6 @@ pub struct LauncherApp {
     catalog: CatalogState,
     downloads_query: Entity<InputState>,
     versions_query: Entity<InputState>,
-    minecraft_root_input: Entity<InputState>,
     account_input: Entity<InputState>,
     downloads_filter: VersionFilter,
     versions_filter: VersionFilter,
@@ -168,6 +167,7 @@ pub struct LauncherApp {
     logs_attention: bool,
     _event_task: Task<()>,
     _command_task: Option<Task<()>>,
+    _prompt_task: Option<Task<()>>,
     _catalog_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
     _appearance_subscription: Subscription,
@@ -272,10 +272,6 @@ impl LauncherApp {
         let downloads_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
         let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装版本"));
-        let minecraft_root_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(config.minecraft_root.to_string_lossy().into_owned())
-        });
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
 
         let mut subscriptions = Vec::new();
@@ -367,7 +363,6 @@ impl LauncherApp {
             catalog: CatalogState::default(),
             downloads_query,
             versions_query,
-            minecraft_root_input,
             account_input,
             downloads_filter: VersionFilter::All,
             versions_filter: VersionFilter::All,
@@ -377,6 +372,7 @@ impl LauncherApp {
             logs_attention: false,
             _event_task: event_task,
             _command_task: None,
+            _prompt_task: None,
             _catalog_task: None,
             _subscriptions: subscriptions,
             _appearance_subscription: appearance_subscription,
@@ -982,29 +978,53 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn apply_minecraft_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.minecraft_root_input.read(cx).value().trim().to_owned();
-        if value.is_empty() {
-            window.push_notification(
-                Notification::error("Minecraft 目录不能为空。").title("无法保存"),
-                cx,
-            );
-            return;
-        }
-        let path =
-            std::path::absolute(PathBuf::from(&value)).unwrap_or_else(|_| PathBuf::from(&value));
+    fn browse_minecraft_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("选择 Minecraft 目录".into()),
+        });
+        self._prompt_task = Some(
+            cx.spawn_in(window, async move |this, cx| match prompt.await {
+                Ok(Ok(Some(paths))) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        let _ = this.update_in(cx, |view, window, cx| {
+                            view.set_minecraft_root(path, window, cx)
+                        });
+                    }
+                }
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error(format!("无法打开目录选择器: {error}"))
+                                .title("选择目录失败"),
+                            cx,
+                        );
+                    });
+                }
+                Err(_) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error("目录选择器已取消或窗口已关闭。")
+                                .title("选择目录失败"),
+                            cx,
+                        );
+                    });
+                }
+            }),
+        );
+        cx.notify();
+    }
+
+    fn set_minecraft_root(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let path = std::path::absolute(&path).unwrap_or(path);
         if path == self.config.minecraft_root {
             self.reload_versions(window, cx);
             return;
         }
         self.config.minecraft_root = path;
-        self.minecraft_root_input.update(cx, |state, cx| {
-            state.set_value(
-                self.config.minecraft_root.to_string_lossy().into_owned(),
-                window,
-                cx,
-            )
-        });
         self.save_config();
         self.reload_versions(window, cx);
         if let Some(error) = self.versions_error.clone() {
