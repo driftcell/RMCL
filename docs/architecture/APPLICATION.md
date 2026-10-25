@@ -43,7 +43,7 @@
 
 旧实例迁移由 `migrate_instance_to_isolated` 提供：复制全局内容中实例尚不存在的文件，不覆盖、不跟随符号链接，最后写入 `isolation = "isolated"` 的 manifest；失败时实例保持共享。详见 [实例与版本隔离](INSTANCES.md)。
 
-`InstanceCreator` 组合基础版本安装、Fabric/Quilt 元数据 profile、实例 manifest 和最终继承计划下载。它复用 `VanillaInstaller` 的文件计划、校验、进度和取消，不引入第二套下载执行器；任务层以 `InstanceCreate` 持有整个创建过程。详见 [版本继承、Fabric/Quilt 与实例创建](LOADERS.md)。
+`InstanceCreator` 组合基础版本安装、Fabric/Quilt 元数据 profile、Forge/NeoForge installer processors、实例 manifest 和最终继承计划下载。它复用 `VanillaInstaller` 的文件计划、校验、进度和取消，不引入第二套下载执行器；任务层以 `InstanceCreate` 持有整个创建过程。详见 [版本继承、加载器安装与实例创建](LOADERS.md)。
 
 ## 执行顺序与副作用
 
@@ -117,7 +117,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 - Microsoft 登录、专用 Quick Play 配置和账号令牌存储
 - 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
-- Forge/NeoForge installer processors、特殊资产名称重建和镜像策略
+- legacy Forge installer、特殊资产名称重建和镜像策略
 - CurseForge、依赖图自动安装、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach

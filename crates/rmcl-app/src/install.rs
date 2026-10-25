@@ -324,8 +324,13 @@ impl VanillaInstaller {
         events: &Option<InstallEventSender>,
     ) -> Result<DownloadSummary, AppError> {
         check_cancelled(cancellation)?;
-        let total_files = plan.files.len();
-        let requests = plan.files.iter().map(DownloadRequest::from).collect();
+        let requests = plan
+            .files
+            .iter()
+            .filter(|file| !file.sources.is_empty())
+            .map(DownloadRequest::from)
+            .collect::<Vec<_>>();
+        let total_files = requests.len();
         let (progress, mut receiver) = progress_channel(128);
         let download = self
             .downloader

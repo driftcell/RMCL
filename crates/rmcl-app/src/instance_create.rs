@@ -3,17 +3,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rmcl_install::resolve_version;
 use rmcl_instance::{
     InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, MinecraftLayout, VersionId,
 };
+use rmcl_java::JavaRequirement;
 use rmcl_minecraft::Platform;
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    AppError, InstallEvent, InstallOutcome, LoaderCatalog, VanillaInstallRequest, VanillaInstaller,
-    VersionSource,
+    AppError, ForgeInstallRequest, ForgeInstaller, InstallEvent, InstallOutcome, JavaService,
+    LoaderCatalog, VanillaInstallRequest, VanillaInstaller, VersionSource,
 };
 
 /// Loader selected for a new instance.
@@ -21,6 +23,7 @@ use crate::{
 pub struct LoaderSelection {
     pub kind: LoaderKind,
     pub version: String,
+    pub installer_version: String,
 }
 
 /// Request to create an isolated instance from a base Minecraft version.
@@ -48,6 +51,11 @@ pub enum InstanceCreatePhase {
 pub enum InstanceCreateEvent {
     Phase(InstanceCreatePhase),
     Install(InstallEvent),
+    Processor {
+        current: String,
+        completed: usize,
+        total: usize,
+    },
 }
 
 pub type InstanceCreateEventSender = mpsc::Sender<InstanceCreateEvent>;
@@ -63,11 +71,24 @@ pub struct InstanceCreateOutcome {
 pub struct InstanceCreator {
     installer: VanillaInstaller,
     loaders: LoaderCatalog,
+    forge: Option<ForgeInstaller>,
+    java: Option<JavaService>,
 }
 
 impl InstanceCreator {
     pub fn new(installer: VanillaInstaller, loaders: LoaderCatalog) -> Self {
-        Self { installer, loaders }
+        Self {
+            installer,
+            loaders,
+            forge: None,
+            java: None,
+        }
+    }
+
+    pub fn with_forge(mut self, forge: ForgeInstaller, java: JavaService) -> Self {
+        self.forge = Some(forge);
+        self.java = Some(java);
+        self
     }
 
     pub async fn create(
@@ -91,18 +112,12 @@ impl InstanceCreator {
                 "a loader instance ID must differ from its base version ID".to_owned(),
             ));
         }
-        if let Some(loader) = &request.loader {
-            if !matches!(loader.kind, LoaderKind::Fabric | LoaderKind::Quilt) {
-                return Err(AppError::InvalidRequest(format!(
-                    "{} loader installation is not implemented yet",
-                    loader.kind.label()
-                )));
-            }
-            if loader.version.trim().is_empty() {
-                return Err(AppError::InvalidRequest(
-                    "loader version cannot be blank".to_owned(),
-                ));
-            }
+        if let Some(loader) = &request.loader
+            && (loader.version.trim().is_empty() || loader.installer_version.trim().is_empty())
+        {
+            return Err(AppError::InvalidRequest(
+                "loader version cannot be blank".to_owned(),
+            ));
         }
 
         // The base version is the parent profile. When creating an instance
@@ -127,7 +142,8 @@ impl InstanceCreator {
         }
 
         let base_json = layout.version_json_path(&base_id);
-        if !base_json.is_file() {
+        let base_was_installed = !base_json.is_file();
+        if base_was_installed {
             emit_phase(&events, InstanceCreatePhase::InstallingBase).await;
             self.install_with_events(
                 VanillaInstallRequest {
@@ -135,6 +151,27 @@ impl InstanceCreator {
                     version_id: base_id.as_str().to_owned(),
                     platform: request.platform.clone(),
                     source: VersionSource::Manifest,
+                },
+                cancellation.clone(),
+                &events,
+            )
+            .await?;
+        }
+        let needs_forge = request
+            .loader
+            .as_ref()
+            .is_some_and(|loader| matches!(loader.kind, LoaderKind::Forge | LoaderKind::NeoForge));
+        if needs_forge && !base_was_installed {
+            // Forge processors need the real client JAR before they run. Make
+            // sure an existing base instance is complete instead of trusting
+            // its JSON alone.
+            emit_phase(&events, InstanceCreatePhase::InstallingBase).await;
+            self.install_with_events(
+                VanillaInstallRequest {
+                    minecraft_root: root.clone(),
+                    version_id: base_id.as_str().to_owned(),
+                    platform: request.platform.clone(),
+                    source: VersionSource::Existing,
                 },
                 cancellation.clone(),
                 &events,
@@ -151,7 +188,7 @@ impl InstanceCreator {
         }
 
         let profile = match &request.loader {
-            Some(loader) => {
+            Some(loader) if matches!(loader.kind, LoaderKind::Fabric | LoaderKind::Quilt) => {
                 emit_phase(&events, InstanceCreatePhase::FetchingLoader).await;
                 let profile = self
                     .loaders
@@ -163,6 +200,20 @@ impl InstanceCreator {
                     )
                     .await?;
                 rewrite_profile(&profile, instance_id.as_str(), base_id.as_str())?
+            }
+            Some(loader) => {
+                emit_phase(&events, InstanceCreatePhase::FetchingLoader).await;
+                let version_json = self
+                    .forge_profile(
+                        &layout,
+                        &base_id,
+                        loader,
+                        &request.platform,
+                        &cancellation,
+                        &events,
+                    )
+                    .await?;
+                rewrite_profile(&version_json, instance_id.as_str(), base_id.as_str())?
             }
             None => serde_json::json!({
                 "id": instance_id.as_str(),
@@ -207,6 +258,45 @@ impl InstanceCreator {
             .await?;
         emit_phase(&events, InstanceCreatePhase::Completed).await;
         Ok(InstanceCreateOutcome { install: outcome })
+    }
+
+    async fn forge_profile(
+        &self,
+        layout: &MinecraftLayout,
+        base_id: &VersionId,
+        loader: &LoaderSelection,
+        platform: &Platform,
+        cancellation: &CancellationToken,
+        events: &Option<InstanceCreateEventSender>,
+    ) -> Result<String, AppError> {
+        let forge = self
+            .forge
+            .as_ref()
+            .ok_or(AppError::ForgeInstallNotConfigured)?;
+        let java = self.java.as_ref().ok_or(AppError::JavaNotConfigured)?;
+        let base_version = resolve_version(layout, base_id)?;
+        let requirement = JavaRequirement::for_version(&base_version, platform);
+        let selection = java
+            .ensure(&requirement, cancellation.clone(), None)
+            .await?;
+        let installer_url =
+            self.loaders
+                .installer_url(loader.kind, base_id.as_str(), &loader.installer_version)?;
+        let outcome = forge
+            .install(
+                ForgeInstallRequest {
+                    minecraft_root: layout.root().to_path_buf(),
+                    base_version_id: base_id.clone(),
+                    base_version,
+                    platform: platform.clone(),
+                    java: selection.runtime,
+                    installer_url,
+                },
+                cancellation.clone(),
+                events,
+            )
+            .await?;
+        Ok(outcome.version_json)
     }
 
     async fn install_with_events(

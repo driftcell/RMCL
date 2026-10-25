@@ -62,7 +62,7 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 
 - 内容寻址缓存、镜像策略与 HTTP Range 断点续传；通用下载、重试、取消和原子发布已在 [下载执行器](DOWNLOAD_EXECUTOR.md) 实现。
 - TAR 等其他归档格式；ZIP/JAR 解压、路径与 symlink 防护、同目录 native 合并已在 [ZIP 安全解压](ARCHIVE_EXTRACTION.md) 实现。
-- Forge/NeoForge 的 installer processors、patches 和安装后处理；Fabric/Quilt profile 合并与实例创建见 [加载器与实例创建](LOADERS.md)。
+- Fabric/Quilt profile 合并、Forge/NeoForge installer processors 和实例创建见 [加载器与实例创建](LOADERS.md)；安装计划只负责 profile 中的普通文件、native 和资产。
 - 无 `assetIndex` 的旧版本内置回退表。
 - `virtual` / `map_to_resources` 资产名称重建。
 - 镜像选择、修复执行与应用层启动编排；[安装用例](APPLICATION.md)、Java 管理和启动参数分别由对应 crate 提供。

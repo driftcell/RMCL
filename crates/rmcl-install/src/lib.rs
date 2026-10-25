@@ -11,4 +11,4 @@ pub use error::InstallPlanError;
 pub use inherit::resolve_version;
 pub use plan::{InstallPlan, PlannedFile, PlannedFileKind};
 pub use rmcl_domain::ExtractionPlan;
-pub use vanilla::{plan_asset_objects, plan_asset_objects_with_base, plan_vanilla};
+pub use vanilla::{plan_asset_objects, plan_asset_objects_with_base, plan_libraries, plan_vanilla};

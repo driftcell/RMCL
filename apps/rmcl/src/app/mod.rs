@@ -304,7 +304,7 @@ pub struct LauncherApp {
     create_id_input: Entity<InputState>,
     create_loader: Option<LoaderKind>,
     create_loader_versions: Vec<LoaderVersion>,
-    create_loader_version: Option<String>,
+    create_loader_version: Option<LoaderVersion>,
     create_loader_loading: bool,
     create_loader_error: Option<String>,
     create_loader_cancel: Option<CancellationToken>,
@@ -3018,7 +3018,7 @@ impl LauncherApp {
                             .iter()
                             .find(|version| version.stable)
                             .or_else(|| versions.first())
-                            .map(|version| version.version.clone());
+                            .cloned();
                         view.create_loader_versions = versions;
                         view.create_loader_error = None;
                     }
@@ -3055,14 +3055,37 @@ impl LauncherApp {
                 }
             }
             Some(LoaderKind::Fabric) => {
-                let loader = self.create_loader_version.as_deref().unwrap_or("latest");
+                let loader = self
+                    .create_loader_version
+                    .as_ref()
+                    .map(|version| version.version.as_str())
+                    .unwrap_or("latest");
                 format!("fabric-loader-{loader}-{base}")
             }
             Some(LoaderKind::Quilt) => {
-                let loader = self.create_loader_version.as_deref().unwrap_or("latest");
+                let loader = self
+                    .create_loader_version
+                    .as_ref()
+                    .map(|version| version.version.as_str())
+                    .unwrap_or("latest");
                 format!("quilt-loader-{loader}-{base}")
             }
-            Some(LoaderKind::Forge | LoaderKind::NeoForge) => base,
+            Some(LoaderKind::Forge) => {
+                let loader = self
+                    .create_loader_version
+                    .as_ref()
+                    .map(|version| version.version.as_str())
+                    .unwrap_or("latest");
+                format!("forge-{loader}-{base}")
+            }
+            Some(LoaderKind::NeoForge) => {
+                let loader = self
+                    .create_loader_version
+                    .as_ref()
+                    .map(|version| version.version.as_str())
+                    .unwrap_or("latest");
+                format!("neoforge-{loader}-{base}")
+            }
         }
     }
 
@@ -3108,7 +3131,11 @@ impl LauncherApp {
                     );
                     return;
                 };
-                Some(LoaderSelection { kind, version })
+                Some(LoaderSelection {
+                    kind,
+                    version: version.version,
+                    installer_version: version.installer_version,
+                })
             }
             None => None,
         };
@@ -4062,6 +4089,9 @@ pub fn task_progress(snapshot: Option<&TaskSnapshot>) -> (f32, bool) {
             .map_or(0.0, |total| {
                 progress.downloaded_bytes as f32 / total as f32 * 100.0
             }),
+        Some(TaskProgress::Processors {
+            completed, total, ..
+        }) if *total > 0 => *completed as f32 / *total as f32 * 100.0,
         Some(TaskProgress::Natives {
             completed_archives,
             total_archives,
@@ -4101,6 +4131,11 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
                 None => format!("{current} · {} 字节", progress.downloaded_bytes),
             }
         }
+        TaskProgress::Processors {
+            current,
+            completed,
+            total,
+        } => format!("{completed} / {total} 个加载器处理器 · {current}"),
         TaskProgress::Natives {
             current,
             completed_archives,
@@ -4125,6 +4160,7 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::ReadingAssetIndex) => "读取资源索引",
         TaskPhase::Install(InstallPhase::PlanningAssets) => "规划资源对象",
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
+        TaskPhase::Install(InstallPhase::DownloadingLoader) => "下载加载器文件",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
         TaskPhase::InstanceCreate(InstanceCreatePhase::Preparing) => "准备实例",

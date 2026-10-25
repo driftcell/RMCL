@@ -1,19 +1,20 @@
-# 版本继承、Fabric/Quilt 与实例创建
+# 版本继承、加载器安装与实例创建
 
-状态：版本继承合并、Fabric/Quilt 加载器安装和自定义实例创建已实现；Forge/NeoForge 尚未实现
+状态：版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装和自定义实例创建已实现
 
 日期：2026-10-25
 
 ## 边界
 
-加载器安装属于 `rmcl-install` 的领域规则：
+加载器安装由领域规则和应用层编排共同完成：
 
-- `resolve_version` 读取版本 JSON 链并合并成独立 profile。
-- `plan_vanilla` 接受已解析的 profile，并允许 `jar` 指向基础版本。
-- `rmcl-app` 的 `LoaderCatalog` 获取 Fabric/Quilt 元数据，`InstanceCreator` 编排“基础版本 → loader profile → 实例文件”的创建过程。
-- `TaskManager` 以 `InstanceCreate` 任务持有创建、下载、取消和终态。
+- `rmcl-install` 的 `resolve_version` 读取版本 JSON 链并合并成独立 profile；`plan_vanilla` 接受已解析的 profile，并允许 `jar` 指向基础版本。
+- `rmcl-app` 的 `LoaderCatalog` 获取 Fabric/Quilt/Forge/NeoForge 版本元数据。
+- `ForgeInstaller` 下载 Forge/NeoForge installer JAR，安全解压，解析 `install_profile.json`，下载 processor 依赖并执行 Java processor 链。
+- `InstanceCreator` 编排“基础版本 → 加载器文件 → 实例文件”的创建过程。
+- `TaskManager` 以 `InstanceCreate` 任务持有创建、下载、processor 进度、取消和终态。
 
-加载器元数据客户端不读取账号，不写启动器配置，也不依赖 GPUI。
+加载器元数据客户端和 installer 不读取账号，不写启动器配置，也不依赖 GPUI。
 
 ## 版本继承合并
 
@@ -48,13 +49,49 @@
 
 其他字段原样保留，包括 mainClass、arguments、libraries 和未知字段。
 
+## Forge / NeoForge 元数据
+
+`LoaderCatalog` 使用以下官方来源：
+
+- Forge 版本：`https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json`
+- Forge installer：`https://maven.minecraftforge.net/net/minecraftforge/forge/<game>-<loader>/forge-<game>-<loader>-installer.jar`
+- NeoForge 版本：`https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge`
+- NeoForge 1.20.1 版本：`https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge`
+- NeoForge installer：`https://maven.neoforged.net/releases/net/neoforged/{neoforge,forge}/<version>/<artifact>-<version>-installer.jar`
+
+Forge 列表中的 Maven 版本带有 `<game>-` 前缀，界面显示去掉前缀的加载器版本，同时保留完整 `installer_version` 用于拼接 installer URL。NeoForge 1.20.1 使用 `1.20.1-<loader>` 形式并显示去掉前缀的版本；其他版本从 Maven 版本反推 Minecraft 版本（`21.1.80` → 1.21.1、`26.3.0.99` → 26.3，快照 `0.25w14craftmine.3-beta` → 25w14craftmine），只保留匹配当前游戏版本的条目。版本按数字段倒序排列，稳定版优先。
+
+只有 Minecraft 1.13 及以后提供 `spec` 格式 installer；更早的 Forge 使用 legacy installer，版本列表直接返回明确的“不支持 legacy installer”错误，不展示不可用版本。
+
+## Forge / NeoForge installer
+
+`ForgeInstaller` 执行现代 `install_profile.json`（`spec=1`）描述的客户端安装：
+
+1. 下载 installer 到独立临时目录，并用现有安全 ZIP 解压器解压；拒绝路径穿越和超限归档。
+2. 读取 `install_profile.json`。缺少 `spec` 的 legacy installer 返回 `LoaderInstaller` 错误；`minecraft` 必须等于基础版本。
+3. 读取 `json` 指向的内嵌版本 JSON，校验后作为实例 profile 的基础；`inheritsFrom` 仍指向基础版本。
+4. 将 installer 内嵌 `maven/` 复制到实例 `libraries/`，其余 install profile libraries 通过 `plan_libraries` 下载和校验。
+5. 解析 `data`：
+   - `{VAR}` 引用已解析变量；
+   - `'literal'` 为字面量；
+   - `[group:artifact:version[:classifier][@extension]]` 解析为 `libraries/` 中的路径；
+   - 其他相对路径从 installer 解压目录复制到临时 data 目录。
+6. 注入内置变量 `SIDE=client`、`MINECRAFT_JAR`、`MINECRAFT_VERSION`、`ROOT`、`INSTALLER`、`LIBRARY_DIR`。
+7. 只执行没有 `sides` 或包含 `client` 的 processor，按顺序解析参数、运行 processor JAR 的 `Main-Class`，并校验 `outputs` 中的 SHA-1。
+8. `DOWNLOAD_MOJMAPS` processor 不启动 Java，而是按基础版本的 `client_mappings` 下载官方映射，写入 processor 声明的输出路径并校验 SHA-1。
+9. 所有 processor 输出都位于实例 `libraries/` 内；输出已存在且哈希匹配时跳过执行，哈希不匹配时删除后重跑。
+
+processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或安装运行时。processor 的 stdout/stderr 在失败时截取尾部进入错误信息；取消会终止子进程。
+
+生成的部分 Forge client JAR 无法保证压缩后字节一致，因此 JAR 输出在 SHA-1 不匹配时还会做 ZIP 结构校验；非 JAR 输出必须严格匹配 SHA-1。
+
 ## 实例创建流程
 
 `InstanceCreator::create` 接受基础版本、实例 ID、显示名称、平台和可选加载器：
 
-1. 校验实例 ID、加载器类型和加载器版本；Forge/NeoForge 返回“尚未实现”。
-2. 如果基础版本 JSON 不存在，先用现有 Vanilla 安装器安装基础版本；如果已存在则复用。基础版本可能作为一个独立实例出现在列表中。
-3. 如果加载器为 Fabric/Quilt，获取并改写 loader profile；如果为 Vanilla 自定义实例，则写入最小的 `{id, inheritsFrom}` profile。
+1. 校验实例 ID 和加载器版本；Forge/NeoForge 的显示版本与 installer 版本都不能为空。
+2. 如果基础版本 JSON 不存在，先用现有 Vanilla 安装器安装基础版本；如果已存在则复用。Forge/NeoForge 需要真实 client JAR，因此即使基础版本 JSON 已存在，也会以 `VersionSource::Existing` 补全基础文件。基础版本可能作为一个独立实例出现在列表中。
+3. 如果加载器为 Fabric/Quilt，获取并改写 loader profile；如果为 Forge/NeoForge，运行 installer processors 并取得内嵌版本 JSON；如果为 Vanilla 自定义实例，则写入最小的 `{id, inheritsFrom}` profile。
 4. 写入实例版本 JSON，再写入 `rmcl.instance.toml`，记录显示名称、基础版本、隔离模式和加载器。
 5. 使用 `VersionSource::Existing` 调用现有安装器，解析继承链并下载/校验基础文件与 loader libraries。
 6. 返回带实例布局的 `InstallOutcome`。
@@ -69,28 +106,29 @@
 
 ## 任务与界面
 
-新增 `TaskKind::InstanceCreate`、`TaskPhase::InstanceCreate` 和 `TaskSubject::Instance { id, name }`。任务按实例 ID 互斥，创建过程中显示基础安装、加载器获取、实例写入和实例文件安装阶段。
+新增 `TaskKind::InstanceCreate`、`TaskPhase::InstanceCreate` 和 `TaskSubject::Instance { id, name }`。任务按实例 ID 互斥，创建过程中显示基础安装、加载器获取、实例写入、加载器处理器和实例文件安装阶段。Forge/NeoForge processor 进度以 `TaskProgress::Processors` 暴露当前 processor、完成数和总数。
 
 实例页的“新建实例”进入创建页：
 
 - 输入 Minecraft 版本 ID。
-- 选择 Vanilla / Fabric / Quilt。
-- Fabric/Quilt 获取并选择加载器版本，稳定版默认优先。
-- 显示名称和实例 ID 可留空；ID 按基础版本和加载器自动生成。
+- 选择 Vanilla / Fabric / Quilt / Forge / NeoForge。
+- 加载器页获取并选择加载器版本，稳定版默认优先。
+- 显示名称和实例 ID 可留空；ID 按基础版本和加载器自动生成，Forge/NeoForge 形如 `forge-<loader>-<base>`、`neoforge-<loader>-<base>`。
 - 创建完成后自动选中实例并进入实例详情。
 
 ## 当前限制
 
-- Forge/NeoForge 需要 installer JAR、`install_profile.json` 和 processors，尚未实现。
+- 只支持 `spec` 格式的 Forge/NeoForge installer；Minecraft 1.12.2 及更早的 legacy Forge installer 明确不支持。
 - 不支持给已有实例追加、升级或移除加载器；加载器只在创建实例时安装。
-- 不自动安装 Fabric API / Quilt API 等加载器配套 Mod。
+- 不自动安装 Fabric API / Quilt API / Forge 配套 Mod。
 - 不校验加载器版本与基础版本的完整兼容矩阵；以元数据返回的版本列表为准。
 - 基础版本可能作为独立实例出现；尚未隐藏纯依赖实例。
-- 没有真实 Fabric/Quilt 游戏启动验收；当前验证覆盖 profile 合并、库下载和任务终态。
+- 没有真实 Forge/NeoForge 游戏启动验收；当前验证覆盖 processor 执行、输出校验和实例创建，真实安装器 smoke 只覆盖 Forge 1.21.1。
 
 ## 验证
 
-- `rmcl-install` 覆盖父子字段合并、libraries 顺序、arguments 顺序、jar 解析、循环、缺失父版本、最大深度和 loader 风格顶层哈希。
+- `rmcl-install` 覆盖父子字段合并、libraries 顺序、arguments 顺序、jar 解析、循环、缺失父版本、最大深度、loader 风格顶层哈希和空 URL 生成文件。
 - `rmcl-minecraft` 覆盖 Fabric/Quilt 风格库的顶层 `sha1`/`size` 解析。
-- `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、基础版本复用、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务快照。
-- 2026-10-25 对真实 Fabric/Quilt 元数据 endpoint 做了只读 smoke，确认版本列表和 profile JSON 字段；未执行真实加载器游戏启动。
+- `rmcl-app` 覆盖 Fabric/Quilt/Forge/NeoForge 元数据与 installer URL、profile 改写、基础版本复用、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务快照。
+- `forge_install` 使用 mock installer 和 fake Java 覆盖 `DOWNLOAD_MOJMAPS`、processor 执行、输出校验、data 文件复制和 legacy installer 拒绝；仅在 Unix 运行。
+- 2026-10-25 对真实 Fabric/Quilt/Forge 元数据 endpoint 做了只读 smoke，并用真实 Forge `1.21.1-52.1.20` installer 确认 `spec=1`、processors、`DOWNLOAD_MOJMAPS` 和内嵌 maven 结构；未执行真实加载器游戏启动。真实 NeoForge installer 下载因 `maven.neoforged.net` SSL 失败未完成。

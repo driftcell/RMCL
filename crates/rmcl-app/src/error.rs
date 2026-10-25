@@ -91,6 +91,17 @@ pub enum AppError {
     LoaderMetadataInvalid { message: String },
     #[error("instance creator is not configured")]
     InstanceCreatorNotConfigured,
+    #[error("loader installer download failed: {source}")]
+    LoaderDownload {
+        #[source]
+        source: rmcl_net::DownloadError,
+    },
+    #[error("invalid loader installer: {message}")]
+    LoaderInstaller { message: String },
+    #[error("loader processor failed: {message}")]
+    LoaderProcessor { message: String },
+    #[error("Forge/NeoForge installation is not configured")]
+    ForgeInstallNotConfigured,
     #[error(transparent)]
     RemoteContent(#[from] rmcl_content::RemoteContentError),
     #[error(transparent)]

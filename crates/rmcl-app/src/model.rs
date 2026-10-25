@@ -51,6 +51,7 @@ pub enum InstallPhase {
     ReadingAssetIndex,
     PlanningAssets,
     DownloadingAssets,
+    DownloadingLoader,
     MergingNatives,
     Completed,
 }

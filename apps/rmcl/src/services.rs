@@ -5,9 +5,9 @@ use std::{
 };
 
 use rmcl_app::{
-    AppError, ContentInstaller, InstanceCreator, JavaService, JavaServiceConfig, LoaderCatalog,
-    MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient, SkinCache, TaskManager,
-    VanillaInstaller, VersionCatalog,
+    AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
+    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient, SkinCache,
+    TaskManager, VanillaInstaller, VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -49,7 +49,9 @@ impl Services {
         let java = JavaService::new(java_config)?;
         let content = ContentInstaller::official(DownloadConfig::default())?;
         let loaders = LoaderCatalog::official()?;
-        let creator = InstanceCreator::new(installer.clone(), loaders.clone());
+        let forge = ForgeInstaller::new(DownloadConfig::default())?;
+        let creator = InstanceCreator::new(installer.clone(), loaders.clone())
+            .with_forge(forge, java.clone());
         let tasks = TaskManager::with_full(installer, java, content, creator, 256);
         let catalog = VersionCatalog::official(DownloadConfig::default())?;
         let modrinth = ModrinthClient::official()?;

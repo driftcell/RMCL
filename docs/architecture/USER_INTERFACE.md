@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
+状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
 日期：2026-10-25
 
@@ -49,12 +49,11 @@
 
 ### 新建实例
 
-- 输入 Minecraft 版本 ID，选择 Vanilla、Fabric 或 Quilt。
-- Fabric/Quilt 通过官方元数据获取加载器版本，稳定版默认优先。
+- 输入 Minecraft 版本 ID，选择 Vanilla、Fabric、Quilt、Forge 或 NeoForge。
+- 加载器通过官方元数据获取版本列表，稳定版默认优先；Forge 1.12.2 及更早的 legacy installer 不展示为可安装选项。
 - 显示名称和实例 ID 可留空；ID 按基础版本和加载器自动生成，也可手动指定。
-- 创建过程显示基础版本安装、加载器元数据获取、实例配置写入和实例文件安装阶段。
+- 创建过程显示基础版本安装、加载器元数据获取、实例配置写入、Forge/NeoForge processor 进度和实例文件安装阶段。
 - 创建成功后自动选中新实例并进入实例详情。
-- Forge/NeoForge 暂未出现在加载器选项中，避免展示不可用入口。
 
 ### 实例详情
 
@@ -159,7 +158,7 @@ Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元
 
 ## 当前不包含
 
-authlib-injector、Forge/NeoForge 与 OptiFine 等加载器、给已有实例追加/升级/移除加载器、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
+authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实例追加/升级/移除加载器、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
 
 ## 验证
 

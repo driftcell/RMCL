@@ -87,6 +87,11 @@ impl TaskStatus {
 pub enum TaskProgress {
     Download(InstallDownloadProgress),
     Content(ContentDownloadProgress),
+    Processors {
+        current: String,
+        completed: usize,
+        total: usize,
+    },
     Natives {
         current: PathBuf,
         completed_archives: usize,
@@ -612,6 +617,28 @@ impl TaskManager {
                     .await;
             }
             InstanceCreateEvent::Install(event) => self.apply_install_event(id, event).await,
+            InstanceCreateEvent::Processor {
+                current,
+                completed,
+                total,
+            } => {
+                let snapshot = {
+                    let mut registry = self.inner.registry.lock().await;
+                    let Some(record) = registry.tasks.get_mut(&id) else {
+                        return;
+                    };
+                    record.snapshot.phase = Some(TaskPhase::InstanceCreate(
+                        InstanceCreatePhase::InstallingLoader,
+                    ));
+                    record.snapshot.progress = Some(TaskProgress::Processors {
+                        current,
+                        completed,
+                        total,
+                    });
+                    record.snapshot.clone()
+                };
+                let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
+            }
         }
     }
 

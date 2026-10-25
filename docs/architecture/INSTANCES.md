@@ -51,7 +51,7 @@ isolation = "isolated"
 - `name`：界面显示名称；空白时回退到实例 ID。
 - `minecraft_version`：实例基于的游戏版本；空白时回退到实例 ID。
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
-- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。Fabric/Quilt 由实例创建流程写入；Forge/NeoForge 只保留字段，尚未执行安装。
+- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；Forge/NeoForge 在写入前先运行现代 installer processors。
 
 manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字段会被 serde 忽略，但重新保存时会丢失；schema 0 或高于当前版本会被拒绝。
 
@@ -85,7 +85,7 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 
 ## 当前限制
 
-- 版本继承合并、Fabric/Quilt 加载器安装和加载器启动合并已实现，见 [版本继承、Fabric/Quilt 与实例创建](LOADERS.md)；Forge/NeoForge 尚未实现。
+- 版本继承合并、Fabric/Quilt/Forge/NeoForge 加载器安装和加载器启动合并已实现，见 [版本继承、加载器安装与实例创建](LOADERS.md)；legacy Forge installer 尚未实现。
 - 尚未实现给已有实例追加、升级或移除加载器。
 - 尚未实现实例级 Java、启动参数、窗口大小和内存设置。
 - 尚未实现实例复制、导入、导出和重命名。

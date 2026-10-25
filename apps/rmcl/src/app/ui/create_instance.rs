@@ -26,13 +26,10 @@ impl LauncherApp {
             None => 0,
             Some(LoaderKind::Fabric) => 1,
             Some(LoaderKind::Quilt) => 2,
-            Some(LoaderKind::Forge | LoaderKind::NeoForge) => 0,
+            Some(LoaderKind::Forge) => 3,
+            Some(LoaderKind::NeoForge) => 4,
         };
-        let loader_ready = match self.create_loader {
-            None => true,
-            Some(LoaderKind::Fabric | LoaderKind::Quilt) => self.create_loader_version.is_some(),
-            Some(LoaderKind::Forge | LoaderKind::NeoForge) => false,
-        };
+        let loader_ready = self.create_loader.is_none() || self.create_loader_version.is_some();
         let can_create = self.can_start_operation()
             && !self.create_base_input.read(cx).value().trim().is_empty()
             && !self.create_loader_loading
@@ -119,13 +116,15 @@ impl LauncherApp {
                                                     let loader = match index {
                                                         1 => Some(LoaderKind::Fabric),
                                                         2 => Some(LoaderKind::Quilt),
+                                                        3 => Some(LoaderKind::Forge),
+                                                        4 => Some(LoaderKind::NeoForge),
                                                         _ => None,
                                                     };
                                                     this.select_create_loader(loader, window, cx);
                                                 },
                                             ))
                                             .children(
-                                                ["Vanilla", "Fabric", "Quilt"]
+                                                ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"]
                                                     .into_iter()
                                                     .map(|label| Tab::new().label(label)),
                                             ),
@@ -204,9 +203,11 @@ impl LauncherApp {
                                         .overflow_y_scrollbar()
                                         .children(loader_versions.into_iter().map(|version| {
                                             let selected = selected_loader_version
-                                                .as_deref()
-                                                == Some(version.version.as_str());
-                                            let value = version.version.clone();
+                                                .as_ref()
+                                                .is_some_and(|selected| {
+                                                    selected.version == version.version
+                                                });
+                                            let value = version.clone();
                                             let id = format!(
                                                 "create-loader-version-{}",
                                                 version.version
@@ -220,9 +221,9 @@ impl LauncherApp {
                                                 .w_full()
                                                 .small()
                                                 .label(if version.stable {
-                                                    format!("{} · 稳定版", value)
+                                                    format!("{} · 稳定版", value.version)
                                                 } else {
-                                                    value.clone()
+                                                    value.version.clone()
                                                 })
                                                 .on_click(cx.listener(
                                                     move |this, _, _, cx| {
@@ -297,7 +298,7 @@ impl LauncherApp {
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
                                             .child(
-                                                "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 暂未支持。",
+                                                "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。",
                                             ),
                                     ),
                             ),

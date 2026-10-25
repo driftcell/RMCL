@@ -279,6 +279,38 @@ fn plans_loader_style_library_integrity_from_top_level_fields() {
 }
 
 #[test]
+fn generated_library_with_empty_url_must_already_exist() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let layout = MinecraftLayout::new(temporary.path());
+    let metadata = base_version(json!([{
+        "name": "net.minecraftforge:forge:1.21.1-52.1.20:client",
+        "downloads": {
+            "artifact": {
+                "path": "net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-client.jar",
+                "url": "",
+                "sha1": HASH_A,
+                "size": 10
+            }
+        }
+    }]));
+    let missing = plan_vanilla(&layout, &version(metadata.clone()), &linux()).unwrap_err();
+    assert!(matches!(
+        missing,
+        InstallPlanError::MissingDownloadUrl { .. }
+    ));
+
+    let generated = temporary
+        .path()
+        .join("libraries/net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-client.jar");
+    std::fs::create_dir_all(generated.parent().unwrap()).unwrap();
+    std::fs::write(&generated, b"generated").unwrap();
+    let plan = plan_vanilla(&layout, &version(metadata), &linux()).unwrap();
+    let library = files(&plan, PlannedFileKind::Library)[0];
+    assert!(library.sources.is_empty());
+    assert_eq!(library.destination, generated);
+}
+
+#[test]
 fn plans_client_redirect_and_rejects_missing_required_downloads() {
     let mut redirect = base_version(json!([]));
     redirect["jar"] = json!("base");

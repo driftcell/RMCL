@@ -35,13 +35,13 @@
 
 ### 当前进度（2026-10-25）
 
-已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/内容安装任务、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、单任务互斥和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge、authlib-injector、Java runtime 列表与显式覆盖、Windows/Linux 真实运行验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、依赖自动安装/更新检查和整合包属于后续里程碑。
+已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/内容安装任务、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、单任务互斥和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。authlib-injector、legacy Forge、真实 Forge/NeoForge 游戏启动验收、Java runtime 列表与显式覆盖、Windows/Linux 真实运行验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、依赖自动安装/更新检查和整合包属于后续里程碑。
 
 ## 后续顺序
 
 以下顺序用于控制依赖关系，不表示这些功能已经完成：
 
-1. **M2：账号与主流加载器**：Microsoft、authlib-injector、Fabric、Quilt、Forge、NeoForge。Fabric/Quilt 已完成；authlib-injector、Forge 和 NeoForge 待完成。
+1. **M2：账号与主流加载器**：Microsoft、authlib-injector、Fabric、Quilt、Forge、NeoForge。Microsoft、Fabric、Quilt、Forge 和 NeoForge 的现代 installer 已完成；authlib-injector 与 legacy Forge 待完成。
 2. **M3：旧版兼容与更多组件**：旧 Forge、OptiFine、LiteLoader、Cleanroom、Legacy Fabric 等。
 3. **M4：内容与整合包**：Mod、资源包、整合包检索、下载、导入与导出。
 4. **M5：完整产品化**：剩余 HMCL 功能、HMCL 配置导入、完整主题与国际化、自动更新、签名和安装包。
