@@ -8,8 +8,8 @@
 
 `rmcl-java` 使用 `rmcl-domain` 的 `Architecture` 和 `rmcl-minecraft` 的版本元数据，不依赖 GPUI。
 
-- `JavaRuntime`：实际可执行路径、完整版本、major、架构、可选 vendor 和来源。
-- `JavaRequirement`：Mojang component、可选 major 和目标架构。
+- `JavaRuntime`：实际可执行路径、完整版本、major、操作系统、架构、可选 vendor 和来源。
+- `JavaRequirement`：Mojang component、最低/可选最高 major、目标操作系统和架构。
 - `JavaDetector`：发现候选并执行真实探测，返回可用 runtime 与逐候选失败。
 - `select_java`：从已验证候选中选择兼容 runtime。
 
@@ -32,19 +32,22 @@ Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实
 探测通过 `java -XshowSettings:properties -version` 获取：
 
 - `java.version`
+- `os.name`
 - `os.arch`
 - 可选 `java.vendor`
 
-支持 `1.8.0_202` 形式的 Java 8 major，以及 9+ 和早期版本数字前缀。`amd64`、`x64` 等归为 `x86_64`，`arm64` 归为 `aarch64`；未知架构保留但不会猜测位数。
+支持 `1.8.0_202`、`1.8-internal`、`8u202` 等形式，以及 9+ 和早期版本数字前缀。`amd64`、`x64` 等归为 `x86_64`，`arm64` 归为 `aarch64`。未知 OS 或架构直接拒绝，不回退为宿主值。
 
-默认每个候选最多运行 5 秒，每路输出最多 64 KiB。超时、输出过量、退出失败、缺少属性和非法版本分别返回结构化错误。错误候选会被记录，不会被加入可用 runtime 列表。
+探测使用独立临时工作目录，并移除 `JAVA_TOOL_OPTIONS`、`_JAVA_OPTIONS`、`JDK_JAVA_OPTIONS` 和 `JAVA_OPTIONS`，避免外部环境改变输出或注入行为。默认每个候选最多运行 5 秒，每路输出最多 64 KiB。超时、输出过量、退出失败、缺少属性和非法版本分别返回结构化错误。错误候选会被记录，不会被加入可用 runtime 列表。
 
 ## 选择策略
 
-- `GameVersion.javaVersion.majorVersion` 存在时，要求 major 精确匹配。
+- `GameVersion.javaVersion.majorVersion` 是最低版本：优先选择相同 major，也接受满足兼容条件的更高版本，不因“太新”直接拒绝。
 - 未声明 major 时，以 Java 8 为 legacy 基线，选择满足要求的最低版本。
-- 架构必须匹配目标 Java，而不是只看启动器宿主架构。
+- Linux x86_64 上 pre-1.13 Vanilla 额外限制最高 Java 8，避免旧版加载不兼容 native。
+- 操作系统与架构必须匹配目标 Java，而不是只看启动器宿主架构。
 - 同一 major 下优先 RMCL managed runtime，然后才是 JAVA_HOME、系统 PATH 和其他自定义来源。
+- 自动扫描禁用列表只影响自动发现；显式路径仍由独立 probe 验证。
 - 显式 Java 覆盖属于实例配置职责，不能通过调整全局排序暗中覆盖。
 
 没有可用候选时，`select_java` 返回 `None`，由上层进入自动下载或展示错误。

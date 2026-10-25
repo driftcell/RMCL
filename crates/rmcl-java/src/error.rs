@@ -26,6 +26,10 @@ pub enum JavaError {
     MissingProperty { path: String, field: &'static str },
     #[error("unsupported Java version `{version}` from `{path}`")]
     InvalidVersion { path: String, version: String },
+    #[error("unsupported operating system `{os}` from `{path}`")]
+    UnsupportedOperatingSystem { path: String, os: String },
+    #[error("unsupported Java architecture `{architecture}` from `{path}`")]
+    UnsupportedArchitecture { path: String, architecture: String },
     #[error("I/O failed for `{path}`: {source}")]
     Io {
         path: String,

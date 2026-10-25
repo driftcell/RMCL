@@ -23,6 +23,19 @@ impl OperatingSystem {
         }
     }
 
+    pub fn from_java_name(name: &str) -> Option<Self> {
+        let name = name.trim().to_lowercase();
+        if name.starts_with("windows") {
+            Some(Self::Windows)
+        } else if matches!(name.as_str(), "mac os x" | "macos" | "osx" | "darwin") {
+            Some(Self::MacOs)
+        } else if name == "linux" {
+            Some(Self::Linux)
+        } else {
+            None
+        }
+    }
+
     pub fn native_directory_name(self) -> &'static str {
         match self {
             Self::Windows => "windows",
@@ -134,5 +147,18 @@ mod tests {
             assert_eq!(os.native_directory_name(), directory);
         }
         assert_eq!(OperatingSystem::from_manifest_name("plan9"), None);
+        assert_eq!(
+            OperatingSystem::from_java_name("Windows 11"),
+            Some(OperatingSystem::Windows)
+        );
+        assert_eq!(
+            OperatingSystem::from_java_name("Mac OS X"),
+            Some(OperatingSystem::MacOs)
+        );
+        assert_eq!(
+            OperatingSystem::from_java_name("Linux"),
+            Some(OperatingSystem::Linux)
+        );
+        assert_eq!(OperatingSystem::from_java_name("FreeBSD"), None);
     }
 }

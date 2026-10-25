@@ -4,7 +4,8 @@ use std::{
     time::Duration,
 };
 
-use rmcl_domain::Architecture;
+use rmcl_domain::{Architecture, OperatingSystem};
+use tempfile::TempDir;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::{Child, Command},
@@ -47,11 +48,18 @@ pub async fn probe_with_config(
         return Err(JavaError::NotFound(executable.display().to_string()));
     }
 
+    let workdir =
+        TempDir::new().map_err(|source| io_error(std::env::temp_dir().as_path(), source))?;
     let mut command = Command::new(&executable);
     command
+        .current_dir(&workdir)
         .arg("-XshowSettings:properties")
         .arg("-version")
         .env("LC_ALL", "C")
+        .env_remove("JAVA_TOOL_OPTIONS")
+        .env_remove("_JAVA_OPTIONS")
+        .env_remove("JDK_JAVA_OPTIONS")
+        .env_remove("JAVA_OPTIONS")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -112,10 +120,12 @@ pub async fn probe_with_config(
 pub fn parse_major_version(version: &str) -> Option<u32> {
     let mut parts = version.trim().split('.');
     let first = parts.next()?;
-    if first == "1" {
-        return parts.next()?.parse().ok();
-    }
-    let numeric_prefix: String = first.chars().take_while(char::is_ascii_digit).collect();
+    let major = if first == "1" {
+        parts.next().unwrap_or_default()
+    } else {
+        first
+    };
+    let numeric_prefix: String = major.chars().take_while(char::is_ascii_digit).collect();
     if numeric_prefix.is_empty() {
         None
     } else {
@@ -143,18 +153,38 @@ fn parse_runtime(
         path,
         version: version.clone(),
     })?;
-    let architecture = properties
-        .get("os.arch")
-        .map(|value| Architecture::from_name(value))
+    let architecture_name =
+        properties
+            .get("os.arch")
+            .ok_or_else(|| JavaError::MissingProperty {
+                path: executable.display().to_string(),
+                field: "os.arch",
+            })?;
+    let architecture = Architecture::from_name(architecture_name);
+    if matches!(architecture, Architecture::Other(_)) {
+        return Err(JavaError::UnsupportedArchitecture {
+            path: executable.display().to_string(),
+            architecture: architecture_name.clone(),
+        });
+    }
+    let os_name = properties
+        .get("os.name")
         .ok_or_else(|| JavaError::MissingProperty {
             path: executable.display().to_string(),
-            field: "os.arch",
+            field: "os.name",
         })?;
+    let operating_system = OperatingSystem::from_java_name(os_name).ok_or_else(|| {
+        JavaError::UnsupportedOperatingSystem {
+            path: executable.display().to_string(),
+            os: os_name.clone(),
+        }
+    })?;
 
     Ok(JavaRuntime {
         executable,
         version,
         major_version,
+        operating_system,
         architecture,
         vendor: properties.get("java.vendor").cloned(),
         source,
@@ -214,6 +244,9 @@ mod tests {
         for (version, expected) in [
             ("1.8.0_202", Some(8)),
             ("1.9.0", Some(9)),
+            ("8u202", Some(8)),
+            ("1.8-internal", Some(8)),
+            ("1.-internal", None),
             ("17.0.11", Some(17)),
             ("21", Some(21)),
             ("21-ea", Some(21)),
@@ -252,12 +285,13 @@ mod tests {
     #[tokio::test]
     async fn probes_a_real_process() {
         let (_directory, executable) = write_script(
-            "#!/bin/sh\nprintf '    java.version = 17.0.11\n    os.arch = amd64\n    java.vendor = TestVendor\n' >&2\n",
+            "#!/bin/sh\nprintf '    java.version = 17.0.11\n    os.name = Linux\n    os.arch = amd64\n    java.vendor = TestVendor\n' >&2\n",
         );
 
         let runtime = probe(executable, JavaRuntimeSource::Custom).await.unwrap();
 
         assert_eq!(runtime.major_version, 17);
+        assert_eq!(runtime.operating_system, OperatingSystem::Linux);
         assert_eq!(runtime.architecture, Architecture::X86_64);
         assert_eq!(runtime.vendor.as_deref(), Some("TestVendor"));
     }

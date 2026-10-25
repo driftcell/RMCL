@@ -21,6 +21,7 @@ mod tests {
             executable: format!("java-{major}").into(),
             version: major.to_string(),
             major_version: major,
+            operating_system: rmcl_domain::OperatingSystem::Linux,
             architecture: rmcl_domain::Architecture::X86_64,
             vendor: None,
             source,
@@ -28,10 +29,12 @@ mod tests {
     }
 
     #[test]
-    fn declared_major_requires_an_exact_match() {
+    fn declared_major_is_a_minimum_and_newer_is_allowed() {
         let requirement = JavaRequirement {
             component: None,
             major_version: Some(17),
+            maximum_major: None,
+            operating_system: rmcl_domain::OperatingSystem::Linux,
             architecture: rmcl_domain::Architecture::X86_64,
         };
         let runtimes = [
@@ -39,11 +42,19 @@ mod tests {
             runtime(17, JavaRuntimeSource::System),
         ];
 
+        assert!(requirement.accepts(&runtimes[0]));
         assert!(requirement.accepts(&runtimes[1]));
-        assert!(!requirement.accepts(&runtimes[0]));
         assert_eq!(
             select_java(&runtimes, &requirement).unwrap().major_version,
             17
+        );
+
+        let only_newer = [runtime(21, JavaRuntimeSource::System)];
+        assert_eq!(
+            select_java(&only_newer, &requirement)
+                .unwrap()
+                .major_version,
+            21
         );
     }
 
@@ -52,6 +63,8 @@ mod tests {
         let requirement = JavaRequirement {
             component: None,
             major_version: None,
+            maximum_major: None,
+            operating_system: rmcl_domain::OperatingSystem::Linux,
             architecture: rmcl_domain::Architecture::X86_64,
         };
         let runtimes = [
@@ -71,6 +84,8 @@ mod tests {
         let requirement = JavaRequirement {
             component: None,
             major_version: Some(17),
+            maximum_major: None,
+            operating_system: rmcl_domain::OperatingSystem::Linux,
             architecture: rmcl_domain::Architecture::X86_64,
         };
         let runtimes = [

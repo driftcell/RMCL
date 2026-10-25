@@ -23,6 +23,7 @@ pub struct JavaProbeFailure {
 #[derive(Debug, Clone)]
 pub struct JavaDetector {
     managed_roots: Vec<PathBuf>,
+    disabled: HashSet<PathBuf>,
     include_java_home: bool,
     include_path: bool,
     probe_config: ProbeConfig,
@@ -32,6 +33,7 @@ impl JavaDetector {
     pub fn new(managed_roots: Vec<PathBuf>) -> Self {
         Self {
             managed_roots,
+            disabled: HashSet::new(),
             include_java_home: true,
             include_path: true,
             probe_config: ProbeConfig::default(),
@@ -45,6 +47,14 @@ impl JavaDetector {
 
     pub fn with_path(mut self, enabled: bool) -> Self {
         self.include_path = enabled;
+        self
+    }
+
+    pub fn with_disabled_paths(mut self, paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        self.disabled = paths
+            .into_iter()
+            .map(|path| std::fs::canonicalize(&path).unwrap_or(path))
+            .collect();
         self
     }
 
@@ -75,7 +85,10 @@ impl JavaDetector {
         }
 
         let mut seen = HashSet::new();
-        candidates.retain(|candidate| seen.insert(candidate.executable.clone()));
+        candidates.retain(|candidate| {
+            !self.disabled.contains(&candidate.executable)
+                && seen.insert(candidate.executable.clone())
+        });
         candidates
     }
 
@@ -162,7 +175,11 @@ mod tests {
     fn discovers_managed_layouts_without_touching_system_java() {
         let temporary = tempfile::TempDir::new().unwrap();
         let root = temporary.path();
-        for relative in ["a/bin/java", "b/Contents/Home/bin/java"] {
+        let java = java_binary_name();
+        for relative in [
+            format!("a/bin/{java}"),
+            format!("b/Contents/Home/bin/{java}"),
+        ] {
             let path = root.join(relative);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, b"java").unwrap();
@@ -182,13 +199,27 @@ mod tests {
         assert!(
             candidates
                 .iter()
-                .any(|candidate| candidate.executable.ends_with("a/bin/java"))
+                .any(|candidate| candidate.executable.ends_with(format!("a/bin/{java}")))
         );
-        assert!(
-            candidates
-                .iter()
-                .any(|candidate| candidate.executable.ends_with("Contents/Home/bin/java"))
-        );
+        assert!(candidates.iter().any(|candidate| {
+            candidate
+                .executable
+                .ends_with(format!("Contents/Home/bin/{java}"))
+        }));
+    }
+
+    #[test]
+    fn disables_paths_only_for_automatic_discovery() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let executable = temporary.path().join("a/bin").join(java_binary_name());
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::write(&executable, b"java").unwrap();
+        let detector = JavaDetector::new(vec![temporary.path().to_path_buf()])
+            .with_java_home(false)
+            .with_path(false)
+            .with_disabled_paths([executable]);
+
+        assert!(detector.candidates().is_empty());
     }
 
     #[test]
