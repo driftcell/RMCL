@@ -350,7 +350,7 @@ export class DomController {
               <div class="chapter-scrub-fill"></div>
             </div>
           </div>
-          <h1 class="chapter-headline">${ch.headline}</h1>
+          <h2 class="chapter-headline">${ch.headline}</h2>
           <p class="chapter-lead">${ch.lead}</p>
           <div class="pills-row">
             ${pillsHtml}
