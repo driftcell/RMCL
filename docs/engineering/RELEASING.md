@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-26
+日期：2026-10-27
 
 ## 分支保护
 
@@ -13,11 +13,8 @@
 - Squash merge，只允许这一种合并方式
 - 合并后自动删除 head branch
 - 要求 conversation resolution 和线性历史
-- 要求以下 CI 检查通过：
-  - `Format, Clippy, and doctests`
-  - `Nextest (ubuntu-24.04)`
-  - `Nextest (windows-latest)`
-  - `Nextest (macos-latest)`
+- 要求 CI 检查通过：
+  - `CI success`（汇总 Rust 变更检测、lint、测试矩阵；纯文档/网页改动跳过 Rust job 时也保持成功）
 - 要求分支与 `main` 保持最新
 - 管理员同样受规则约束
 - 审批数设为 0，单人维护可以直接合并自己的 PR
@@ -30,7 +27,7 @@
 - 按 `.github/pull_request_template.md` 填写目标、验证命令、平台和 release notes 影响
 - Squash merge 后 PR 标题成为 `main` 上的 commit，所以标题必须自解释
 - 一个 PR 只做一件事；任务目标、验收标准和验证结果写在 PR 描述中
-- 合并前必须看到四个必需检查全部通过
+- 合并前必须看到 `CI success` 通过
 - 不直接修改或强推 `main`；release PR 也走同一套检查
 
 ## release-plz
@@ -66,7 +63,7 @@ GitHub 默认 `GITHUB_TOKEN` 创建的 PR 不会触发其他 PR workflow，relea
 2. release-plz 更新或创建 release PR
 3. 检查 release PR 中的版本、changelog 和 Cargo.lock
 4. 在 release PR 中补充简短的 Highlights/升级注意事项（不要只保留裸 commit 列表）
-5. 等待 release PR 的四个必需检查通过
+5. 等待 release PR 的 `CI success` 通过
 6. Squash merge release PR；release-plz release 创建 `v<version>` tag
 7. tag 触发 `release.yml`：构建四平台产物、生成 `SHA256SUMS`、使用 `CHANGELOG.md` 对应章节作为 Release body，最后发布
 8. 下载至少一个平台产物做启动 smoke；自动更新版本还需确认 Release body 和资产名正确
