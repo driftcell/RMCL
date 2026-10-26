@@ -112,7 +112,7 @@ Runner 标签会随 GitHub 镜像退役而变化：`macos-15-intel` 是当前可
 
 1. 确认目标提交的 CI 已通过；Release workflow 负责构建和分发，不替代 lint、测试和真实运行验收。
 2. 功能/fix PR 合并后，由 release-plz 创建 release PR；检查版本、`CHANGELOG.md` 和 `Cargo.lock`，补充用户可见的 Highlights。
-3. 在 release PR 的四个必需检查通过后 Squash merge；release-plz 创建与版本一致的 `v<version>` 标签。
+3. 在 release PR 的 `CI success` 通过后 Squash merge；release-plz 创建与版本一致的 `v<version>` 标签。
 4. 标签触发 `release.yml`；发布 job 从 `CHANGELOG.md` 提取当前版本作为 Release body，生成 `SHA256SUMS` 并发布。
 5. 在 Actions 中确认 `Release` workflow 的四个构建 job 全部成功。
 6. 下载至少一个平台的产物做启动 smoke，再确认 Release 已发布。

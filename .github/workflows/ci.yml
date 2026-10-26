@@ -43,6 +43,7 @@ jobs:
               - 'rust-toolchain*'
               - '.cargo/**'
               - '.config/**'
+              - '.github/scripts/**'
               - '.github/workflows/**'
 
   lint:
@@ -57,11 +58,7 @@ jobs:
           persist-credentials: false
 
       - name: Install GPUI system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc g++ clang libfontconfig-dev libwayland-dev \
-            libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev \
-            libssl-dev libzstd-dev libvulkan1
+        run: bash .github/scripts/install-gpui-deps.sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -100,11 +97,7 @@ jobs:
 
       - name: Install GPUI system dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc g++ clang libfontconfig-dev libwayland-dev \
-            libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev \
-            libssl-dev libzstd-dev libvulkan1
+        run: bash .github/scripts/install-gpui-deps.sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -117,3 +110,35 @@ jobs:
 
       - name: Run tests in parallel
         run: cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no-tests=fail
+
+  ci-success:
+    name: CI success
+    needs: [changes, lint, test]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify required jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          echo "changes=${CHANGES_RESULT}"
+          echo "lint=${LINT_RESULT}"
+          echo "test=${TEST_RESULT}"
+
+          if [[ "${CHANGES_RESULT}" != "success" ]]; then
+            echo "Detect Rust changes did not succeed." >&2
+            exit 1
+          fi
+
+          for result in "${LINT_RESULT}" "${TEST_RESULT}"; do
+            case "${result}" in
+              success|skipped) ;;
+              *)
+                echo "Required Rust job did not succeed: ${result}" >&2
+                exit 1
+                ;;
+            esac
+          done
