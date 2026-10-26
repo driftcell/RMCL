@@ -143,7 +143,7 @@ impl LauncherApp {
                                         Input::new(&self.create_base_input)
                                             .w_full()
                                             .max_w(px(360.))
-                                            .disabled(copy_mode),
+                                            .readonly(copy_mode),
                                     )
                                     .child(
                                         div()
