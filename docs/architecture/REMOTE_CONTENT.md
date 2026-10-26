@@ -41,6 +41,14 @@
 
 客户端不保存 API key。Modrinth 公共 API 不需要 key；CurseForge 的 key 不应硬编码进 RMCL。
 
+## 依赖版本与元数据
+
+- 本地 Mod 索引和主 Mod 的远程 JAR 元数据会解析 Mod ID、版本、必需依赖和冲突声明。
+- 预检在下载前按主文件 SHA-1 缓存远程 JAR 元数据到 `cache/mod-metadata/`；文件缺少 SHA-1 或超过 16 MiB 时跳过远程元数据解析，回退到项目级匹配。
+- Fabric/Quilt 的版本谓词使用 `semver` crate；Forge/NeoForge 的 Maven 范围由本地小型解析器处理，版本排序委托 `mvn_version` 的 Maven `ComparableVersion`。
+- 已安装前置版本满足主 Mod 声明的范围时，预检标记为已安装并从安装批次跳过；版本不满足时仍安装 Modrinth 解析出的依赖版本并警告。
+- 依赖图中只有 `required` 会被自动解析；Modrinth 的 optional 只计数，incompatible 做“已安装则阻止”的预检。
+
 ## 安装流程
 
 1. UI 从版本列表选择版本；列表标记 `recommended_version` 选出的正式版推荐项。
@@ -102,8 +110,10 @@
 - 内容可以安装到 Fabric/Quilt/Forge/NeoForge 实例；加载器本身由 [实例创建](LOADERS.md) 安装。
 - 只自动安装 required 依赖；optional、incompatible 和 embedded 依赖不自动安装。incompatible 只做“已安装则阻止”的预检，不做完整依赖版本约束求解。
 - 本地 Mod 元数据支持 Fabric/Quilt/Forge/NeoForge 常见字段和 legacy Forge 的 `mcmod.info` 基础字段；不执行 Mod 代码，也不解析所有可选/嵌套元数据。
-- 前置匹配使用 Modrinth 项目 slug/标题与本地 Mod ID 的规范化比较；slug 与 Mod ID 不一致时可能只能给出“未确认”状态。
-- 已安装版本只做字符串比较，尚未完整解析 Fabric/Forge 版本范围；同一 Mod ID 不同版本会给出警告并按 Modrinth 依赖安装所需版本。
+- 远程元数据只预检主 Mod 文件（上限 16 MiB）；依赖文件仍按 Modrinth 项目/版本信息判断，不逐个下载依赖 JAR。
+- 前置匹配优先使用远程主 Mod 元数据中的真实 Mod ID 和版本范围；元数据缺失时回退到 Modrinth 项目 slug/标题与本地 Mod ID 的规范化比较。
+- 版本范围支持常见 Fabric/Quilt semver 谓词和 Forge/NeoForge Maven 区间；不实现完整 SAT、版本回退、可选依赖选择和所有特殊 qualifier。
+- 已安装版本只做字符串/范围比较；同一 Mod ID 不同版本会给出警告并按 Modrinth 依赖安装所需版本。
 - 依赖去重按版本 ID；已安装识别结合文件名/SHA-1 和本地 Mod ID/版本，不做全局文件哈希索引和更新检查。
 - 不显示远程项目图标，也不提供项目网页跳转。
 - 不做 API 速率限制的主动排队；429 会作为 API 错误返回，用户可重试。
@@ -112,8 +122,8 @@
 
 ## 验证
 
-- `rmcl-content` 使用本地 axum mock 覆盖搜索 facets/index/分页、项目版本解析、单版本/单项目查询、primary file 选择、依赖解析、API 错误和请求取消；元数据测试覆盖 Fabric/Quilt/Forge JAR 解析、依赖/冲突字段、缺失元数据和重复 Mod ID。
-- `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过、已安装前置预检和跳过，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。
+- `rmcl-content` 使用本地 axum mock 覆盖搜索 facets/index/分页、项目版本解析、单版本/单项目查询、primary file 选择、依赖解析、API 错误和请求取消；元数据测试覆盖 Fabric/Quilt/Forge JAR 解析、依赖/冲突字段、缺失元数据和重复 Mod ID；版本匹配测试覆盖 semver 谓词、Maven 区间和 Forge 版本排序。
+- `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过、已安装前置预检和跳过、远程主 JAR 元数据范围判断、元数据缓存，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。
 - `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的搜索、项目版本切换、安装进度和取消仍需在 macOS、Windows、Linux 逐平台验收。
 - 2026-10-25 使用真实 `https://api.modrinth.com/` 做了只读 smoke：带 `project_type:mod`、`versions:1.21.1`、`categories:fabric` facets 的搜索返回 Sodium；Sodium 项目在 `1.21.1` + `fabric` 下的版本列表包含 `primary` 文件、SHA-1/SHA-512 和 size，字段与客户端 DTO 一致。
 - 标记为 `#[ignore]` 的真实网络 smoke 安装 Iris 1.8.7（精确依赖 Sodium 版本），确认依赖图返回 Sodium + Iris、依赖先安装、两个文件 SHA-1 校验通过并写入实例 `mods/`。2026-10-25 本机通过。

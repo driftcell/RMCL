@@ -1,21 +1,26 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    fs,
+    path::{Path, PathBuf},
 };
 
 use rmcl_content::{
-    ConflictPolicy, ContentKind, ContentLibrary, InstalledModIndex, LocalContent, ModrinthClient,
-    RemoteDependency, RemoteDependencyKind, RemoteFile, RemoteProject, RemoteVersion,
-    delete_content, import_file, scan_library, set_content_enabled,
+    ConflictPolicy, ContentKind, ContentLibrary, InstalledMod, InstalledModIndex, LocalContent,
+    ModDependency, ModMetadata, ModrinthClient, RemoteDependency, RemoteDependencyKind, RemoteFile,
+    RemoteProject, RemoteVersion, delete_content, import_file, read_mod_metadata, scan_library,
+    set_content_enabled, version_satisfies,
 };
 use rmcl_domain::DownloadRequest;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath};
 use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadStatus, ProgressStage, progress_channel};
 use sha1::{Digest, Sha1};
+use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::AppError;
+
+const MAX_PREFLIGHT_JAR_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Scans all local content directories of one instance.
 pub async fn scan_instance_content(instance: InstanceLayout) -> Result<ContentLibrary, AppError> {
@@ -168,6 +173,128 @@ pub struct ContentBatchOutcome {
     pub skipped_files: usize,
 }
 
+/// Downloads a bounded mod archive once and caches its parsed metadata by SHA-1.
+///
+/// Preflight only reads metadata; the actual install still downloads through
+/// `ContentInstaller` so its existing verification and atomic publish semantics
+/// remain unchanged.
+#[derive(Clone)]
+pub struct ModMetadataCache {
+    downloader: DownloadExecutor,
+    directory: PathBuf,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModMetadataFetch {
+    pub metadata: Option<Vec<ModMetadata>>,
+    pub warning: Option<String>,
+}
+
+impl ModMetadataCache {
+    pub fn new(config: DownloadConfig, directory: impl Into<PathBuf>) -> Result<Self, AppError> {
+        Ok(Self {
+            downloader: DownloadExecutor::new(config)?,
+            directory: directory.into(),
+        })
+    }
+
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
+    /// Fetches and parses metadata for one remote archive.
+    ///
+    /// Files without a SHA-1 or larger than 16 MiB are skipped; the caller falls
+    /// back to project-level matching.
+    pub async fn fetch(
+        &self,
+        file: &RemoteFile,
+        cancellation: &CancellationToken,
+    ) -> Result<ModMetadataFetch, AppError> {
+        if file.size.is_some_and(|size| size > MAX_PREFLIGHT_JAR_BYTES) {
+            return Ok(ModMetadataFetch {
+                metadata: None,
+                warning: Some(format!(
+                    "{} 超过 16 MiB，已跳过主文件元数据预检。",
+                    file.filename
+                )),
+            });
+        }
+        let Some(sha1) = file.sha1 else {
+            return Ok(ModMetadataFetch {
+                metadata: None,
+                warning: Some("文件没有 SHA-1，已跳过主文件元数据预检。".to_owned()),
+            });
+        };
+        let path = self.directory.join(format!("{sha1}.jar"));
+        if let Ok(metadata) = fs::metadata(&path)
+            && metadata.len() > 0
+        {
+            return Ok(self.parse(&path).await);
+        }
+
+        let temporary = tempfile::tempdir().map_err(|source| AppError::Io {
+            operation: "create content metadata temporary directory",
+            path: self.directory.clone(),
+            source,
+        })?;
+        let destination = temporary.path().join("content.jar");
+        let request = DownloadRequest {
+            sources: vec![file.url.clone()],
+            destination: destination.clone(),
+            sha1: Some(sha1),
+            size: file.size,
+        };
+        self.downloader
+            .download_file(&request, cancellation.clone(), None)
+            .await
+            .map_err(|error| AppError::ContentMetadata(error.to_string()))?;
+        let parsed = self.parse(&destination).await;
+        if let Err(source) = self.store(&destination, &path) {
+            return Ok(ModMetadataFetch {
+                metadata: parsed.metadata,
+                warning: Some(match parsed.warning {
+                    Some(warning) => format!("{warning}; 缓存元数据失败：{source}"),
+                    None => format!("缓存主文件元数据失败：{source}"),
+                }),
+            });
+        }
+        Ok(parsed)
+    }
+
+    async fn parse(&self, path: &Path) -> ModMetadataFetch {
+        let path = path.to_path_buf();
+        match tokio::task::spawn_blocking(move || read_mod_metadata(&path).map_err(Box::new)).await
+        {
+            Ok(Ok(metadata)) => ModMetadataFetch {
+                metadata: Some(metadata),
+                warning: None,
+            },
+            Ok(Err(error)) => ModMetadataFetch {
+                metadata: None,
+                warning: Some(format!("无法读取主文件 Mod 元数据：{error}")),
+            },
+            Err(error) => ModMetadataFetch {
+                metadata: None,
+                warning: Some(format!("读取主文件 Mod 元数据失败：{error}")),
+            },
+        }
+    }
+
+    fn store(&self, source: &Path, path: &Path) -> Result<(), std::io::Error> {
+        fs::create_dir_all(&self.directory)?;
+        let mut temporary = NamedTempFile::new_in(&self.directory)?;
+        let mut input = fs::File::open(source)?;
+        std::io::copy(&mut input, temporary.as_file_mut())?;
+        temporary.as_file().sync_all()?;
+        match temporary.persist(path) {
+            Ok(_) => Ok(()),
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error.error),
+        }
+    }
+}
+
 /// Resolves the primary file and all required Modrinth dependencies into an
 /// ordered install batch. Dependencies come first so a failure cannot leave a
 /// mod installed without its required libraries.
@@ -268,6 +395,7 @@ pub async fn preflight_content_install(
     client: &ModrinthClient,
     request: &ContentGraphInstallRequest,
     installed: &InstalledModIndex,
+    metadata_cache: Option<&ModMetadataCache>,
     cancellation: &CancellationToken,
 ) -> Result<ContentInstallPreflight, AppError> {
     let order = resolve_content_install_order(client, request, cancellation).await?;
@@ -278,18 +406,42 @@ pub async fn preflight_content_install(
     };
     let mut projects = HashMap::new();
     let main_project = project_for_version(client, &main, &mut projects, cancellation).await?;
-    let main_item = classify_preflight_item(
+    let main_file = installable_file(&main, request.kind)?;
+    let metadata_fetch = if request.kind == ContentKind::Mod {
+        if let Some(cache) = metadata_cache {
+            cache.fetch(&main_file, cancellation).await?
+        } else {
+            ModMetadataFetch::default()
+        }
+    } else {
+        ModMetadataFetch::default()
+    };
+    let ModMetadataFetch {
+        metadata,
+        warning: metadata_warning,
+    } = metadata_fetch;
+    let main_metadata = metadata
+        .as_deref()
+        .and_then(|metadata| select_main_metadata(metadata, &main_project));
+    let mut main_item = classify_preflight_item(
         request,
         &main,
         &main_project,
         installed,
         request.display_name.clone(),
     )?;
+    if let Some(installed_mod) = main_metadata
+        .and_then(|metadata| installed.find(&metadata.id))
+        .or_else(|| find_installed_mod(installed, &main_project))
+    {
+        main_item.status = status_for_installed(installed_mod, &main.version_number);
+    }
+
     let mut dependencies = Vec::new();
     let mut skip_version_ids = Vec::new();
     for version in &order[..order.len().saturating_sub(1)] {
         let project = project_for_version(client, version, &mut projects, cancellation).await?;
-        let item = classify_preflight_item(
+        let mut item = classify_preflight_item(
             request,
             version,
             &project,
@@ -300,6 +452,32 @@ pub async fn preflight_content_install(
                 version.name.clone()
             },
         )?;
+        if let Some(metadata) = main_metadata
+            && let Some(declared) = metadata_dependency_for(metadata, &project)
+            && let Some(requirement) = declared.version_requirement.as_deref()
+            && let Some(installed_mod) =
+                find_installed_for_dependency(installed, &project, declared)
+            && let Some(installed_version) = installed_mod.metadata.version.as_deref()
+        {
+            match version_satisfies(
+                installed_version,
+                requirement,
+                metadata.loader.version_style(),
+            ) {
+                Some(true) => {
+                    item.status = ContentPreflightStatus::AlreadyInstalled {
+                        enabled: installed_mod.enabled,
+                    };
+                }
+                Some(false) => {
+                    item.status = ContentPreflightStatus::InstalledDifferentVersion {
+                        version: Some(installed_version.to_owned()),
+                        enabled: installed_mod.enabled,
+                    };
+                }
+                None => {}
+            }
+        }
         if matches!(
             &item.status,
             ContentPreflightStatus::AlreadyInstalled { .. }
@@ -332,8 +510,33 @@ pub async fn preflight_content_install(
             });
         }
     }
+    if let Some(metadata) = main_metadata {
+        for conflict in &metadata.conflicts {
+            let Some(installed_mod) = installed.find(&conflict.id) else {
+                continue;
+            };
+            if incompatible
+                .iter()
+                .any(|item| item.file_name == installed_mod.file_name)
+            {
+                continue;
+            }
+            incompatible.push(ContentPreflightItem {
+                project_id: String::new(),
+                project_slug: conflict.id.clone(),
+                title: conflict.id.clone(),
+                version_id: String::new(),
+                version_number: installed_mod.metadata.version.clone().unwrap_or_default(),
+                file_name: installed_mod.file_name.clone(),
+                status: ContentPreflightStatus::Conflict,
+            });
+        }
+    }
 
     let mut warnings = installed.warnings.clone();
+    if let Some(warning) = metadata_warning {
+        warnings.push(warning);
+    }
     for dependency in &dependencies {
         match &dependency.status {
             ContentPreflightStatus::AlreadyInstalled { enabled: false } => warnings.push(format!(
@@ -354,6 +557,15 @@ pub async fn preflight_content_install(
             ContentPreflightStatus::AlreadyInstalled { enabled: true } => {}
             ContentPreflightStatus::WillInstall | ContentPreflightStatus::Conflict => {}
         }
+    }
+    if let Some(metadata) = main_metadata
+        && let Some(installed_mod) = installed.find(&metadata.id)
+        && !installed_mod.enabled
+    {
+        warnings.push(format!(
+            "主 Mod {} 已安装但已禁用；本次安装会新增文件而不是启用现有文件。",
+            metadata.id
+        ));
     }
     if !incompatible.is_empty() {
         warnings.push(format!(
@@ -434,7 +646,7 @@ fn classify_preflight_item(
 fn find_installed_mod<'a>(
     installed: &'a InstalledModIndex,
     project: &RemoteProject,
-) -> Option<&'a rmcl_content::InstalledMod> {
+) -> Option<&'a InstalledMod> {
     [project.slug.as_str(), project.title.as_str()]
         .into_iter()
         .filter_map(|candidate| installed.find(candidate))
@@ -447,6 +659,55 @@ fn find_installed_mod<'a>(
                         == normalized
             })
         })
+}
+
+fn select_main_metadata<'a>(
+    metadata: &'a [ModMetadata],
+    project: &RemoteProject,
+) -> Option<&'a ModMetadata> {
+    metadata
+        .iter()
+        .find(|metadata| {
+            normalize_mod_id(&metadata.id) == normalize_mod_id(&project.slug)
+                || normalize_mod_id(&metadata.id) == normalize_mod_id(&project.title)
+        })
+        .or_else(|| metadata.first())
+}
+
+fn metadata_dependency_for<'a>(
+    metadata: &'a ModMetadata,
+    project: &RemoteProject,
+) -> Option<&'a ModDependency> {
+    metadata.dependencies.iter().find(|dependency| {
+        normalize_mod_id(&dependency.id) == normalize_mod_id(&project.slug)
+            || normalize_mod_id(&dependency.id) == normalize_mod_id(&project.title)
+    })
+}
+
+fn find_installed_for_dependency<'a>(
+    installed: &'a InstalledModIndex,
+    project: &RemoteProject,
+    dependency: &ModDependency,
+) -> Option<&'a InstalledMod> {
+    installed
+        .find(&dependency.id)
+        .or_else(|| find_installed_mod(installed, project))
+}
+
+fn status_for_installed(
+    installed: &InstalledMod,
+    required_version: &str,
+) -> ContentPreflightStatus {
+    if same_mod_version(installed.metadata.version.as_deref(), required_version) {
+        ContentPreflightStatus::AlreadyInstalled {
+            enabled: installed.enabled,
+        }
+    } else {
+        ContentPreflightStatus::InstalledDifferentVersion {
+            version: installed.metadata.version.clone(),
+            enabled: installed.enabled,
+        }
+    }
 }
 
 fn normalize_mod_id(value: &str) -> String {

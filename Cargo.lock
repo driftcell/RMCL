@@ -3856,6 +3856,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "mvn_version"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fc03571d82ba9a461bbb00cd9449d3be0be4d0b52d1324b5d775ee10e89b5a2"
+dependencies = [
+ "num-bigint",
+]
+
+[[package]]
 name = "naga"
 version = "29.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5541,9 +5550,11 @@ name = "rmcl-content"
 version = "0.3.0"
 dependencies = [
  "axum",
+ "mvn_version",
  "reqwest",
  "rmcl-domain",
  "rmcl-instance",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",

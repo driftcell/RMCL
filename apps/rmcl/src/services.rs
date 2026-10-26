@@ -6,8 +6,9 @@ use std::{
 
 use rmcl_app::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
-    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient,
-    ServerIconCache, ServerStatusClient, SkinCache, TaskManager, VanillaInstaller, VersionCatalog,
+    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
+    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, TaskManager, VanillaInstaller,
+    VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -33,6 +34,7 @@ pub struct Services {
     pub skins: SkinCache,
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
+    pub mod_metadata: ModMetadataCache,
 }
 
 impl Services {
@@ -80,6 +82,14 @@ impl Services {
             .unwrap_or_else(|| Path::new("."))
             .join("cache")
             .join("servers");
+        let mod_metadata_cache_dir = config_store
+            .path()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("cache")
+            .join("mod-metadata");
+        let mod_metadata =
+            ModMetadataCache::new(DownloadConfig::default(), mod_metadata_cache_dir)?;
         Ok(Rc::new(Self {
             runtime,
             tasks,
@@ -93,6 +103,7 @@ impl Services {
             skins,
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
+            mod_metadata,
         }))
     }
 }

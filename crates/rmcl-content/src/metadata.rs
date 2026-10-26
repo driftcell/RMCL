@@ -39,6 +39,13 @@ impl ModMetadataLoader {
             Self::LegacyForge => "Legacy Forge",
         }
     }
+
+    pub const fn version_style(self) -> crate::VersionStyle {
+        match self {
+            Self::Fabric | Self::Quilt => crate::VersionStyle::Semver,
+            Self::Forge | Self::NeoForge | Self::LegacyForge => crate::VersionStyle::Maven,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

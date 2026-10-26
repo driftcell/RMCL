@@ -7,6 +7,7 @@ mod metadata;
 mod model;
 mod options;
 mod remote;
+mod version_req;
 
 pub use error::ContentError;
 pub use kind::ContentKind;
@@ -22,4 +23,7 @@ pub use remote::{
     ContentSource, ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency,
     RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
     RemoteSort, RemoteVersion, recommended_version,
+};
+pub use version_req::{
+    VersionRequirement, VersionRequirementError, VersionStyle, version_satisfies,
 };

@@ -62,4 +62,5 @@
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)
 - [远程内容与 Modrinth 取舍](../notes/development/remote_content.md)
+- [内容依赖版本匹配与远程元数据取舍](../notes/development/content_dependency_resolution.md)
 - [加载器安装与实例创建取舍](../notes/development/loader_installation.md)

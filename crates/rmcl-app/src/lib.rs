@@ -26,9 +26,9 @@ pub use content::{
     ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
     ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallPreflight,
     ContentInstallRequest, ContentInstaller, ContentPreflightItem, ContentPreflightStatus,
-    delete_instance_content, import_instance_content, preflight_content_install,
-    resolve_content_install_batch, resolve_content_install_order, scan_instance_content,
-    set_instance_content_enabled,
+    ModMetadataCache, ModMetadataFetch, delete_instance_content, import_instance_content,
+    preflight_content_install, resolve_content_install_batch, resolve_content_install_order,
+    scan_instance_content, set_instance_content_enabled,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use forge::{ForgeInstallOutcome, ForgeInstallRequest, ForgeInstaller};

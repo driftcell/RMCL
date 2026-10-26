@@ -4,11 +4,11 @@ use axum::{Json, Router, response::IntoResponse, routing::get};
 use rmcl_app::{
     AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
     ContentInstallRequest, ContentInstaller, ContentKind, ContentSource, IsolationMode,
-    ModrinthClient, ModrinthConfig, RemoteDependency, RemoteDependencyKind, RemoteFile,
-    RemoteVersion, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskStatus, TaskSubject,
-    VanillaInstaller, delete_instance_content, import_instance_content, preflight_content_install,
-    resolve_content_install_batch, scan_installed_mods, scan_instance_content,
-    set_instance_content_enabled,
+    ModMetadataCache, ModrinthClient, ModrinthConfig, RemoteDependency, RemoteDependencyKind,
+    RemoteFile, RemoteVersion, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskStatus,
+    TaskSubject, VanillaInstaller, delete_instance_content, import_instance_content,
+    preflight_content_install, resolve_content_install_batch, scan_installed_mods,
+    scan_instance_content, set_instance_content_enabled,
 };
 use rmcl_domain::Sha1Hash;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, VersionId};
@@ -33,17 +33,32 @@ fn write(path: &Path, contents: &[u8]) {
 }
 
 fn write_fabric_mod(path: &Path, id: &str, version: &str) {
+    write_fabric_mod_with_depends(path, id, version, json!({}));
+}
+
+fn write_fabric_mod_with_depends(path: &Path, id: &str, version: &str, depends: serde_json::Value) {
     let file = std::fs::File::create(path).unwrap();
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     zip.start_file("fabric.mod.json", options).unwrap();
     zip.write_all(
-        json!({"id": id, "version": version, "name": id})
+        json!({"id": id, "version": version, "name": id, "depends": depends})
             .to_string()
             .as_bytes(),
     )
     .unwrap();
     zip.finish().unwrap();
+}
+
+fn fabric_mod_bytes(id: &str, version: &str) -> Vec<u8> {
+    fabric_mod_bytes_with_depends(id, version, json!({}))
+}
+
+fn fabric_mod_bytes_with_depends(id: &str, version: &str, depends: serde_json::Value) -> Vec<u8> {
+    let temporary = TempDir::new().unwrap();
+    let path = temporary.path().join("mod.jar");
+    write_fabric_mod_with_depends(&path, id, version, depends);
+    std::fs::read(path).unwrap()
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {
@@ -599,6 +614,7 @@ async fn preflight_detects_an_installed_dependency_and_skips_it() {
         &graph_client(base.clone()),
         &request,
         &installed,
+        None,
         &CancellationToken::new(),
     )
     .await
@@ -615,6 +631,78 @@ async fn preflight_detects_an_installed_dependency_and_skips_it() {
     ));
     assert!(preflight.skip_version_ids.iter().any(|id| id == "dep-v"));
     assert_eq!(preflight.optional_count, 1);
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_uses_remote_metadata_ranges_to_skip_a_newer_installed_dependency() {
+    let primary =
+        fabric_mod_bytes_with_depends("primary-mod", "1.0", json!({"dependency-mod": ">=0.5.0"}));
+    let dependency = b"dependency mod".to_vec();
+    let project_dependency = b"project dependency".to_vec();
+    let (base, server) = graph_server(primary.clone(), dependency, project_dependency).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write_fabric_mod(
+        &instance.mods_dir().join("dependency-mod.jar"),
+        "dependency-mod",
+        "2.0",
+    );
+    let installed = scan_installed_mods(&instance);
+    let cache = ModMetadataCache::new(
+        DownloadConfig::default(),
+        temporary.path().join("metadata-cache"),
+    )
+    .unwrap();
+    let request = graph_request(instance, &base, &primary);
+
+    let preflight = preflight_content_install(
+        &graph_client(base.clone()),
+        &request,
+        &installed,
+        Some(&cache),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    let dependency = preflight
+        .dependencies
+        .iter()
+        .find(|item| item.version_id == "dep-v")
+        .unwrap();
+    assert!(matches!(
+        dependency.status,
+        rmcl_app::ContentPreflightStatus::AlreadyInstalled { enabled: true }
+    ));
+    assert!(preflight.skip_version_ids.iter().any(|id| id == "dep-v"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn metadata_cache_fetches_and_parses_a_remote_jar_once() {
+    let bytes = fabric_mod_bytes("sodium", "0.6.0");
+    let (base, server) = mod_server(bytes.clone()).await;
+    let cache_dir = TempDir::new().unwrap();
+    let cache = ModMetadataCache::new(DownloadConfig::default(), cache_dir.path()).unwrap();
+    let file = RemoteFile {
+        filename: "remote.jar".to_owned(),
+        url: base.join("mod.jar").unwrap(),
+        size: Some(bytes.len() as u64),
+        sha1: Some(sha1(&bytes)),
+        primary: true,
+    };
+
+    let first = cache.fetch(&file, &CancellationToken::new()).await.unwrap();
+    assert_eq!(first.metadata.unwrap()[0].id, "sodium");
+    assert!(
+        std::fs::read_dir(cache_dir.path())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().ends_with(".jar"))
+    );
+    let second = cache.fetch(&file, &CancellationToken::new()).await.unwrap();
+    assert_eq!(second.metadata.unwrap()[0].id, "sodium");
     server.abort();
 }
 

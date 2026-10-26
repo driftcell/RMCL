@@ -19,7 +19,7 @@
 | macOS / Linux | `$XDG_CONFIG_HOME/rmcl/config.toml`；未设置时使用 `~/.config/rmcl/config.toml` |
 | Windows | `%APPDATA%\rmcl\config.toml` |
 
-`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像缓存位于同目录的 `cache/skins/`，服务器图标缓存位于 `cache/servers/`。
+`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像缓存位于同目录的 `cache/skins/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`。
 
 ## Schema 3
 

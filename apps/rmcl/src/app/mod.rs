@@ -4619,6 +4619,7 @@ impl LauncherApp {
         self.content_browser.preflighting = true;
         cx.notify();
         let client = self.services.modrinth.clone();
+        let metadata_cache = self.services.mod_metadata.clone();
         let runtime = self.services.runtime.handle().clone();
         let task_request = request.clone();
         let dialog_request = request.clone();
@@ -4635,6 +4636,7 @@ impl LauncherApp {
                         &client,
                         &task_request,
                         &installed,
+                        Some(&metadata_cache),
                         &CancellationToken::new(),
                     )
                     .await
