@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RMCL — 纯粹顺手的 Minecraft 启动器</title>
+    <meta
+      name="description"
+      content="RMCL 是一款轻快、干净的 Minecraft: Java Edition 启动器。支持自动配齐 Java、实例独立隔离、Modrinth 在线模组下载与一键进服。"
+    />
+    <link rel="icon" type="image/svg+xml" href="./public/rmcl.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <!-- Fixed 3D WebGL Stage -->
+    <div id="webgl-stage" class="webgl-stage" aria-hidden="true"></div>
+
+    <!-- Real-time 3D -> 2D Projected Spatial Callout Overlay -->
+    <div class="hud-overlay" aria-hidden="true">
+      <svg id="hud-svg" class="hud-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="hud-labels" class="hud-labels"></div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="site-bar">
+      <a href="#chapter-monolith" class="brand-cluster" aria-label="RMCL 回到顶部">
+        <img src="./public/rmcl.svg" alt="" class="brand-icon" width="26" height="26" />
+        <span class="brand-name">RMCL</span>
+        <span class="brand-version">v0.4.2</span>
+      </a>
+
+      <nav id="top-stage-nav" class="top-stage-nav" aria-label="章节导航"></nav>
+
+      <div class="bar-actions">
+        <!-- Consolidated Appearance Dropdown -->
+        <div id="appearance-dropdown" class="appearance-dropdown">
+          <button
+            type="button"
+            id="appearance-trigger"
+            class="appearance-trigger"
+            aria-expanded="false"
+            aria-haspopup="true"
+          >
+            <span id="appearance-trigger-dot" class="swatch-dot"></span>
+            <span id="appearance-trigger-label">翡翠 · 浅色</span>
+            <svg class="chevron-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path
+                d="M2.5 4.5L6 8L9.5 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="square"
+              />
+            </svg>
+          </button>
+
+          <div id="appearance-popover" class="appearance-popover" hidden>
+            <div class="popover-section">
+              <span class="popover-label">外观模式</span>
+              <div class="mode-switch-group">
+                <button
+                  type="button"
+                  class="mode-option-btn"
+                  data-mode="light"
+                  data-active="true"
+                >
+                  浅色
+                </button>
+                <button
+                  type="button"
+                  class="mode-option-btn"
+                  data-mode="dark"
+                  data-active="false"
+                >
+                  深色
+                </button>
+              </div>
+            </div>
+            <div class="popover-section">
+              <span class="popover-label">强调色</span>
+              <div id="accent-swatches" class="accent-swatches-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <a
+          class="bar-repo-link"
+          href="https://github.com/driftcell/RMCL/releases"
+          target="_blank"
+          rel="noreferrer"
+        >
+          下载
+        </a>
+      </div>
+    </header>
+
+    <!-- Bottom-Right Compact 3D Feature Tip -->
+    <aside id="voxel-inspector" class="voxel-inspector" aria-label="3D 方块功能说明">
+      <div class="inspector-top">
+        <span id="inspector-layer" class="inspector-layer">启动与加载器</span>
+        <span id="inspector-crate" class="inspector-crate">一键启动游戏</span>
+      </div>
+      <p id="inspector-role" class="inspector-role">
+        选好实例直接进入世界，游戏运行后启动器可自动最小化待命。
+      </p>
+      <span id="inspector-hint" class="inspector-hint">悬停 3D 方块查看亮点</span>
+    </aside>
+
+    <!-- Scroll-Driven Narrative Track -->
+    <main id="scroll-track" class="scroll-track"></main>
+
+    <!-- Lightbox Modal for Screenshot Inspection -->
+    <div id="shot-lightbox" class="shot-lightbox" hidden>
+      <div class="lightbox-inner">
+        <img id="lightbox-img" src="" alt="" class="lightbox-img" />
+        <div class="lightbox-bar">
+          <span id="lightbox-caption" class="lightbox-caption"></span>
+          <button type="button" id="lightbox-close" class="lightbox-close">关闭预览</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Minimal Footer -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-left">
+          <span class="footer-brand">RMCL</span>
+          <span class="footer-copy">Minecraft: Java Edition 原生启动器 · 免费开源 (MIT)</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/driftcell/RMCL/releases" target="_blank" rel="noreferrer">
+            下载安装包
+          </a>
+          <a href="https://github.com/driftcell/RMCL" target="_blank" rel="noreferrer">
+            GitHub 主页
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
