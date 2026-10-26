@@ -241,11 +241,6 @@ impl LauncherApp {
                                 .child(format!("账户：{}", account.as_deref().unwrap_or("未选择"))),
                         ),
                     )
-                    .child(warning_banner(
-                        "第三方服务器",
-                        "内容与可用性由运营方决定；公共服务器通常要求正版账号。",
-                        cx,
-                    ))
                     .when(account.is_none(), |this| {
                         this.child(warning_banner(
                             "尚未添加账户",
