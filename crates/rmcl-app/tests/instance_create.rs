@@ -1,6 +1,6 @@
 #[cfg(unix)]
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use axum::{Json, Router, routing::get};
 use rmcl_app::{
@@ -223,6 +223,10 @@ async fn copies_existing_instance_content_when_creating_loader_instance() {
     let mut source_manifest = InstanceManifest::new(&source_id, IsolationMode::Isolated);
     source_manifest.name = "Source".to_owned();
     source_manifest.minecraft_version = "1.21.1".to_owned();
+    source_manifest.java = Some(PathBuf::from("/opt/java/bin/java"));
+    source_manifest.max_memory_mb = Some(4096);
+    source_manifest.window_width = Some(1280);
+    source_manifest.window_height = Some(720);
     source.write_manifest(&source_manifest).unwrap();
     write(&source.mods_dir().join("example.jar"), b"mod");
     write(&source.game_dir().join("options.txt"), b"options");
@@ -289,6 +293,13 @@ async fn copies_existing_instance_content_when_creating_loader_instance() {
         Some(LoaderKind::Fabric)
     );
     assert_eq!(target_manifest.name, "Test Instance");
+    assert_eq!(
+        target_manifest.java.as_deref(),
+        Some(Path::new("/opt/java/bin/java"))
+    );
+    assert_eq!(target_manifest.max_memory_mb, Some(4096));
+    assert_eq!(target_manifest.window_width, Some(1280));
+    assert_eq!(target_manifest.window_height, Some(720));
 
     assert_eq!(
         std::fs::read(source.mods_dir().join("example.jar")).unwrap(),

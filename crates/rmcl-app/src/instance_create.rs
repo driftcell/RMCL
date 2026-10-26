@@ -171,7 +171,7 @@ impl InstanceCreator {
                     "base version `{base_id}` is not a full Vanilla profile"
                 )));
             }
-            Some(source)
+            Some((source, source_manifest))
         } else {
             None
         };
@@ -293,13 +293,19 @@ impl InstanceCreator {
             kind: loader.kind,
             version: loader.version.clone(),
         });
+        if let Some((_, source_manifest)) = &copy_source {
+            manifest.java = source_manifest.java.clone();
+            manifest.max_memory_mb = source_manifest.max_memory_mb;
+            manifest.window_width = source_manifest.window_width;
+            manifest.window_height = source_manifest.window_height;
+        }
         instance.ensure_content_dirs()?;
         if let Err(error) = instance.write_manifest(&manifest) {
             let _ = std::fs::remove_file(&version_json_path);
             return Err(error.into());
         }
 
-        if let Some(source) = copy_source {
+        if let Some((source, _)) = copy_source {
             emit_phase(&events, InstanceCreatePhase::CopyingContent).await;
             let source_game_dir = source.game_dir();
             let target_game_dir = instance.game_dir();

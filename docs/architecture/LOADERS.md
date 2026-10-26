@@ -105,7 +105,7 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 1. 读取源实例 manifest，要求 manifest 完整、没有加载器，并用 manifest 的 `minecraft_version` 作为基础版本。
 2. 校验基础版本 JSON 是完整 Vanilla profile，且 id 与基础版本一致；拒绝以加载器或其他子 profile 作为基础。
 3. 按加载器版本生成新的实例 ID 和显示名称，安装加载器并创建隔离实例。
-4. 将源实例游戏目录中的内容复制到新实例。隔离实例复制除版本 JSON/JAR、natives、日志、崩溃报告、下载缓存和 manifest 之外的顶层内容；共享实例复制 `mods/`、资源包、光影、存档、`config/` 等常用内容以及 `options.txt`、`servers.dat`。
+4. 将源实例游戏目录中的内容复制到新实例。隔离实例复制除版本 JSON/JAR、natives、日志、崩溃报告、下载缓存和 manifest 之外的顶层内容；共享实例复制 `mods/`、资源包、光影、存档、`config/` 等常用内容以及 `options.txt`、`servers.dat`。源实例的 Java、最大内存和窗口设置也会写入新 manifest。
 5. 源实例保持不变；复制失败时删除刚创建的目标实例。
 
 该流程不会升级、更换或移除已有加载器，也不修改基础版本实例本身。
