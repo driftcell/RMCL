@@ -1,11 +1,12 @@
 use gpui_kit::{
     assets::IconName,
     component::{
-        ActiveTheme, Disableable, Sizable,
+        ActiveTheme, Disableable, Sizable, Size,
         button::{Button, ButtonVariants},
         h_flex,
         scroll::ScrollableElement,
         select::Select,
+        spinner::Spinner,
         switch::Switch,
         tag::Tag,
         v_flex,
@@ -15,13 +16,14 @@ use gpui_kit::{
 };
 
 use super::super::{LauncherApp, Page};
-use super::common::{card, field_label, mono, page_header, section_title};
+use super::common::{card, field_label, format_size, mono, page_header, section_title};
 
 impl LauncherApp {
     pub fn render_settings(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content_width = (window.viewport_size().width - px(232.) - px(48.)).max(px(560.));
         let row_width = (content_width - px(40.)).max(px(400.));
         let auto_java_view = cx.entity().downgrade();
+        let auto_update_view = cx.entity().downgrade();
         v_flex()
             .w_full()
             .items_stretch()
@@ -216,6 +218,135 @@ impl LauncherApp {
                                         ),
                                     ),
                             ),
+                    )
+                    .child(
+                        card(cx)
+                            .child(section_title(
+                                "更新",
+                                "默认从 GitHub Release 检查；下载后校验 SHA-256 并自动重启。",
+                                cx,
+                            ))
+                            .child(
+                                h_flex()
+                                    .w(row_width)
+                                    .gap_4()
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("当前版本"))
+                                            .child(mono(
+                                                format!("RMCL {}", env!("CARGO_PKG_VERSION")),
+                                                cx,
+                                            )),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("启动时检查更新"))
+                                            .child(mono("自动检查发现新版本后提示。", cx)),
+                                    )
+                                    .child(
+                                        Switch::new("settings-auto-update")
+                                            .flex_shrink_0()
+                                            .checked(self.config.auto_check_updates)
+                                            .on_change(move |value, window, cx| {
+                                                let _ = auto_update_view.clone().update(
+                                                    cx,
+                                                    |this, cx| {
+                                                        this.set_auto_check_updates(
+                                                            *value, window, cx,
+                                                        )
+                                                    },
+                                                );
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("settings-check-update")
+                                            .outline()
+                                            .icon(IconName::RefreshCw)
+                                            .label("检查更新")
+                                            .disabled(
+                                                self.update.checking || self.update.downloading,
+                                            )
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.check_for_updates(true, window, cx)
+                                            })),
+                                    )
+                                    .when_some(self.update.available.clone(), |this, release| {
+                                        this.child(
+                                            Button::new("settings-install-update")
+                                                .primary()
+                                                .icon(IconName::Download)
+                                                .label(format!("更新到 v{}", release.version))
+                                                .disabled(
+                                                    self.update.downloading
+                                                        || !super::super::updates_installable(),
+                                                )
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.open_update_dialog(window, cx)
+                                                })),
+                                        )
+                                    })
+                                    .when_some(self.update.available.as_ref(), |this, release| {
+                                        this.child(
+                                            Button::new("settings-update-notes")
+                                                .ghost()
+                                                .small()
+                                                .icon(IconName::ExternalLink)
+                                                .label("发布说明")
+                                                .on_click({
+                                                    let url = release.page_url.to_string();
+                                                    move |_, _, cx| cx.open_url(&url)
+                                                }),
+                                        )
+                                    })
+                                    .when(self.update.checking, |this| {
+                                        this.child(
+                                            h_flex()
+                                                .gap_2()
+                                                .child(
+                                                    Spinner::new()
+                                                        .with_size(Size::XSmall)
+                                                        .color(cx.theme().primary),
+                                                )
+                                                .child(mono("正在检查更新…", cx)),
+                                        )
+                                    }),
+                            )
+                            .when_some(self.update.progress, |this, progress| {
+                                let label = match progress.total {
+                                    Some(total) if total > 0 => format!(
+                                        "下载中 {:.0}% · {} / {}",
+                                        progress.downloaded as f64 / total as f64 * 100.0,
+                                        format_size(progress.downloaded),
+                                        format_size(total)
+                                    ),
+                                    _ => format!("下载中 · {}", format_size(progress.downloaded)),
+                                };
+                                this.child(mono(label, cx))
+                            })
+                            .when_some(self.update.status.clone(), |this, status| {
+                                this.child(mono(status, cx))
+                            })
+                            .when_some(self.update.error.clone(), |this, error| {
+                                this.child(
+                                    div().text_sm().text_color(cx.theme().danger).child(error),
+                                )
+                            })
+                            .when(!super::super::updates_installable(), |this| {
+                                this.child(mono(
+                                    "开发构建禁用手动安装；设置 RMCL_ALLOW_DEV_UPDATE=1 可测试。",
+                                    cx,
+                                ))
+                            }),
                     )
                     .child(
                         card(cx)

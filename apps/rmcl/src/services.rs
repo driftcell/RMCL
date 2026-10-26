@@ -7,8 +7,8 @@ use std::{
 use rmcl_app::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
     LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
-    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, TaskManager, VanillaInstaller,
-    VersionCatalog,
+    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, TaskManager, UpdateClient,
+    VanillaInstaller, VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -35,6 +35,7 @@ pub struct Services {
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
     pub mod_metadata: ModMetadataCache,
+    pub updates: UpdateClient,
 }
 
 impl Services {
@@ -90,6 +91,8 @@ impl Services {
             .join("mod-metadata");
         let mod_metadata =
             ModMetadataCache::new(DownloadConfig::default(), mod_metadata_cache_dir)?;
+        let updates =
+            UpdateClient::github().map_err(|error| AppError::Update(error.to_string()))?;
         Ok(Rc::new(Self {
             runtime,
             tasks,
@@ -104,6 +107,7 @@ impl Services {
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
             mod_metadata,
+            updates,
         }))
     }
 }

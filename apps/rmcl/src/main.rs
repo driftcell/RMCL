@@ -11,6 +11,12 @@ use gpui_kit::*;
 use services::{Bootstrap, Services};
 
 fn main() {
+    if let Some(result) = rmcl_app::apply_update_from_args() {
+        if let Err(error) = result {
+            eprintln!("failed to apply RMCL update: {error}");
+        }
+        return;
+    }
     let bootstrap = match Bootstrap::from_args() {
         Ok(Some(bootstrap)) => bootstrap,
         Ok(None) => {

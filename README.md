@@ -30,6 +30,7 @@ RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit �
 - Java 自动获取、探测和选择，支持按实例指定 Java 可执行文件、最大内存和窗口尺寸
 - 安装与游戏日志、任务进度、取消和异常退出提示
 - 明暗主题与五种强调色，单任务互斥，启动器可见性设置
+- GitHub Release 自动更新：启动时检查、SHA-256 校验、平台包替换和重启
 
 ## 下载
 
@@ -80,6 +81,7 @@ cargo test --workspace --doc --locked
 - [里程碑](docs/product/MILESTONES.md)
 - [架构边界](docs/architecture/WORKSPACE.md)
 - [服务器列表](docs/architecture/SERVERS.md)
+- [自动更新](docs/architecture/UPDATES.md)
 - [桌面界面](docs/architecture/USER_INTERFACE.md)
 - [正版账号与皮肤](docs/architecture/AUTHENTICATION.md)
 - [开发约定](AGENTS.md)

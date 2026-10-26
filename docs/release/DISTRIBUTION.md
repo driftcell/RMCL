@@ -69,6 +69,18 @@ RMCL 使用 GitHub Actions 构建并分发各平台原生二进制。首批目�
 - 所有构建成功后，发布 job 下载四个 artifact，生成 `SHA256SUMS`，先创建草稿 Release，上传全部资产后再取消草稿。任一平台失败时不会发布半成品。
 - Release 资产保留 GitHub 自动生成的源码归档；构建 artifact 保留 7 天。
 - 工作流只使用内置 `GITHUB_TOKEN`，发布 job 才申请 `contents: write`；不需要额外 secrets。
+- `SHA256SUMS` 同时供手动下载校验和 RMCL 自动更新使用；缺少该资产的 Release 不会被自动更新接受。
+
+## 自动更新
+
+RMCL 默认从本仓库 GitHub Release 检查正式版更新；详细行为和平台替换流程见 [自动更新](../architecture/UPDATES.md)。
+
+- 更新包使用完整发布包，不做增量更新。
+- macOS 替换整个 `RMCL.app`，Windows 替换 `rmcl.exe`，Linux 替换 `rmcl` 二进制。
+- 更新 helper 使用当前可执行文件的临时副本，等待主进程退出后替换并重启；不使用独立安装器。
+- 下载必须通过 `SHA256SUMS` 校验；当前没有额外 minisign/TUF 签名。
+- 便携包可以直接替换；系统包管理器、Windows `Program Files` 和需要提权的安装位置不在自动更新承诺内。
+- 未配置 Developer ID 时 macOS 仍是 ad-hoc 签名；自动更新不会绕过 Gatekeeper 或系统权限。
 
 macOS 默认使用 ad-hoc 签名，未做 Developer ID 签名和公证时，从浏览器下载的 `.app` 会被 Gatekeeper 隔离。临时打开方式：
 

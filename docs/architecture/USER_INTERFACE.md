@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、服务器收藏与一键进服、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
+状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、服务器收藏与一键进服、GitHub Release 自动更新、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
 日期：2026-10-26
 
@@ -109,6 +109,7 @@
 - **游戏**：Minecraft 目录使用原生目录选择器，Java 目录、自动获取 Java。目录修改后立即重新扫描版本，不移动现有文件；Java 目录和自动获取设置重启后生效。
 - **启动行为**：启动器可见性。默认保持显示；选择“游戏运行时隐藏”后，游戏进入 `RunningGame` 阶段时最小化启动器，任务退出、失败或取消时恢复。
 - **外观**：跟随系统 / 浅色 / 深色，以及翡翠、海蓝、紫罗兰、琥珀、玫瑰五种强调色。修改立即应用并保存。
+- **更新**：当前版本、启动时检查、手动检查、发布说明、下载进度和错误。默认从 GitHub Release 检查，下载后校验 SHA-256，退出并重启完成替换。
 - **关于**：版本、配置路径、运行平台和 GPUI Kit 文档链接。
 
 ## 账户
@@ -131,7 +132,7 @@
 - macOS / Linux：`~/.config/rmcl/config.toml`，`XDG_CONFIG_HOME` 存在时优先使用它。
 - Windows：`%APPDATA%\rmcl\config.toml`。
 
-配置使用 TOML、schema 版本 2（可读取 schema 1 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
+配置使用 TOML、schema 版本 4（可读取 schema 1/2/3 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
 
 Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。RMCL 不读取或改写 HMCL 配置。
 
@@ -169,16 +170,17 @@ Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元
 
 ## 当前不包含
 
-authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实例追加/升级/移除加载器、实例级任意启动参数、实例复制与导入导出、CurseForge、内容更新检查、整合包、Java runtime 列表与自动下载管理界面、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
+authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实例追加/升级/移除加载器、实例级任意启动参数、实例复制与导入导出、CurseForge、内容更新检查、整合包、Java runtime 列表与自动下载管理界面、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新签名与增量更新、安装包。
 
 ## 验证
 
 - `apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入、有界缓冲和终态通知去重。
-- `rmcl-store` 覆盖 TOML 往返、schema 1 升级、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
+- `rmcl-store` 覆盖 TOML 往返、schema 1/2/3 升级、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
 - `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Mod 元数据覆盖 Fabric/Quilt/Forge 解析、依赖/冲突、缺失元数据和重复 ID；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖/项目解析、API 错误和取消，并验证只有 Mod 的版本查询会按实例加载器过滤。
 - `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态；`apps/rmcl/src/state.rs` 验证内容安装任务运行期间禁止本地内容操作。
 - `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、Quick Play/legacy 参数和版本边界；真实窗口中的服务器页仍需逐平台验收。
+- `rmcl-app` 覆盖 GitHub Release 检查、SHA256SUMS、平台资产选择、下载校验、ZIP 解压和文件替换；真实自动更新仍需在发布包上逐平台验收。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。

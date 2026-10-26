@@ -33,9 +33,9 @@
 
 具体游戏版本、Java 发行版和真实测试矩阵在 [未决问题](../../notes/bootstrap/open_questions.md) 中确定后补入本文。
 
-### 当前进度（2026-10-25）
+### 当前进度（2026-10-26）
 
-已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/正式版推荐/本地与远程 Mod 元数据索引/版本范围匹配/安装前置预检/必需依赖解析/内容安装任务、服务器收藏与 Java Edition Server List Ping（MOTD、在线人数、延迟、图标和 60 秒自动刷新）、Quick Play/legacy 一键进服、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java/最大内存/窗口尺寸选择和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge 已在 macOS ARM64 通过真实 installer 和启动到 ModLauncher 初始化的自动化 smoke。authlib-injector、legacy Forge、主菜单/世界加载验收、Java runtime 列表管理界面、实例级任意启动参数、Windows/Linux 真实运行验收、服务器 SRV/Bedrock、真实一键进服验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、可选依赖/冲突求解、更新检查和整合包属于后续里程碑。
+已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除与官方皮肤头像）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装与自定义实例创建、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/正式版推荐/本地与远程 Mod 元数据索引/版本范围匹配/安装前置预检/必需依赖解析/内容安装任务、服务器收藏与 Java Edition Server List Ping（MOTD、在线人数、延迟、图标和 60 秒自动刷新）、Quick Play/legacy 一键进服、GitHub Release 自动更新（检查、SHA-256、平台包替换、helper 重启）、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java/最大内存/窗口尺寸选择和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge 已在 macOS ARM64 通过真实 installer 和启动到 ModLauncher 初始化的自动化 smoke。authlib-injector、legacy Forge、主菜单/世界加载验收、Java runtime 列表管理界面、实例级任意启动参数、Windows/Linux 真实运行验收、服务器 SRV/Bedrock、真实一键进服验收、真实自动更新/重启验收，以及游戏运行时最小化/恢复的完整真实启动验证仍待完成。CurseForge、可选依赖/冲突求解、更新检查和整合包属于后续里程碑。
 
 ## 后续顺序
 
@@ -44,7 +44,7 @@
 1. **M2：账号与主流加载器**：Microsoft、authlib-injector、Fabric、Quilt、Forge、NeoForge。Microsoft、Fabric、Quilt、Forge 和 NeoForge 的现代 installer 已完成；authlib-injector 与 legacy Forge 待完成。
 2. **M3：旧版兼容与更多组件**：旧 Forge、OptiFine、LiteLoader、Cleanroom、Legacy Fabric 等。
 3. **M4：内容与整合包**：Mod、资源包、整合包检索、下载、导入与导出。
-4. **M5：完整产品化**：剩余 HMCL 功能、HMCL 配置导入、完整主题与国际化、自动更新、签名和安装包。
+4. **M5：完整产品化**：剩余 HMCL 功能、HMCL 配置导入、完整主题与国际化、自动更新签名/增量更新、安装包。
 5. **持续对齐**：根据功能台账补充差异测试，并逐平台验收。
 
 如实现中发现依赖顺序不合理，可以调整后续阶段，但必须在 notes 记录原因并同步更新本文。

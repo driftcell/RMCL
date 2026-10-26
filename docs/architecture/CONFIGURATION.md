@@ -1,6 +1,6 @@
 # 启动器配置
 
-状态：schema 3 已实现；schema 1/2 可读取并在内存中升级
+状态：schema 4 已实现；schema 1/2/3 可读取并在内存中升级
 
 日期：2026-10-26
 
@@ -19,18 +19,19 @@
 | macOS / Linux | `$XDG_CONFIG_HOME/rmcl/config.toml`；未设置时使用 `~/.config/rmcl/config.toml` |
 | Windows | `%APPDATA%\rmcl\config.toml` |
 
-`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像缓存位于同目录的 `cache/skins/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`。
+`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像缓存位于同目录的 `cache/skins/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
-## Schema 3
+## Schema 4
 
 ```toml
-schema_version = 3
+schema_version = 4
 minecraft_root = "/Users/example/.minecraft"
 java_store = "/Users/example/.rmcl/java"
 selected_version = "1.21.1"
 selected_account = "Podwarden"
 selected_account_kind = "microsoft"
 auto_install_java = true
+auto_check_updates = true
 launcher_visibility = "keep_visible"
 
 [[accounts]]
@@ -63,11 +64,12 @@ accent = "emerald"
 - `microsoft_accounts`：正版账户的玩家名、Minecraft profile UUID 和可选的官方皮肤 URL；不保存 refresh token 或 access token。
 - `servers`：启动器级服务器收藏，包含稳定 `id`、显示名称和原始 `host[:port]` 地址。不保存状态、延迟、图标或账号令牌；不绑定实例，进服时使用当前选中实例和账户。
 - `auto_install_java`：缺少兼容 Java 时是否允许下载 Mojang runtime。当前在启动时读取。
+- `auto_check_updates`：启动后是否自动检查 GitHub Release；默认开启。手动检查不受该字段影响。
 - `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时最小化启动器，任务终态恢复。
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
-缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1、2 或 3；0 或更高版本会被拒绝。读取 schema 1/2 时补齐 `selected_account_kind`、`microsoft_accounts` 和空 `servers`，内存中的版本升级为 3，下一次用户修改设置时写回。
+缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1、2、3 或 4；0 或更高版本会被拒绝。读取 schema 1/2/3 时补齐 `selected_account_kind`、`microsoft_accounts`、空 `servers` 和 `auto_check_updates`，内存中的版本升级为 4，下一次用户修改设置时写回。
 
 正版令牌不在 `config.toml` 中，而是通过 `rmcl-platform` 保存到系统凭据存储：
 
@@ -111,6 +113,12 @@ Schema 2 → 3 已在读取时实现：
 - 其余字段原样保留。
 - 内存中的版本升级为 3；只有用户主动修改设置时才写回文件。
 
+Schema 3 → 4 已在读取时实现：
+
+- `auto_check_updates` 默认为 `true`。
+- 其余字段原样保留。
+- 内存中的版本升级为 4；只有用户主动修改设置时才写回文件。
+
 后续升级 schema 时必须：
 
 - 明确旧版本到新版本的字段映射和默认值。
@@ -124,9 +132,10 @@ Schema 2 → 3 已在读取时实现：
 
 - 默认路径不指向 HMCL 配置。
 - 缺失文件返回默认值。
-- TOML 往返保留离线账户、正版账户、皮肤 URL、选中账户类型、服务器收藏、外观和启动器可见性。
+- TOML 往返保留离线账户、正版账户、皮肤 URL、选中账户类型、服务器收藏、自动更新设置、外观和启动器可见性。
 - Schema 1 文件升级后保留离线账户并补上默认字段。
 - Schema 2 文件升级后补上空服务器列表。
+- Schema 3 文件升级后补上默认开启的自动更新检查。
 - 损坏 TOML 和更高 schema 不被重写。
 - 覆盖保存后内容可重新读取。
 

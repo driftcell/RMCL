@@ -15,6 +15,7 @@ mod model;
 mod servers;
 mod skins;
 mod task;
+mod update;
 mod versions;
 
 pub use accounts::{
@@ -69,5 +70,9 @@ pub use skins::{SkinCache, SkinError};
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
     TaskSubject,
+};
+pub use update::{
+    UpdateAsset, UpdateClient, UpdateError, UpdatePackage, UpdatePlan, UpdateProgress,
+    UpdateRelease, apply_update_from_args, spawn_apply_helper,
 };
 pub use versions::{InstalledVersion, delete_installed_version, discover_installed_versions};

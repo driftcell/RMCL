@@ -12,7 +12,7 @@
 
 ## 配置
 
-`rmcl-store` schema 3 新增：
+`rmcl-store` schema 3 新增服务器收藏（当前 schema 4 继续保留）：
 
 ```toml
 [[servers]]
@@ -26,7 +26,7 @@ address = "play.example.com:25565"
 - `address` 保留原始 `host[:port]` 字符串。单条地址无效不会阻止整个配置读取；界面在加载后解析并显示“地址无效”。
 - 状态、MOTD、在线人数、延迟和图标路径都是瞬态数据，不写入配置。
 
-读取 schema 1/2 时在内存中升级到 3，`servers` 默认空；更高 schema 继续拒绝，避免旧版本静默丢弃新字段。图标缓存位于配置文件同目录的 `cache/servers/`，文件名为 PNG 内容的 SHA-1。
+读取 schema 1/2/3 时在内存中升级到 4，`servers` 默认空；更高 schema 继续拒绝，避免旧版本静默丢弃新字段。图标缓存位于配置文件同目录的 `cache/servers/`，文件名为 PNG 内容的 SHA-1。
 
 ## 地址解析
 
@@ -103,5 +103,5 @@ Sidebar“游戏”组新增“服务器”页：
 - 2026-10-26 在 macOS ARM64 使用 `RMCL_TEST_SERVER=mc.hypixel.net` 运行真实 Server List Ping，连接与状态解析成功；该 smoke 只验证协议，不验证进服。
 - `rmcl-launch` 覆盖 Quick Play/legacy 参数、1.20/23w14a 边界、预发布版、快照、显式端口和 IPv6。
 - `rmcl-app` 假 JVM 集成测试验证服务器目标进入真实进程参数。
-- `rmcl-store` 覆盖 schema 2 → 3 升级、服务器列表往返和无效地址仍可读取。
+- `rmcl-store` 覆盖 schema 2/3 升级、服务器列表往返和无效地址仍可读取。
 - 真实窗口中的添加/编辑/删除、图标显示、自动刷新和 1.20+/旧版实际进服仍需在 macOS、Windows、Linux 逐平台验收。

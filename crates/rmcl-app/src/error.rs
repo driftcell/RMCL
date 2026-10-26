@@ -97,6 +97,8 @@ pub enum AppError {
     ContentDependency { message: String },
     #[error("content metadata error: {0}")]
     ContentMetadata(String),
+    #[error("update initialization failed: {0}")]
+    Update(String),
     #[error("loader metadata request failed: {message}")]
     LoaderMetadata { message: String },
     #[error("invalid loader metadata: {message}")]

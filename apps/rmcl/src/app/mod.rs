@@ -30,12 +30,13 @@ use rmcl_app::{
     LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
     RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount,
     ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient, TaskEvent, TaskKind,
-    TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest,
-    VersionManifest, VersionSource, VersionSummary, delete_installed_version,
-    delete_instance_content, discover_installed_versions, import_instance_content,
-    migrate_instance_to_isolated, preflight_content_install, recommended_version, rename_instance,
-    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
-    set_instance_launch_settings,
+    TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress,
+    UpdateRelease, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
+    delete_installed_version, delete_instance_content, discover_installed_versions,
+    import_instance_content, migrate_instance_to_isolated, preflight_content_install,
+    recommended_version, rename_instance, scan_installed_mods, scan_instance_content,
+    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
+    spawn_apply_helper,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
@@ -45,6 +46,7 @@ use rmcl_store::{
     StoredServer, ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -157,6 +159,16 @@ struct ServerStatusView {
     status: Option<ServerStatus>,
     error: Option<String>,
     icon_path: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct UpdateState {
+    checking: bool,
+    downloading: bool,
+    available: Option<UpdateRelease>,
+    progress: Option<UpdateProgress>,
+    status: Option<String>,
+    error: Option<String>,
 }
 
 impl ContentTab {
@@ -335,6 +347,9 @@ pub struct LauncherApp {
     server_address_input: Entity<InputState>,
     _server_task: Option<Task<()>>,
     _server_auto_task: Option<Task<()>>,
+    update: UpdateState,
+    _update_task: Option<Task<()>>,
+    _update_poll_task: Option<Task<()>>,
     create_base_input: Entity<InputState>,
     create_name_input: Entity<InputState>,
     create_id_input: Entity<InputState>,
@@ -684,6 +699,9 @@ impl LauncherApp {
             server_address_input,
             _server_task: None,
             _server_auto_task: None,
+            update: UpdateState::default(),
+            _update_task: None,
+            _update_poll_task: None,
             create_base_input,
             create_name_input,
             create_id_input,
@@ -748,6 +766,7 @@ impl LauncherApp {
         app.refresh_account_heads(window, cx);
         app.refresh_microsoft_profiles(window, cx);
         app._server_auto_task = Some(app.spawn_server_auto_refresh(window, cx));
+        app._update_poll_task = Some(app.spawn_update_poll(window, cx));
         app
     }
 
@@ -770,6 +789,294 @@ impl LauncherApp {
                 }
             }
         })
+    }
+
+    fn spawn_update_poll(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            loop {
+                let keep_running = this
+                    .update_in(cx, |view, window, cx| {
+                        if view.config.auto_check_updates {
+                            view.check_for_updates(false, window, cx);
+                        }
+                        true
+                    })
+                    .unwrap_or(false);
+                if !keep_running {
+                    break;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_secs(6 * 60 * 60))
+                    .await;
+            }
+        })
+    }
+
+    fn check_for_updates(&mut self, manual: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.update.checking || self.update.downloading {
+            return;
+        }
+        self.update.checking = true;
+        self.update.error = None;
+        if manual {
+            self.update.status = Some("正在检查更新…".to_owned());
+        }
+        cx.notify();
+
+        let client = self.services.updates.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let current = env!("CARGO_PKG_VERSION").to_owned();
+        self._update_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move { client.check(&current, &CancellationToken::new()).await })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.update.checking = false;
+                match result {
+                    Ok(Ok(Some(release))) => {
+                        let version = release.version.clone();
+                        view.update.available = Some(release);
+                        view.update.status = Some(format!("发现新版本 v{version}"));
+                        if !manual {
+                            window.push_notification(
+                                Notification::info(format!(
+                                    "发现新版本 v{version}，可在设置中下载并安装。"
+                                ))
+                                .title("更新"),
+                                cx,
+                            );
+                        }
+                    }
+                    Ok(Ok(None)) => {
+                        view.update.available = None;
+                        if manual {
+                            view.update.status = Some("已是最新版本。".to_owned());
+                        }
+                    }
+                    Ok(Err(error)) => {
+                        if manual {
+                            view.update.error = Some(error.to_string());
+                            view.update.status = None;
+                        }
+                    }
+                    Err(error) => {
+                        if manual {
+                            view.update.error = Some(format!("后台任务失败: {error}"));
+                            view.update.status = None;
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn set_auto_check_updates(
+        &mut self,
+        enabled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.config.auto_check_updates = enabled;
+        self.save_config();
+        if enabled {
+            self.check_for_updates(true, window, cx);
+        }
+        cx.notify();
+    }
+
+    fn open_update_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(release) = self.update.available.clone() else {
+            return;
+        };
+        if !updates_installable() {
+            window.push_notification(
+                Notification::warning("开发构建不执行自动更新；请使用发布包验证更新流程。")
+                    .title("更新"),
+                cx,
+            );
+            return;
+        }
+        let view = cx.entity().downgrade();
+        let dialog_release = release.clone();
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            let save_view = view.clone();
+            let save_release = dialog_release.clone();
+            dialog
+                .title(format!("更新到 RMCL {}", dialog_release.version))
+                .width(px(620.))
+                .child(
+                    v_flex()
+                        .gap_3()
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .child(
+                                    Tag::primary()
+                                        .child(format!("v{}", dialog_release.version))
+                                        .small(),
+                                )
+                                .child(
+                                    Tag::new()
+                                        .outline()
+                                        .child(dialog_release.asset.package.label())
+                                        .small(),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(dialog_release.asset.name.clone()),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .max_h(px(240.))
+                                .overflow_y_scrollbar()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(
+                                    dialog_release
+                                        .notes
+                                        .clone()
+                                        .filter(|notes| !notes.trim().is_empty())
+                                        .unwrap_or_else(|| "该版本没有提供更新说明。".to_owned()),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("下载后会校验 SHA-256，替换当前程序并自动重启。"),
+                        ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogAction::new()
+                                .child(Button::new("confirm-update").primary().label("下载并安装")),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    let Some(view) = save_view.upgrade() else {
+                        return true;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.start_update_download(save_release.clone(), window, cx)
+                    });
+                    true
+                })
+        });
+    }
+
+    fn start_update_download(
+        &mut self,
+        release: UpdateRelease,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.update.downloading || self.update.checking {
+            return;
+        }
+        if !updates_installable() {
+            window.push_notification(
+                Notification::warning("开发构建不执行自动更新；请使用发布包验证更新流程。")
+                    .title("更新"),
+                cx,
+            );
+            return;
+        }
+        if !self.can_start_operation() {
+            window.push_notification(
+                Notification::warning("请等待当前任务结束后再更新启动器。").title("更新"),
+                cx,
+            );
+            return;
+        }
+        let Some(config_dir) = self.services.config_store.path().parent() else {
+            return;
+        };
+        let update_dir = config_dir.join("cache").join("updates");
+        self.update.downloading = true;
+        self.update.progress = Some(UpdateProgress {
+            downloaded: 0,
+            total: release.asset.size,
+        });
+        self.update.status = Some("正在下载更新…".to_owned());
+        self.update.error = None;
+        cx.notify();
+
+        let client = self.services.updates.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let download_dir = update_dir.clone();
+        let log_dir = update_dir;
+        let (progress_sender, mut progress_receiver) = mpsc::unbounded_channel();
+        let (done_sender, mut done_receiver) = mpsc::unbounded_channel();
+        self._update_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let download_client = client.clone();
+            let download_release = release.clone();
+            runtime.spawn(async move {
+                let result = download_client
+                    .download(
+                        &download_release,
+                        &download_dir,
+                        Some(progress_sender),
+                        &CancellationToken::new(),
+                    )
+                    .await;
+                let _ = done_sender.send(result);
+            });
+            loop {
+                tokio::select! {
+                    Some(progress) = progress_receiver.recv() => {
+                        let _ = this.update_in(cx, |view, _, cx| {
+                            view.update.progress = Some(progress);
+                            cx.notify();
+                        });
+                    }
+                    Some(result) = done_receiver.recv() => {
+                        let _ = this.update_in(cx, |view, window, cx| {
+                            view.update.downloading = false;
+                            match result {
+                                Ok(archive) => {
+                                    match UpdatePlan::prepare(&release, &archive, &log_dir) {
+                                        Ok(plan) => match spawn_apply_helper(&plan) {
+                                            Ok(()) => {
+                                                view.update.status =
+                                                    Some("更新已就绪，正在重启…".to_owned());
+                                                window.push_notification(
+                                                    Notification::info("RMCL 将退出并完成更新。")
+                                                        .title("正在更新"),
+                                                    cx,
+                                                );
+                                                cx.quit();
+                                            }
+                                            Err(error) => {
+                                                view.update.error = Some(error.to_string());
+                                                view.update.status = None;
+                                            }
+                                        },
+                                        Err(error) => {
+                                            view.update.error = Some(error.to_string());
+                                            view.update.status = None;
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    view.update.error = Some(error.to_string());
+                                    view.update.status = None;
+                                }
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    else => break,
+                }
+            }
+        }));
     }
 
     fn spawn_event_bridge(
@@ -5313,6 +5620,10 @@ fn preflight_item_row(item: &ContentPreflightItem, cx: &App) -> AnyElement {
                 ),
         )
         .into_any_element()
+}
+
+fn updates_installable() -> bool {
+    !cfg!(debug_assertions) || std::env::var_os("RMCL_ALLOW_DEV_UPDATE").is_some()
 }
 
 fn java_source_label(source: JavaRuntimeSource) -> &'static str {

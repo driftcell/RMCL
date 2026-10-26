@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 4;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +25,7 @@ pub struct LauncherConfig {
     pub microsoft_accounts: Vec<StoredMicrosoftAccount>,
     pub servers: Vec<StoredServer>,
     pub auto_install_java: bool,
+    pub auto_check_updates: bool,
     pub launcher_visibility: LauncherVisibility,
     pub appearance: AppearanceConfig,
 }
@@ -42,6 +43,7 @@ impl Default for LauncherConfig {
             microsoft_accounts: Vec::new(),
             servers: Vec::new(),
             auto_install_java: true,
+            auto_check_updates: true,
             launcher_visibility: LauncherVisibility::default(),
             appearance: AppearanceConfig::default(),
         }
@@ -170,8 +172,9 @@ impl ConfigStore {
             });
         }
         let mut config = config;
-        // Schema 1 predates Microsoft account metadata and schema 3 adds server
-        // bookmarks. Every new field has a safe default.
+        // Schema 1 predates Microsoft account metadata, schema 3 adds server
+        // bookmarks, and schema 4 adds the update check preference. Every new
+        // field has a safe default.
         if config.schema_version < CONFIG_SCHEMA_VERSION {
             config.schema_version = CONFIG_SCHEMA_VERSION;
         }
@@ -333,6 +336,7 @@ mod tests {
             )],
             servers: vec![server("server-1", "生存服", "play.example.com")],
             auto_install_java: false,
+            auto_check_updates: false,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
             ..LauncherConfig::default()
         };
@@ -401,6 +405,28 @@ launcher_visibility = "keep_visible"
 
         assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
         assert!(config.servers.is_empty());
+    }
+
+    #[test]
+    fn schema_three_is_upgraded_with_update_checks_enabled() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 3
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+auto_install_java = true
+launcher_visibility = "keep_visible"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert!(config.auto_check_updates);
     }
 
     #[test]
