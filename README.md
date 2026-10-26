@@ -9,6 +9,11 @@
 </p>
 
 <p align="center">
+  <a href="https://driftcell.github.io/RMCL/">官网</a> ·
+  <a href="https://github.com/driftcell/RMCL/releases">下载</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/driftcell/RMCL/actions/workflows/ci.yml">
     <img src="https://github.com/driftcell/RMCL/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI">
   </a>
