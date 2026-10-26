@@ -1,6 +1,6 @@
 # 桌面界面与 GPUI 桥接
 
-状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、服务器收藏与一键进服、GitHub Release 自动更新、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
+状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、服务器收藏、精选服务器发现与一键进服、GitHub Release 自动更新、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
 日期：2026-10-26
 
@@ -57,12 +57,23 @@
 
 ### 服务器
 
+页面内分为“收藏 / 发现”两个 tab。
+
+“收藏”：
+
 - 侧栏“服务器”页展示全局收藏，使用当前选中实例和账户进服；服务器条目不绑定实例或账户。
 - 顶部显示当前启动目标、手动刷新全部和添加服务器；页面可见时每 60 秒自动刷新状态。
 - 每行显示服务器图标、名称、地址、MOTD、在线/上限人数、版本、连接延迟和在线/离线状态；支持搜索、单行刷新、编辑和删除。
 - 添加/编辑对话框校验 `host[:port]`；删除只移除 RMCL 收藏，不修改游戏内 `servers.dat`。
 - “进入”通过 `--quickPlayMultiplayer`（1.20 / 23w14a+）或 legacy `--server`/`--port` 启动当前实例，仍复用底部任务栏、日志和取消。
 - 没有实例、账户或已有任务时禁用进服并显示原因；状态查询失败在行内展示，不弹全局错误。
+
+“发现”：
+
+- 展示随应用发布的精选服务器清单，显示名称、标签、简介、地址、推荐版本、官网链接和实时状态。
+- 原版条目提供“安装并进入”和“收藏”；需要 Mod/整合包的条目只显示警告和官网链接，不提供自动安装。
+- “安装并进入”会创建隔离 Vanilla 实例，安装完成后自动用当前账户进入服务器；已有同 ID 实例时直接复用。
+- 未选择账户时禁用安装；切换 tab 会刷新对应状态，离开页面会取消请求。
 
 ### 实例详情
 
@@ -179,7 +190,7 @@ authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
 - `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Mod 元数据覆盖 Fabric/Quilt/Forge 解析、依赖/冲突、缺失元数据和重复 ID；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖/项目解析、API 错误和取消，并验证只有 Mod 的版本查询会按实例加载器过滤。
 - `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态；`apps/rmcl/src/state.rs` 验证内容安装任务运行期间禁止本地内容操作。
-- `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、Quick Play/legacy 参数和版本边界；真实窗口中的服务器页仍需逐平台验收。
+- `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、精选清单解析、Quick Play/legacy 参数和版本边界；真实窗口中的收藏/发现页仍需逐平台验收。
 - `rmcl-app` 覆盖 GitHub Release 检查、SHA256SUMS、平台资产选择、下载校验、ZIP 解压和文件替换；真实自动更新仍需在发布包上逐平台验收。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
