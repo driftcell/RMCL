@@ -53,31 +53,19 @@ impl LauncherApp {
             .gap_5()
             .child(page_header(Page::Servers, actions, cx))
             .child(
-                h_flex()
-                    .gap_3()
-                    .items_center()
-                    .child(
-                        TabBar::new("server-tabs")
-                            .segmented()
-                            .selected_index(self.server_tab.index())
-                            .on_click(cx.listener(|this, index: &usize, window, cx| {
-                                this.select_server_tab(ServerTab::from_index(*index), window, cx)
-                            }))
-                            .children(
-                                ServerTab::ALL
-                                    .into_iter()
-                                    .map(|tab| Tab::new().label(tab.label())),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(match self.server_tab {
-                                ServerTab::Favorites => "收藏的服务器",
-                                ServerTab::Discover => "精选的热门服务器",
-                            }),
-                    ),
+                h_flex().gap_3().items_center().child(
+                    TabBar::new("server-tabs")
+                        .segmented()
+                        .selected_index(self.server_tab.index())
+                        .on_click(cx.listener(|this, index: &usize, window, cx| {
+                            this.select_server_tab(ServerTab::from_index(*index), window, cx)
+                        }))
+                        .children(
+                            ServerTab::ALL
+                                .into_iter()
+                                .map(|tab| Tab::new().label(tab.label())),
+                        ),
+                ),
             )
             .child(match self.server_tab {
                 ServerTab::Favorites => self.render_server_favorites(cx).into_any_element(),
@@ -99,9 +87,27 @@ impl LauncherApp {
             .cloned()
             .collect::<Vec<_>>();
         let total = self.config.servers.len();
-        let can_join = self.selected_version().is_some()
-            && self.selected_account().is_some()
-            && self.can_start_operation();
+        let has_version = self.selected_version().is_some();
+        let has_account = self.selected_account().is_some();
+        let can_join = has_version && has_account && self.can_start_operation();
+        let join_tooltip = if !has_version {
+            "请先选择一个实例"
+        } else if !has_account {
+            "请先添加一个账户"
+        } else if !self.can_start_operation() {
+            "当前有任务或游戏正在运行，请先停止"
+        } else {
+            "使用当前实例和账户进入服务器"
+        };
+        let missing_target = match (has_version, has_account) {
+            (false, false) => Some((
+                "尚未选择实例和账户",
+                "请先选择一个实例，并在侧栏账户卡片中添加账户。",
+            )),
+            (false, true) => Some(("尚未选择实例", "请先在主页或实例页选择一个实例。")),
+            (true, false) => Some(("尚未添加账户", "请先在侧栏账户卡片中添加账户。")),
+            (true, true) => None,
+        };
         let instance = self
             .selected_version()
             .map(|version| version.display_name().to_owned())
@@ -113,7 +119,7 @@ impl LauncherApp {
 
         let mut rows = Vec::new();
         for server in &servers {
-            rows.push(self.render_server_row(server, can_join, cx));
+            rows.push(self.render_server_row(server, can_join, join_tooltip, cx));
         }
 
         v_flex()
@@ -122,27 +128,15 @@ impl LauncherApp {
             .gap_5()
             .child(
                 card(cx)
-                    .child(section_title(
-                        "启动目标",
-                        "一键进服使用当前选中的实例和账户；服务器收藏是全局的，不绑定实例。",
-                        cx,
-                    ))
+                    .child(section_title("启动目标", "", cx))
                     .child(
                         h_flex()
                             .gap_2()
                             .child(Tag::info().child(format!("实例：{instance}")))
-                            .child(Tag::secondary().child(format!("账户：{account}")))
-                            .child(Tag::new().outline().child(format!(
-                                "每 {} 秒自动刷新",
-                                super::super::SERVER_REFRESH_INTERVAL.as_secs()
-                            ))),
+                            .child(Tag::secondary().child(format!("账户：{account}"))),
                     )
-                    .when(!can_join, |this| {
-                        this.child(warning_banner(
-                            "一键进服当前不可用",
-                            "请先选择实例和账户，并等待现有任务结束。",
-                            cx,
-                        ))
+                    .when_some(missing_target, |this, (title, message)| {
+                        this.child(warning_banner(title, message, cx))
                     }),
             )
             .child(
@@ -240,24 +234,16 @@ impl LauncherApp {
             .gap_5()
             .child(
                 card(cx)
-                    .child(section_title(
-                        "精选服务器",
-                        "人工挑选的热门服务器；原版条目可直接安装并进入，需要 Mod 的条目会单独标注。状态由 RMCL 直接查询，不依赖第三方状态接口。",
-                        cx,
-                    ))
+                    .child(section_title("精选服务器", "", cx))
                     .child(
-                        h_flex()
-                            .gap_2()
-                            .child(Tag::info().child(format!(
-                                "账户：{}",
-                                account.as_deref().unwrap_or("未选择")
-                            )))
-                            .child(Tag::secondary().child(format!("共 {total} 个精选服务器")))
-                            .child(Tag::new().outline().child("点击“安装并进入”创建隔离实例")),
+                        h_flex().gap_2().child(
+                            Tag::info()
+                                .child(format!("账户：{}", account.as_deref().unwrap_or("未选择"))),
+                        ),
                     )
                     .child(warning_banner(
                         "第三方服务器",
-                        "服务器由各自运营方提供，RMCL 不控制其内容或可用性；公共服务器通常要求正版账号，版本和 Mod 要求也可能变化。",
+                        "内容与可用性由运营方决定；公共服务器通常要求正版账号。",
                         cx,
                     ))
                     .when(account.is_none(), |this| {
@@ -353,6 +339,34 @@ impl LauncherApp {
                 .any(|version| version.id.as_str() == instance_id)
         });
         let has_account = self.selected_account().is_some();
+        let favorited = self.featured_server_is_favorite(&server.address);
+        let favorite_tooltip = if favorited {
+            "已收藏；点击取消收藏"
+        } else {
+            "收藏服务器"
+        };
+        let favorite_button = Button::new(format!("featured-favorite-{}", server.id))
+            .ghost()
+            .small()
+            .icon(if favorited {
+                IconName::StarFill
+            } else {
+                IconName::Star
+            })
+            .text_color(if favorited {
+                cx.theme().primary
+            } else {
+                cx.theme().muted_foreground
+            })
+            .toggled(favorited)
+            .tooltip(favorite_tooltip)
+            .accessibility_label(favorite_tooltip)
+            .on_click(cx.listener({
+                let server = server.clone();
+                move |this, _, window, cx| {
+                    this.toggle_featured_server_favorite(server.clone(), window, cx)
+                }
+            }));
         let installable = can_install && server.can_install();
         let install_label = if server.requires_mods {
             "需要整合包"
@@ -396,16 +410,26 @@ impl LauncherApp {
                             .gap_1()
                             .child(
                                 h_flex()
+                                    .w_full()
                                     .gap_2()
                                     .items_center()
                                     .child(
-                                        div()
-                                            .text_base()
-                                            .font_semibold()
-                                            .truncate()
-                                            .child(server.name.clone()),
+                                        h_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(
+                                                div()
+                                                    .min_w_0()
+                                                    .text_base()
+                                                    .font_semibold()
+                                                    .truncate()
+                                                    .child(server.name.clone()),
+                                            )
+                                            .child(status_tag),
                                     )
-                                    .child(status_tag),
+                                    .child(favorite_button),
                             )
                             .child(h_flex().gap_1().flex_wrap().children(tags))
                             .child(
@@ -436,6 +460,8 @@ impl LauncherApp {
                     )
                     .child(
                         v_flex()
+                            .w(px(180.))
+                            .flex_shrink_0()
                             .gap_1()
                             .items_end()
                             .child(
@@ -461,33 +487,14 @@ impl LauncherApp {
                                     })),
                             )
                             .child(
-                                h_flex()
-                                    .gap_1()
-                                    .child(
-                                        Button::new(format!("featured-favorite-{}", server.id))
-                                            .outline()
-                                            .label("收藏")
-                                            .on_click(cx.listener({
-                                                let server = server.clone();
-                                                move |this, _, window, cx| {
-                                                    this.favorite_featured_server(
-                                                        server.clone(),
-                                                        window,
-                                                        cx,
-                                                    )
-                                                }
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new(format!("featured-source-{}", server.id))
-                                            .ghost()
-                                            .icon(IconName::ExternalLink)
-                                            .label(server.source_label.clone())
-                                            .on_click({
-                                                let url = server.source_url.clone();
-                                                move |_, _, cx| cx.open_url(&url)
-                                            }),
-                                    ),
+                                Button::new(format!("featured-source-{}", server.id))
+                                    .ghost()
+                                    .icon(IconName::ExternalLink)
+                                    .label(server.source_label.clone())
+                                    .on_click({
+                                        let url = server.source_url.clone();
+                                        move |_, _, cx| cx.open_url(&url)
+                                    }),
                             ),
                     ),
             )
@@ -506,6 +513,7 @@ impl LauncherApp {
         &self,
         server: &StoredServer,
         can_join: bool,
+        join_tooltip: &str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = self.servers.statuses.get(&server.id);
@@ -594,6 +602,7 @@ impl LauncherApp {
                                     .icon(IconName::Play)
                                     .label("进入")
                                     .disabled(!can_join)
+                                    .tooltip(join_tooltip)
                                     .on_click(cx.listener({
                                         let id = id.clone();
                                         move |this, _, window, cx| {

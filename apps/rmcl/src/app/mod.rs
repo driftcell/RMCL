@@ -98,7 +98,7 @@ impl Page {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
-            Self::Servers => "发现热门 Java 版服务器，或管理收藏并直接进入。",
+            Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
             Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
@@ -1707,22 +1707,30 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn favorite_featured_server(
+    fn featured_server_is_favorite(&self, address: &ServerAddress) -> bool {
+        self.config.servers.iter().any(|stored| {
+            ServerAddress::parse(&stored.address)
+                .map(|stored_address| stored_address == *address)
+                .unwrap_or(false)
+        })
+    }
+
+    fn toggle_featured_server_favorite(
         &mut self,
         server: FeaturedServer,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let already_saved = self.config.servers.iter().any(|stored| {
+        let saved_index = self.config.servers.iter().position(|stored| {
             ServerAddress::parse(&stored.address)
                 .map(|stored_address| stored_address == server.address)
                 .unwrap_or(false)
         });
-        if already_saved {
-            window.push_notification(
-                Notification::info("该服务器已在收藏中。").title("服务器"),
-                cx,
-            );
+        if let Some(index) = saved_index {
+            self.config.servers.remove(index);
+            self.save_config();
+            cx.notify();
+            window.push_notification(Notification::info("已取消收藏。").title("服务器"), cx);
             return;
         }
         self.config.servers.push(StoredServer {
@@ -1731,6 +1739,7 @@ impl LauncherApp {
             address: server.address.to_string(),
         });
         self.save_config();
+        cx.notify();
         window.push_notification(
             Notification::success("已加入服务器收藏。").title("服务器"),
             cx,
