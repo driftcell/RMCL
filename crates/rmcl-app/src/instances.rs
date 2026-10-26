@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
+use tokio_util::sync::CancellationToken;
 
 use crate::AppError;
 
@@ -218,6 +219,165 @@ fn copy_missing_tree(source: &Path, target: &Path) -> Result<(), AppError> {
         })?;
     }
     Ok(())
+}
+
+const SHARED_CONTENT_DIRS: [&str; 8] = [
+    "mods",
+    "resourcepacks",
+    "shaderpacks",
+    "saves",
+    "config",
+    "defaultconfigs",
+    "scripts",
+    "kubejs",
+];
+const SHARED_CONTENT_FILES: [&str; 3] = ["options.txt", "servers.dat", "realms_persistence.json"];
+
+/// Copies game-owned content from an existing instance into a newly created
+/// isolated instance. Repository files, version JSON/JAR, natives and logs are
+/// never copied. Existing target files are kept.
+pub(crate) fn copy_instance_game_content(
+    source_game_dir: &Path,
+    target_game_dir: &Path,
+    source_isolated: bool,
+    source_id: &str,
+    cancellation: &CancellationToken,
+) -> Result<usize, AppError> {
+    if source_game_dir == target_game_dir {
+        return Err(AppError::InvalidRequest(
+            "source and target instance game directories must differ".to_owned(),
+        ));
+    }
+    check_copy_cancelled(cancellation)?;
+    let mut copied = 0;
+    if source_isolated {
+        let entries = std::fs::read_dir(source_game_dir).map_err(|source| AppError::Io {
+            operation: "read source instance game directory",
+            path: source_game_dir.to_path_buf(),
+            source,
+        })?;
+        for entry in entries {
+            check_copy_cancelled(cancellation)?;
+            let entry = entry.map_err(|source| AppError::Io {
+                operation: "read source instance content entry",
+                path: source_game_dir.to_path_buf(),
+                source,
+            })?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if is_reserved_instance_entry(name, source_id) {
+                continue;
+            }
+            copied +=
+                copy_instance_entry(&entry.path(), &target_game_dir.join(name), cancellation)?;
+        }
+    } else {
+        for directory in SHARED_CONTENT_DIRS {
+            check_copy_cancelled(cancellation)?;
+            let source = source_game_dir.join(directory);
+            let target = target_game_dir.join(directory);
+            if source.is_dir() {
+                copied += copy_instance_entry(&source, &target, cancellation)?;
+            }
+        }
+        for file in SHARED_CONTENT_FILES {
+            check_copy_cancelled(cancellation)?;
+            let source = source_game_dir.join(file);
+            let target = target_game_dir.join(file);
+            if source.is_file() {
+                copied += copy_instance_entry(&source, &target, cancellation)?;
+            }
+        }
+    }
+    Ok(copied)
+}
+
+fn is_reserved_instance_entry(name: &str, source_id: &str) -> bool {
+    name == "rmcl.instance.toml"
+        || name == "logs"
+        || name == "crash-reports"
+        || name == "downloads"
+        || name == ".DS_Store"
+        || name.starts_with("natives-")
+        || name == format!("{source_id}.json")
+        || name == format!("{source_id}.jar")
+}
+
+fn copy_instance_entry(
+    source: &Path,
+    target: &Path,
+    cancellation: &CancellationToken,
+) -> Result<usize, AppError> {
+    check_copy_cancelled(cancellation)?;
+    let metadata = std::fs::symlink_metadata(source).map_err(|source_error| AppError::Io {
+        operation: "inspect instance content entry",
+        path: source.to_path_buf(),
+        source: source_error,
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Ok(0);
+    }
+    if metadata.is_dir() {
+        std::fs::create_dir_all(target).map_err(|source_error| AppError::Io {
+            operation: "create copied instance content directory",
+            path: target.to_path_buf(),
+            source: source_error,
+        })?;
+        let entries = std::fs::read_dir(source).map_err(|source_error| AppError::Io {
+            operation: "read instance content directory",
+            path: source.to_path_buf(),
+            source: source_error,
+        })?;
+        let mut copied = 0;
+        for entry in entries {
+            check_copy_cancelled(cancellation)?;
+            let entry = entry.map_err(|source_error| AppError::Io {
+                operation: "read instance content entry",
+                path: source.to_path_buf(),
+                source: source_error,
+            })?;
+            let name = entry.file_name();
+            copied += copy_instance_entry(&entry.path(), &target.join(&name), cancellation)?;
+        }
+        return Ok(copied);
+    }
+    if !metadata.is_file() {
+        return Ok(0);
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|source_error| AppError::Io {
+            operation: "create copied instance content directory",
+            path: parent.to_path_buf(),
+            source: source_error,
+        })?;
+    }
+    match std::fs::symlink_metadata(target) {
+        Ok(_) => return Ok(0),
+        Err(source_error) if source_error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source_error) => {
+            return Err(AppError::Io {
+                operation: "inspect copied instance content entry",
+                path: target.to_path_buf(),
+                source: source_error,
+            });
+        }
+    }
+    std::fs::copy(source, target).map_err(|source_error| AppError::Io {
+        operation: "copy instance content",
+        path: target.to_path_buf(),
+        source: source_error,
+    })?;
+    Ok(1)
+}
+
+fn check_copy_cancelled(cancellation: &CancellationToken) -> Result<(), AppError> {
+    if cancellation.is_cancelled() {
+        Err(AppError::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

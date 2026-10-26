@@ -223,6 +223,7 @@ impl LauncherApp {
         let launch_id = id.clone();
         let folder_id = id.clone();
         let rename_id = id.clone();
+        let loader_id = id.clone();
         let loader = version.loader.clone();
         h_flex()
             .w_full()
@@ -289,6 +290,33 @@ impl LauncherApp {
             .child(
                 h_flex()
                     .gap_2()
+                    .when(version.loader.is_none(), |this| {
+                        let enabled = version.manifest_present
+                            && version.manifest_error.is_none()
+                            && self.can_start_operation();
+                        let tooltip = if !version.manifest_present {
+                            "旧版实例缺少 RMCL 配置，暂不支持添加加载器"
+                        } else if version.manifest_error.is_some() {
+                            "实例配置异常，请先修复或重新创建"
+                        } else if !self.can_start_operation() {
+                            "已有任务或内容操作正在运行"
+                        } else {
+                            "创建新的加载器实例并复制当前实例内容"
+                        };
+                        let install_id = loader_id.clone();
+                        this.child(
+                            Button::new("instance-install-loader")
+                                .outline()
+                                .icon(IconName::PackagePlus)
+                                .label("添加 Mod 加载器")
+                                .disabled(!enabled)
+                                .tooltip(tooltip)
+                                .accessibility_label("添加 Mod 加载器")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.open_create_loader(install_id.clone(), window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("instance-browse-online")
                             .outline()

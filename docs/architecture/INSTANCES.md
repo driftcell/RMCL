@@ -1,6 +1,6 @@
 # 实例与版本隔离
 
-状态：实例 manifest、目录布局、隔离启动、旧实例迁移和实例创建已实现；加载器与内容管理见关联文档
+状态：实例 manifest、目录布局、隔离启动、旧实例迁移、实例创建和从已有实例创建加载器实例已实现；加载器与内容管理见关联文档
 
 日期：2026-10-25
 
@@ -54,7 +54,7 @@ isolation = "isolated"
 - `name`：界面显示名称；空白时回退到实例 ID。实例详情页可修改，目录和版本 ID 保持不变。
 - `minecraft_version`：实例基于的游戏版本；空白时回退到实例 ID。
 - `isolation`：`isolated` 或 `shared`。新实例默认 `isolated`。
-- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；Forge/NeoForge 在写入前先运行现代 installer processors。
+- `loader`：可选的 `fabric`、`quilt`、`forge` 或 `neoforge` 及版本。加载器由实例创建流程写入；从已有实例添加加载器时会创建新的加载器实例并复制内容，不原地改写源实例。
 - `java`：可选的 Java 可执行文件绝对路径。缺省时按游戏版本自动发现、选择或下载；显式路径在启动前重新探测，不满足版本、系统或架构要求时拒绝启动，不静默回退。
 - `max_memory_mb`：可选的 `-Xmx` 值，单位 MiB，允许 256–262144；缺省使用 JVM 默认值。
 - `window_width` / `window_height`：可选初始窗口尺寸，必须同时存在，允许 320–16384；缺省使用游戏默认。
@@ -92,7 +92,7 @@ manifest 通过同目录临时文件、`sync` 和原子替换写入。未知字�
 ## 当前限制
 
 - 版本继承合并、Fabric/Quilt/Forge/NeoForge 加载器安装和加载器启动合并已实现，见 [版本继承、加载器安装与实例创建](LOADERS.md)；legacy Forge installer 尚未实现。
-- 尚未实现给已有实例追加、升级或移除加载器。
+- 尚未实现原地给已有实例追加、升级或移除加载器；从已有实例添加加载器会创建新的加载器实例并复制内容。
 - 已支持实例级 Java、最大内存和窗口尺寸；任意 JVM/游戏启动参数和窗口位置尚未实现。
 - 尚未实现实例复制、导入和导出；重命名只修改 manifest 显示名称，不改目录。
 - 本地内容扫描与管理已由 [本地内容管理](LOCAL_CONTENT.md) 提供；远程下载和必需依赖解析见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，可选依赖和整合包尚未实现。

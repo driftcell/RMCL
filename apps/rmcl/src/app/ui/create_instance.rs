@@ -22,22 +22,55 @@ impl LauncherApp {
     pub fn render_create_instance(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let generated_id = self.generated_instance_id(cx);
         let entered_id = self.create_id_input.read(cx).value().trim().to_owned();
-        let loader_index = match self.create_loader {
+        let copy_mode = self.create_copy_source.is_some();
+        let copy_source_name = self.create_copy_source.as_ref().and_then(|id| {
+            self.installed_versions
+                .iter()
+                .find(|version| version.id.as_str() == id.as_str())
+                .map(|version| version.display_name().to_owned())
+        });
+        let loader_index: usize = match self.create_loader {
             None => 0,
             Some(LoaderKind::Fabric) => 1,
             Some(LoaderKind::Quilt) => 2,
             Some(LoaderKind::Forge) => 3,
             Some(LoaderKind::NeoForge) => 4,
         };
+        let selected_loader_index = if copy_mode {
+            loader_index.saturating_sub(1)
+        } else {
+            loader_index
+        };
+        let loader_tabs: &[&str] = if copy_mode {
+            &["Fabric", "Quilt", "Forge", "NeoForge"]
+        } else {
+            &["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"]
+        };
         let loader_ready = self.create_loader.is_none() || self.create_loader_version.is_some();
         let can_create = self.can_start_operation()
             && !self.create_base_input.read(cx).value().trim().is_empty()
             && !self.create_loader_loading
-            && loader_ready;
+            && loader_ready
+            && (!copy_mode || self.create_loader.is_some());
         let loader_versions = self.create_loader_versions.clone();
         let selected_loader_version = self.create_loader_version.clone();
         let loading = self.create_loader_loading;
         let loader_error = self.create_loader_error.clone();
+        let page_title = if copy_mode {
+            "添加 Mod 加载器"
+        } else {
+            Page::CreateInstance.title()
+        };
+        let page_subtitle = if copy_mode {
+            "为现有实例创建新的加载器实例，并复制当前内容。"
+        } else {
+            Page::CreateInstance.subtitle()
+        };
+        let base_section_subtitle = if copy_mode {
+            "基础版本来自现有实例；新实例会启用版本隔离。"
+        } else {
+            "基础版本会自动安装或复用；新实例默认启用版本隔离。"
+        };
 
         v_flex()
             .flex_1()
@@ -62,15 +95,32 @@ impl LauncherApp {
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(div().text_2xl().font_semibold().child(Page::CreateInstance.title()))
+                            .child(div().text_2xl().font_semibold().child(page_title))
                             .child(
                                 div()
                                     .text_sm()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(Page::CreateInstance.subtitle()),
+                                    .child(page_subtitle),
                             ),
                     ),
             )
+            .when(copy_mode, |this| {
+                let name = copy_source_name.as_deref().unwrap_or("当前实例");
+                this.child(
+                    div()
+                        .w_full()
+                        .rounded(cx.theme().radius)
+                        .border_1()
+                        .border_color(cx.theme().primary.opacity(0.25))
+                        .bg(cx.theme().primary.opacity(0.06))
+                        .p_3()
+                        .child(
+                            div().text_sm().child(format!(
+                                "正在为「{name}」添加 Mod 加载器。将创建新的隔离实例并复制当前实例的内容；原实例不会被修改。"
+                            )),
+                        ),
+                )
+            })
             .child(
                 v_flex()
                     .id("create-instance-body")
@@ -82,7 +132,7 @@ impl LauncherApp {
                         card(cx)
                             .child(section_title(
                                 "基础版本与加载器",
-                                "基础版本会自动安装或复用；新实例默认启用版本隔离。",
+                                base_section_subtitle,
                                 cx,
                             ))
                             .child(
@@ -92,15 +142,18 @@ impl LauncherApp {
                                     .child(
                                         Input::new(&self.create_base_input)
                                             .w_full()
-                                            .max_w(px(360.)),
+                                            .max_w(px(360.))
+                                            .readonly(copy_mode),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(
-                                                "填写版本 ID，例如 1.21.1 或 24w14a。创建时从 Mojang manifest 校验。",
-                                            ),
+                                            .child(if copy_mode {
+                                                "基础版本来自现有实例，不能修改。"
+                                            } else {
+                                                "填写版本 ID，例如 1.21.1 或 24w14a。创建时从 Mojang manifest 校验。"
+                                            }),
                                     ),
                             )
                             .child(
@@ -110,23 +163,33 @@ impl LauncherApp {
                                     .child(
                                         TabBar::new("create-instance-loader")
                                             .segmented()
-                                            .selected_index(loader_index)
+                                            .selected_index(selected_loader_index)
                                             .on_click(cx.listener(
-                                                |this, index: &usize, window, cx| {
-                                                    let loader = match index {
-                                                        1 => Some(LoaderKind::Fabric),
-                                                        2 => Some(LoaderKind::Quilt),
-                                                        3 => Some(LoaderKind::Forge),
-                                                        4 => Some(LoaderKind::NeoForge),
-                                                        _ => None,
+                                                move |this, index: &usize, window, cx| {
+                                                    let loader = if copy_mode {
+                                                        match index {
+                                                            0 => Some(LoaderKind::Fabric),
+                                                            1 => Some(LoaderKind::Quilt),
+                                                            2 => Some(LoaderKind::Forge),
+                                                            3 => Some(LoaderKind::NeoForge),
+                                                            _ => None,
+                                                        }
+                                                    } else {
+                                                        match index {
+                                                            1 => Some(LoaderKind::Fabric),
+                                                            2 => Some(LoaderKind::Quilt),
+                                                            3 => Some(LoaderKind::Forge),
+                                                            4 => Some(LoaderKind::NeoForge),
+                                                            _ => None,
+                                                        }
                                                     };
                                                     this.select_create_loader(loader, window, cx);
                                                 },
                                             ))
                                             .children(
-                                                ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"]
-                                                    .into_iter()
-                                                    .map(|label| Tab::new().label(label)),
+                                                loader_tabs
+                                                    .iter()
+                                                    .map(|label| Tab::new().label(*label)),
                                             ),
                                     ),
                             )
@@ -287,7 +350,11 @@ impl LauncherApp {
                                             .primary()
                                             .large()
                                             .icon(IconName::PackagePlus)
-                                            .label("创建实例")
+                                            .label(if copy_mode {
+                                                "创建加载器实例"
+                                            } else {
+                                                "创建实例"
+                                            })
                                             .disabled(!can_create)
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.create_instance(window, cx)
@@ -297,9 +364,11 @@ impl LauncherApp {
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(
-                                                "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。",
-                                            ),
+                                            .child(if copy_mode {
+                                                "会创建新的隔离实例并复制当前实例内容；原实例不会被修改。"
+                                            } else {
+                                                "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。"
+                                            }),
                                     ),
                             ),
                     ),

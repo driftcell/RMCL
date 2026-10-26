@@ -377,6 +377,9 @@ pub struct LauncherApp {
     create_loader_error: Option<String>,
     create_loader_cancel: Option<CancellationToken>,
     create_loader_request: u64,
+    /// Existing instance whose content is copied when creating a loader
+    /// instance from the instance detail page.
+    create_copy_source: Option<String>,
     java_dialog_loading: bool,
     java_dialog_error: Option<String>,
     java_dialog_runtimes: Vec<JavaRuntime>,
@@ -713,6 +716,7 @@ impl LauncherApp {
             create_loader_error: None,
             create_loader_cancel: None,
             create_loader_request: 0,
+            create_copy_source: None,
             java_dialog_loading: false,
             java_dialog_error: None,
             java_dialog_runtimes: Vec::new(),
@@ -1139,8 +1143,17 @@ impl LauncherApp {
                         let logs = manager.logs(id).await;
                         if let Some(snapshot) = snapshot
                             && this
-                                .update_in(cx, |view, _, cx| {
+                                .update_in(cx, |view, window, cx| {
+                                    let was_terminal =
+                                        view.log_state.snapshot.as_ref().is_some_and(|current| {
+                                            current.id == snapshot.id
+                                                && current.status.is_terminal()
+                                        });
+                                    let terminal_snapshot = snapshot.clone();
                                     view.log_state.recover(snapshot, logs.unwrap_or_default());
+                                    if !was_terminal && terminal_snapshot.status.is_terminal() {
+                                        view.on_task_terminal(terminal_snapshot, window, cx);
+                                    }
                                     if view.log_follow {
                                         view.log_scroll.scroll_to_bottom();
                                     }
@@ -1922,6 +1935,12 @@ impl LauncherApp {
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
         let left_servers = self.page == Page::Servers && page != Page::Servers;
         self.page = page;
+        if page != Page::CreateInstance {
+            self.create_copy_source = None;
+        }
+        if page == Page::Versions {
+            self.reload_versions(window, cx);
+        }
         if left_servers {
             self.cancel_server_refresh();
         }
@@ -2377,6 +2396,8 @@ impl LauncherApp {
         let version = self.active_task_version.clone();
         match snapshot.status {
             TaskStatus::Completed if snapshot.kind == TaskKind::InstanceCreate => {
+                let loader_source = self.create_copy_source.take();
+                let is_loader_instance = loader_source.is_some();
                 let (instance_id, name) = match snapshot.subject {
                     Some(TaskSubject::Instance { id, name }) => (Some(id), name),
                     _ => (None, "实例".to_owned()),
@@ -2385,14 +2406,31 @@ impl LauncherApp {
                 if let Some(instance_id) = instance_id {
                     self.config.selected_version = Some(instance_id.clone());
                     self.selected_instance = Some(instance_id);
-                    self.page = Page::Instance;
+                    self.page = if is_loader_instance {
+                        Page::Versions
+                    } else {
+                        Page::Instance
+                    };
                     self.save_config();
-                    self.load_instance_content(window, cx);
+                    if !is_loader_instance {
+                        self.load_instance_content(window, cx);
+                    }
                 }
-                window.push_notification(
-                    Notification::success(format!("实例 {name} 已创建。")).title("实例创建完成"),
-                    cx,
-                );
+                if is_loader_instance {
+                    window.push_notification(
+                        Notification::success(format!(
+                            "加载器实例 {name} 已创建，并复制了原实例内容。"
+                        ))
+                        .title("加载器安装完成"),
+                        cx,
+                    );
+                } else {
+                    window.push_notification(
+                        Notification::success(format!("实例 {name} 已创建。"))
+                            .title("实例创建完成"),
+                        cx,
+                    );
+                }
             }
             TaskStatus::Completed if snapshot.kind == TaskKind::ContentInstall => {
                 let (instance_id, name) = match snapshot.subject {
@@ -4602,10 +4640,90 @@ impl LauncherApp {
         }
     }
 
+    fn open_create_loader(
+        &mut self,
+        source_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(version) = self
+            .installed_versions
+            .iter()
+            .find(|version| version.id.as_str() == source_id)
+            .cloned()
+        else {
+            window.push_notification(
+                Notification::error("实例不存在或已被移动。").title("无法添加加载器"),
+                cx,
+            );
+            return;
+        };
+        if let Some(loader) = version.loader.as_ref() {
+            window.push_notification(
+                Notification::warning(format!(
+                    "当前实例已安装 {} {}。",
+                    loader.kind.label(),
+                    loader.version
+                ))
+                .title("无法添加加载器"),
+                cx,
+            );
+            return;
+        }
+        if !version.manifest_present {
+            window.push_notification(
+                Notification::warning("旧版实例缺少 RMCL 配置，暂不支持添加加载器。")
+                    .title("无法添加加载器"),
+                cx,
+            );
+            return;
+        }
+        if let Some(error) = version.manifest_error.as_ref() {
+            window.push_notification(
+                Notification::error(error.clone()).title("无法添加加载器"),
+                cx,
+            );
+            return;
+        }
+        if !self.can_start_operation() {
+            window.push_notification(
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
+                    .title("无法添加加载器"),
+                cx,
+            );
+            return;
+        }
+        if let Some(cancellation) = self.create_loader_cancel.take() {
+            cancellation.cancel();
+        }
+        self.create_copy_source = Some(source_id);
+        self.create_loader = Some(LoaderKind::Fabric);
+        self.create_loader_versions.clear();
+        self.create_loader_version = None;
+        self.create_loader_loading = false;
+        self.create_loader_error = None;
+        self.create_base_input.update(cx, |state, cx| {
+            state.set_value(version.minecraft_version.clone(), window, cx);
+        });
+        self.create_name_input.update(cx, |state, cx| {
+            state.set_value(
+                format!("{} {}", LoaderKind::Fabric.label(), version.display_name()),
+                window,
+                cx,
+            );
+        });
+        self.create_id_input.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        self.navigate(Page::CreateInstance, window, cx);
+        self.fetch_loader_versions(window, cx);
+    }
+
     fn open_create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(cancellation) = self.create_loader_cancel.take() {
             cancellation.cancel();
         }
+        self.create_copy_source = None;
         self.page = Page::CreateInstance;
         self.create_loader = None;
         self.create_loader_versions.clear();
@@ -4639,6 +4757,24 @@ impl LauncherApp {
             return;
         }
         self.create_loader = loader;
+        if self.create_copy_source.is_some() {
+            let source_name = self
+                .create_copy_source
+                .as_ref()
+                .and_then(|id| {
+                    self.installed_versions
+                        .iter()
+                        .find(|version| version.id.as_str() == id.as_str())
+                })
+                .map(|version| version.display_name().to_owned())
+                .unwrap_or_else(|| "实例".to_owned());
+            let name = loader.map_or(source_name.clone(), |kind| {
+                format!("{} {}", kind.label(), source_name)
+            });
+            self.create_name_input.update(cx, |state, cx| {
+                state.set_value(name, window, cx);
+            });
+        }
         self.create_loader_versions.clear();
         self.create_loader_version = None;
         self.create_loader_error = None;
@@ -4767,6 +4903,13 @@ impl LauncherApp {
             );
             return;
         }
+        if self.create_copy_source.is_some() && self.create_loader.is_none() {
+            window.push_notification(
+                Notification::error("请选择一个 Mod 加载器。").title("无法添加加载器"),
+                cx,
+            );
+            return;
+        }
         let base = self.create_base_input.read(cx).value().trim().to_owned();
         if base.is_empty() {
             window.push_notification(
@@ -4815,6 +4958,7 @@ impl LauncherApp {
             base_version_id: base,
             platform: self.services.platform.clone(),
             loader,
+            copy_content_from: self.create_copy_source.clone(),
         };
         self.start_create_instance_task(request, id, window, cx);
     }
@@ -6136,6 +6280,7 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingBase) => "安装基础版本",
         TaskPhase::InstanceCreate(InstanceCreatePhase::FetchingLoader) => "获取加载器元数据",
         TaskPhase::InstanceCreate(InstanceCreatePhase::WritingInstance) => "写入实例配置",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::CopyingContent) => "复制实例内容",
         TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingLoader) => "安装实例文件",
         TaskPhase::InstanceCreate(InstanceCreatePhase::Completed) => "实例创建完成",
         TaskPhase::Content(ContentInstallPhase::Preparing) => "准备内容下载",
