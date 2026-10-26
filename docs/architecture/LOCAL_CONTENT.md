@@ -1,8 +1,8 @@
 # 本地内容管理
 
-状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；Modrinth 远程下载和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖和整合包尚未实现
+状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现，Mod JAR 元数据索引供安装预检使用；Modrinth 远程下载、推荐和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖自动选择和整合包尚未实现
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## 边界
 
@@ -97,7 +97,7 @@
 ## 当前限制
 
 - Modrinth 远程下载已由 [远程内容与 Modrinth](REMOTE_CONTENT.md) 提供；CurseForge 尚未接入。
-- 尚未解析 Fabric/Forge/Quilt Mod 元数据、图标、版本和依赖。
+- 本地内容列表仍只显示文件名、路径和大小；安装预检会解析 Fabric/Quilt/Forge/NeoForge Mod 元数据，见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，但列表本身尚未展示真实名称、图标或版本。
 - 尚未计算本地文件哈希，因此不能做远程识别或更新检查。
 - 尚未检查资源包 `pack_format` 兼容性，也不自动修改 `incompatibleResourcePacks` 的兼容判断。
 - 资源包启用格式的版本推断是启发式；空列表的旧版本可能被写成现代 `file/` 格式，需要后续按精确版本表修正。

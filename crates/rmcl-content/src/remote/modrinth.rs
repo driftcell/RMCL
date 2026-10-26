@@ -126,6 +126,27 @@ impl ModrinthClient {
         RemoteVersion::try_from(response)
     }
 
+    /// Fetches one project by ID. Used to map dependency project IDs to slugs
+    /// for local mod-ID conflict checks.
+    pub async fn project(
+        &self,
+        project_id: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<RemoteProject, RemoteContentError> {
+        let mut url = self.endpoint("v2/project/")?;
+        {
+            let mut segments =
+                url.path_segments_mut()
+                    .map_err(|_| RemoteContentError::InvalidResponse {
+                        provider: MODRINTH,
+                        message: "api base URL cannot contain project path segments".to_owned(),
+                    })?;
+            segments.pop_if_empty().push(project_id);
+        }
+        let response: ProjectResponse = self.get_json(url, cancellation).await?;
+        Ok(response.into_project())
+    }
+
     pub async fn project_versions(
         &self,
         project_id: &str,
@@ -304,6 +325,51 @@ impl From<SearchHit> for RemoteProject {
             loaders,
             project_type: hit.project_type,
             updated: hit.date_modified,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectResponse {
+    id: String,
+    slug: String,
+    title: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    categories: Vec<String>,
+    project_type: String,
+    #[serde(default)]
+    downloads: u64,
+    #[serde(default)]
+    follows: u64,
+    #[serde(default)]
+    icon_url: Option<String>,
+    #[serde(default)]
+    game_versions: Vec<String>,
+    #[serde(default)]
+    loaders: Vec<String>,
+    #[serde(default)]
+    updated: Option<String>,
+}
+
+impl ProjectResponse {
+    fn into_project(self) -> RemoteProject {
+        RemoteProject {
+            source: MODRINTH,
+            id: self.id,
+            slug: self.slug,
+            title: self.title,
+            description: self.description,
+            author: String::new(),
+            icon_url: self.icon_url,
+            downloads: self.downloads,
+            follows: self.follows,
+            categories: self.categories,
+            game_versions: self.game_versions,
+            loaders: self.loaders,
+            project_type: self.project_type,
+            updated: self.updated,
         }
     }
 }
@@ -628,6 +694,39 @@ mod tests {
                 .map(|file| file.filename.as_str()),
             Some("fabric-api.jar")
         );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn fetches_one_project_by_id_for_dependency_preflight() {
+        let router = Router::new().route(
+            "/v2/project/P7dR8mSH",
+            get(|| async {
+                Json(json!({
+                    "id": "P7dR8mSH",
+                    "slug": "fabric-api",
+                    "title": "Fabric API",
+                    "description": "Core API",
+                    "categories": ["fabric", "library"],
+                    "project_type": "mod",
+                    "downloads": 1000,
+                    "follows": 42,
+                    "icon_url": "https://cdn.modrinth.com/fabric-api.png",
+                    "game_versions": ["1.21.1"],
+                    "loaders": ["fabric"],
+                    "updated": "2026-01-01T00:00:00Z"
+                }))
+            }),
+        );
+        let (base, handle) = server(router).await;
+        let client = client(base);
+
+        let project = client
+            .project("P7dR8mSH", &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(project.slug, "fabric-api");
+        assert_eq!(project.title, "Fabric API");
         handle.abort();
     }
 

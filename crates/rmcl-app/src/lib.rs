@@ -24,9 +24,11 @@ pub use accounts::{
 pub use catalog::VersionCatalog;
 pub use content::{
     ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
-    ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallRequest,
-    ContentInstaller, delete_instance_content, import_instance_content,
-    resolve_content_install_batch, scan_instance_content, set_instance_content_enabled,
+    ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallPreflight,
+    ContentInstallRequest, ContentInstaller, ContentPreflightItem, ContentPreflightStatus,
+    delete_instance_content, import_instance_content, preflight_content_install,
+    resolve_content_install_batch, resolve_content_install_order, scan_instance_content,
+    set_instance_content_enabled,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use forge::{ForgeInstallOutcome, ForgeInstallRequest, ForgeInstaller};
@@ -50,9 +52,11 @@ pub use model::{
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,
 };
 pub use rmcl_content::{
-    ConflictPolicy, ContentKind, ContentLibrary, ContentSource, ContentWarning, LocalContent,
-    ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency, RemoteDependencyKind,
-    RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery, RemoteSort, RemoteVersion,
+    ConflictPolicy, ContentKind, ContentLibrary, ContentSource, ContentWarning, InstalledMod,
+    InstalledModIndex, LocalContent, ModDependency, ModMetadata, ModMetadataError,
+    ModMetadataLoader, ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency,
+    RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
+    RemoteSort, RemoteVersion, read_mod_metadata, recommended_version, scan_installed_mods,
 };
 pub use rmcl_instance::{
     InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,

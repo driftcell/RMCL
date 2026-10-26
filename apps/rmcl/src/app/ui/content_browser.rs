@@ -513,8 +513,10 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let file = version.installable_file(kind);
-        let can_install =
-            self.can_start_operation() && file.is_some_and(|file| file.sha1.is_some());
+        let recommended = self.content_browser.recommended.as_deref() == Some(version.id.as_str());
+        let can_install = self.can_start_operation()
+            && !self.content_browser.preflighting
+            && file.is_some_and(|file| file.sha1.is_some());
         let file_label = file
             .map(|file| {
                 format!(
@@ -552,7 +554,10 @@ impl LauncherApp {
                                     version.name.clone()
                                 },
                             ))
-                            .child(version_type_tag(&version.version_type)),
+                            .child(version_type_tag(&version.version_type))
+                            .when(recommended, |this| {
+                                this.child(Tag::success().child("推荐").small())
+                            }),
                     )
                     .child(
                         div()

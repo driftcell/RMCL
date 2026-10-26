@@ -16,14 +16,16 @@ use gpui_kit::{
         searchable_list::SearchableListItem,
         select::{SearchableVec, SelectEvent, SelectState},
         spinner::Spinner,
+        tag::Tag,
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
 use rmcl_app::{
-    AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase, ContentKind,
-    ContentLibrary, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
+    AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
+    ContentInstallPreflight, ContentKind, ContentLibrary, ContentPreflightItem,
+    ContentPreflightStatus, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
     InstalledVersion, InstanceCreatePhase, JavaRuntime, JavaRuntimeSource, LoaderKind,
     LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
     RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount,
@@ -31,8 +33,9 @@ use rmcl_app::{
     TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest,
     VersionManifest, VersionSource, VersionSummary, delete_installed_version,
     delete_instance_content, discover_installed_versions, import_instance_content,
-    migrate_instance_to_isolated, rename_instance, scan_instance_content,
-    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
+    migrate_instance_to_isolated, preflight_content_install, recommended_version, rename_instance,
+    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
+    set_instance_launch_settings,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
@@ -136,6 +139,8 @@ pub struct ContentBrowserState {
     versions: Vec<RemoteVersion>,
     versions_loading: bool,
     versions_error: Option<String>,
+    recommended: Option<String>,
+    preflighting: bool,
 }
 
 #[derive(Default)]
@@ -4496,6 +4501,9 @@ impl LauncherApp {
         let loader = project
             .version_loader_filter(version.loader.as_ref().map(|loader| loader.kind.as_str()));
         let project_id = project.id.clone();
+        let recommended_kind = self.content_browser.kind;
+        self.content_browser.recommended = None;
+        self.content_browser.preflighting = false;
         if let Some(cancellation) = self.content_browser_cancel.take() {
             cancellation.cancel();
         }
@@ -4527,6 +4535,9 @@ impl LauncherApp {
                 view.content_browser.versions_loading = false;
                 match result {
                     Ok(Ok(versions)) => {
+                        view.content_browser.recommended = recommended_kind.and_then(|kind| {
+                            recommended_version(&versions, kind).map(|version| version.id.clone())
+                        });
                         view.content_browser.versions = versions;
                         view.content_browser.versions_error = None;
                     }
@@ -4600,14 +4611,176 @@ impl LauncherApp {
                 .loader
                 .as_ref()
                 .map(|loader| loader.kind.as_str().to_owned()),
+            skip_version_ids: Vec::new(),
         };
-        self.start_content_install_task(
-            request,
-            instance.id.as_str().to_owned(),
-            display_name,
-            window,
-            cx,
-        );
+        if self.content_browser.preflighting {
+            return;
+        }
+        self.content_browser.preflighting = true;
+        cx.notify();
+        let client = self.services.modrinth.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let task_request = request.clone();
+        let dialog_request = request.clone();
+        let instance_id = instance.id.as_str().to_owned();
+        self._content_browser_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move {
+                    let scan_instance = task_request.instance.clone();
+                    let installed =
+                        tokio::task::spawn_blocking(move || scan_installed_mods(&scan_instance))
+                            .await
+                            .map_err(|error| AppError::BlockingTask(error.to_string()))?;
+                    preflight_content_install(
+                        &client,
+                        &task_request,
+                        &installed,
+                        &CancellationToken::new(),
+                    )
+                    .await
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_browser.preflighting = false;
+                if view.page != Page::ContentBrowser {
+                    return;
+                }
+                match result {
+                    Ok(Ok(preflight)) => view.open_content_preflight_dialog(
+                        preflight,
+                        dialog_request,
+                        instance_id,
+                        display_name,
+                        window,
+                        cx,
+                    ),
+                    Ok(Err(AppError::Cancelled)) => {}
+                    Ok(Err(error)) => {
+                        window.push_notification(
+                            Notification::error(error.to_string()).title("无法检查安装"),
+                            cx,
+                        );
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("无法检查安装"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn open_content_preflight_dialog(
+        &mut self,
+        preflight: ContentInstallPreflight,
+        mut request: ContentGraphInstallRequest,
+        instance_id: String,
+        display_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !preflight.incompatible.is_empty() {
+            let names = preflight
+                .incompatible
+                .iter()
+                .map(|item| item.title.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            window.push_notification(
+                Notification::error(format!("检测到不兼容的已安装 Mod：{names}")).title("无法安装"),
+                cx,
+            );
+            return;
+        }
+        request.skip_version_ids = preflight.skip_version_ids.clone();
+        let view = cx.entity().downgrade();
+        let dialog_preflight = preflight.clone();
+        let dialog_request = request.clone();
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            let save_view = view.clone();
+            let save_request = dialog_request.clone();
+            let save_instance = instance_id.clone();
+            let save_name = display_name.clone();
+            dialog
+                .title(format!("安装 {display_name}"))
+                .width(px(580.))
+                .child(
+                    v_flex()
+                        .gap_3()
+                        .child(preflight_item_row(&dialog_preflight.main, cx))
+                        .when(!dialog_preflight.dependencies.is_empty(), |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .font_medium()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("必需前置"),
+                            )
+                            .children(
+                                dialog_preflight
+                                    .dependencies
+                                    .iter()
+                                    .map(|item| preflight_item_row(item, cx)),
+                            )
+                        })
+                        .when(dialog_preflight.optional_count > 0, |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!(
+                                        "另有 {} 个可选前置未自动安装。",
+                                        dialog_preflight.optional_count
+                                    )),
+                            )
+                        })
+                        .when(!dialog_preflight.warnings.is_empty(), |this| {
+                            this.child(
+                                v_flex()
+                                    .gap_1()
+                                    .rounded(cx.theme().radius)
+                                    .bg(cx.theme().warning.opacity(0.08))
+                                    .p_3()
+                                    .children(dialog_preflight.warnings.iter().map(|warning| {
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().warning)
+                                            .child(warning.clone())
+                                    })),
+                            )
+                        }),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("confirm-content-preflight")
+                                    .primary()
+                                    .label("安装"),
+                            ),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    let Some(view) = save_view.upgrade() else {
+                        return true;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.start_content_install_task(
+                            save_request.clone(),
+                            save_instance.clone(),
+                            save_name.clone(),
+                            window,
+                            cx,
+                        );
+                    });
+                    true
+                })
+        });
     }
 
     fn load_instance_content(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -5089,6 +5262,55 @@ impl Render for LauncherApp {
                     ),
             )
     }
+}
+
+fn preflight_item_row(item: &ContentPreflightItem, cx: &App) -> AnyElement {
+    let (label, variant) = match &item.status {
+        ContentPreflightStatus::AlreadyInstalled { enabled: true } => ("已安装", Tag::success()),
+        ContentPreflightStatus::AlreadyInstalled { enabled: false } => {
+            ("已安装但禁用", Tag::warning())
+        }
+        ContentPreflightStatus::InstalledDifferentVersion { enabled: true, .. } => {
+            ("已安装其他版本", Tag::warning())
+        }
+        ContentPreflightStatus::InstalledDifferentVersion { enabled: false, .. } => {
+            ("已安装其他版本（禁用）", Tag::warning())
+        }
+        ContentPreflightStatus::WillInstall => ("将安装", Tag::info()),
+        ContentPreflightStatus::Conflict => ("冲突", Tag::danger()),
+    };
+    h_flex()
+        .w_full()
+        .gap_3()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().border)
+        .p_3()
+        .child(
+            v_flex()
+                .flex_1()
+                .min_w_0()
+                .gap_1()
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_medium()
+                                .truncate()
+                                .child(item.title.clone()),
+                        )
+                        .child(variant.child(label).small()),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("{} · {}", item.version_number, item.file_name)),
+                ),
+        )
+        .into_any_element()
 }
 
 fn java_source_label(source: JavaRuntimeSource) -> &'static str {

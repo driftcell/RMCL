@@ -81,9 +81,9 @@
 
 - 搜索 Modrinth 项目，支持相关度、下载量、关注数、最新发布和最近更新排序，以及分页“加载更多”。
 - 项目列表显示标题、作者、描述、下载量、加载器和分类；进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量。
-- 每个版本可直接安装；下载、SHA-1 校验和写入实例由 `ContentInstall` 后台任务执行，进度和取消复用底部任务栏。
-- 当前实例没有 Mod 加载器时显示警告；安装 Mod 时会自动解析并安装 required 依赖，optional/incompatible 依赖只显示数量。
-- 安装完成后刷新实例本地内容；同名文件自动改名，不覆盖。
+- 正式版推荐项显示“推荐”标签；推荐按版本类型和可安装/SHA-1 条件选择。
+- 每个版本可安装；点击后先显示本地前置预检：主文件与必需前置的“已安装/已禁用/其他版本/将安装/冲突”状态、可选前置数量和警告。存在不兼容的已安装 Mod 时拒绝安装。
+- 当前实例没有 Mod 加载器时显示警告；光影包缺少 Iris/Oculus/OptiFine 时提示安装后不会生效。安装 Mod 时会自动解析并安装 required 依赖；相同 Mod ID/版本的前置会跳过。
 
 ### 下载游戏
 
@@ -176,7 +176,7 @@ authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实
 - `apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入、有界缓冲和终态通知去重。
 - `rmcl-store` 覆盖 TOML 往返、schema 1 升级、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
-- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖解析、API 错误和取消，并验证只有 Mod 的版本查询会按实例加载器过滤。
+- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Mod 元数据覆盖 Fabric/Quilt/Forge 解析、依赖/冲突、缺失元数据和重复 ID；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖/项目解析、API 错误和取消，并验证只有 Mod 的版本查询会按实例加载器过滤。
 - `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态；`apps/rmcl/src/state.rs` 验证内容安装任务运行期间禁止本地内容操作。
 - `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、Quick Play/legacy 参数和版本边界；真实窗口中的服务器页仍需逐平台验收。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。

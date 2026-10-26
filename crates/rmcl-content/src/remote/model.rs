@@ -185,6 +185,38 @@ impl RemoteVersion {
             .iter()
             .filter(|dependency| dependency.kind == RemoteDependencyKind::Required)
     }
+
+    /// 3 = release, 2 = beta, 1 = alpha, 0 = unknown.
+    pub fn stability_rank(&self) -> u8 {
+        match self.version_type.as_str() {
+            "release" => 3,
+            "beta" => 2,
+            "alpha" => 1,
+            _ => 0,
+        }
+    }
+}
+
+/// Picks the newest installable version with the best stability.
+///
+/// Modrinth returns versions newest-first. Only versions with a usable file and
+/// a SHA-1 are considered, so the recommendation never points at an install
+/// action that the UI would immediately reject.
+pub fn recommended_version(
+    versions: &[RemoteVersion],
+    kind: ContentKind,
+) -> Option<&RemoteVersion> {
+    for rank in [3, 2, 1, 0] {
+        if let Some(version) = versions.iter().find(|version| {
+            version.stability_rank() == rank
+                && version
+                    .installable_file(kind)
+                    .is_some_and(|file| file.sha1.is_some())
+        }) {
+            return Some(version);
+        }
+    }
+    None
 }
 
 /// One downloadable file belonging to a remote version.
@@ -234,6 +266,8 @@ pub(crate) fn parse_sha1(value: &str) -> Option<Sha1Hash> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     fn project(project_type: &str) -> RemoteProject {
@@ -255,6 +289,30 @@ mod tests {
         }
     }
 
+    fn version(id: &str, version_type: &str, filename: &str, sha1: Option<&str>) -> RemoteVersion {
+        RemoteVersion {
+            source: ContentSource::Modrinth,
+            id: id.to_owned(),
+            project_id: "project".to_owned(),
+            name: id.to_owned(),
+            version_number: "1.0.0".to_owned(),
+            changelog: None,
+            published: Some("2026-01-01T00:00:00Z".to_owned()),
+            version_type: version_type.to_owned(),
+            downloads: 0,
+            game_versions: vec!["1.21.1".to_owned()],
+            loaders: vec!["fabric".to_owned()],
+            files: vec![RemoteFile {
+                filename: filename.to_owned(),
+                url: Url::parse("https://example.invalid/mod.jar").unwrap(),
+                size: Some(1),
+                sha1: sha1.map(|value| Sha1Hash::from_str(value).unwrap()),
+                primary: true,
+            }],
+            dependencies: Vec::new(),
+        }
+    }
+
     #[test]
     fn version_loader_filter_only_applies_to_mods() {
         assert_eq!(
@@ -270,5 +328,50 @@ mod tests {
             None
         );
         assert_eq!(project("mod").version_loader_filter(None), None);
+    }
+
+    #[test]
+    fn recommendation_prefers_the_newest_verified_release() {
+        let versions = vec![
+            version(
+                "beta",
+                "beta",
+                "beta.jar",
+                Some("0000000000000000000000000000000000000001"),
+            ),
+            version(
+                "release",
+                "release",
+                "release.jar",
+                Some("0000000000000000000000000000000000000002"),
+            ),
+            version(
+                "alpha",
+                "alpha",
+                "alpha.jar",
+                Some("0000000000000000000000000000000000000003"),
+            ),
+        ];
+        assert_eq!(
+            recommended_version(&versions, ContentKind::Mod).map(|version| version.id.as_str()),
+            Some("release")
+        );
+    }
+
+    #[test]
+    fn recommendation_skips_versions_without_a_sha1() {
+        let versions = vec![
+            version("unverified", "release", "unverified.jar", None),
+            version(
+                "verified",
+                "beta",
+                "verified.jar",
+                Some("0000000000000000000000000000000000000004"),
+            ),
+        ];
+        assert_eq!(
+            recommended_version(&versions, ContentKind::Mod).map(|version| version.id.as_str()),
+            Some("verified")
+        );
     }
 }

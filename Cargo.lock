@@ -5550,7 +5550,9 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "toml 0.8.23",
  "url",
+ "zip",
 ]
 
 [[package]]

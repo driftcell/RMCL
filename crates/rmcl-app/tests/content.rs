@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{io::Write, path::Path, time::Duration};
 
 use axum::{Json, Router, response::IntoResponse, routing::get};
 use rmcl_app::{
@@ -6,8 +6,9 @@ use rmcl_app::{
     ContentInstallRequest, ContentInstaller, ContentKind, ContentSource, IsolationMode,
     ModrinthClient, ModrinthConfig, RemoteDependency, RemoteDependencyKind, RemoteFile,
     RemoteVersion, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskStatus, TaskSubject,
-    VanillaInstaller, delete_instance_content, import_instance_content,
-    resolve_content_install_batch, scan_instance_content, set_instance_content_enabled,
+    VanillaInstaller, delete_instance_content, import_instance_content, preflight_content_install,
+    resolve_content_install_batch, scan_installed_mods, scan_instance_content,
+    set_instance_content_enabled,
 };
 use rmcl_domain::Sha1Hash;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, VersionId};
@@ -17,6 +18,7 @@ use sha1::{Digest, Sha1};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 fn instance(root: &Path) -> InstanceLayout {
     let instance = MinecraftLayout::new(root)
@@ -28,6 +30,20 @@ fn instance(root: &Path) -> InstanceLayout {
 fn write(path: &Path, contents: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, contents).unwrap();
+}
+
+fn write_fabric_mod(path: &Path, id: &str, version: &str) {
+    let file = std::fs::File::create(path).unwrap();
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    zip.start_file("fabric.mod.json", options).unwrap();
+    zip.write_all(
+        json!({"id": id, "version": version, "name": id})
+            .to_string()
+            .as_bytes(),
+    )
+    .unwrap();
+    zip.finish().unwrap();
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {
@@ -308,6 +324,22 @@ fn version_json(
     })
 }
 
+fn project_json(id: &str, slug: &str, title: &str) -> serde_json::Value {
+    json!({
+        "id": id,
+        "slug": slug,
+        "title": title,
+        "description": title,
+        "categories": ["fabric"],
+        "project_type": "mod",
+        "downloads": 0,
+        "follows": 0,
+        "game_versions": ["1.21.1"],
+        "loaders": ["fabric"],
+        "updated": "2026-01-01T00:00:00Z"
+    })
+}
+
 async fn graph_server(
     primary: Vec<u8>,
     dependency: Vec<u8>,
@@ -342,7 +374,32 @@ async fn graph_server(
         base.join("files/project.jar").unwrap(),
         json!([]),
     );
+    let primary_project = project_json("primary-project", "primary-mod", "Primary Mod");
+    let dependency_project = project_json("dep-project", "dependency-mod", "Dependency Mod");
+    let project_dependency_project =
+        project_json("project-dep", "project-dependency", "Project Dependency");
     let router = Router::new()
+        .route(
+            "/v2/project/primary-project",
+            get(move || {
+                let payload = primary_project.clone();
+                async move { Json(payload) }
+            }),
+        )
+        .route(
+            "/v2/project/dep-project",
+            get(move || {
+                let payload = dependency_project.clone();
+                async move { Json(payload) }
+            }),
+        )
+        .route(
+            "/v2/project/project-dep",
+            get(move || {
+                let payload = project_dependency_project.clone();
+                async move { Json(payload) }
+            }),
+        )
         .route(
             "/v2/version/dep-v",
             get(move || {
@@ -441,6 +498,7 @@ fn graph_request(
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        skip_version_ids: Vec::new(),
     }
 }
 
@@ -491,6 +549,72 @@ async fn resolves_dependency_graph_and_installs_dependencies_first() {
         .await
         .unwrap();
     assert!(again.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn resolved_batch_respects_satisfied_dependency_versions() {
+    let primary = b"primary mod".to_vec();
+    let dependency = b"dependency mod".to_vec();
+    let project_dependency = b"project dependency".to_vec();
+    let (base, server) = graph_server(primary.clone(), dependency, project_dependency).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let mut request = graph_request(instance, &base, &primary);
+    request.skip_version_ids = vec!["dep-v".to_owned()];
+
+    let requests = resolve_content_install_batch(
+        &graph_client(base.clone()),
+        &request,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.file.filename != "dep.jar")
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_detects_an_installed_dependency_and_skips_it() {
+    let primary = b"primary mod".to_vec();
+    let dependency = b"dependency mod".to_vec();
+    let project_dependency = b"project dependency".to_vec();
+    let (base, server) = graph_server(primary.clone(), dependency, project_dependency).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write_fabric_mod(
+        &instance.mods_dir().join("dependency-mod.jar"),
+        "dependency-mod",
+        "1.0",
+    );
+    let installed = scan_installed_mods(&instance);
+    let request = graph_request(instance, &base, &primary);
+
+    let preflight = preflight_content_install(
+        &graph_client(base.clone()),
+        &request,
+        &installed,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    let dependency = preflight
+        .dependencies
+        .iter()
+        .find(|item| item.version_id == "dep-v")
+        .unwrap();
+    assert!(matches!(
+        dependency.status,
+        rmcl_app::ContentPreflightStatus::AlreadyInstalled { enabled: true }
+    ));
+    assert!(preflight.skip_version_ids.iter().any(|id| id == "dep-v"));
+    assert_eq!(preflight.optional_count, 1);
     server.abort();
 }
 
@@ -576,6 +700,7 @@ async fn cancelling_dependency_resolution_marks_the_task_cancelled() {
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        skip_version_ids: Vec::new(),
     };
     let manager = TaskManager::with_content_and_modrinth(
         VanillaInstaller::official(DownloadConfig::default()).unwrap(),
@@ -624,6 +749,7 @@ async fn real_modrinth_required_dependency_chain_installs() {
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        skip_version_ids: Vec::new(),
     };
 
     let requests = resolve_content_install_batch(&client, &request, &CancellationToken::new())

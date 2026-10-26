@@ -1,8 +1,12 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use rmcl_content::{
-    ConflictPolicy, ContentKind, ContentLibrary, LocalContent, ModrinthClient, RemoteFile,
-    RemoteVersion, delete_content, import_file, scan_library, set_content_enabled,
+    ConflictPolicy, ContentKind, ContentLibrary, InstalledModIndex, LocalContent, ModrinthClient,
+    RemoteDependency, RemoteDependencyKind, RemoteFile, RemoteProject, RemoteVersion,
+    delete_content, import_file, scan_library, set_content_enabled,
 };
 use rmcl_domain::DownloadRequest;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath};
@@ -115,6 +119,46 @@ pub struct ContentGraphInstallRequest {
     pub conflict: ConflictPolicy,
     pub game_version: String,
     pub loader: Option<String>,
+    /// Versions whose local mod ID/version already satisfy the requirement and
+    /// must not be downloaded again as dependencies.
+    pub skip_version_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentPreflightStatus {
+    /// The exact file or the same mod ID and version is already present.
+    AlreadyInstalled {
+        enabled: bool,
+    },
+    /// The same mod ID is installed at a different version.
+    InstalledDifferentVersion {
+        version: Option<String>,
+        enabled: bool,
+    },
+    WillInstall,
+    /// An installed mod conflicts with a declared incompatible dependency.
+    Conflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentPreflightItem {
+    pub project_id: String,
+    pub project_slug: String,
+    pub title: String,
+    pub version_id: String,
+    pub version_number: String,
+    pub file_name: String,
+    pub status: ContentPreflightStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentInstallPreflight {
+    pub main: ContentPreflightItem,
+    pub dependencies: Vec<ContentPreflightItem>,
+    pub incompatible: Vec<ContentPreflightItem>,
+    pub optional_count: usize,
+    pub warnings: Vec<String>,
+    pub skip_version_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +180,41 @@ pub async fn resolve_content_install_batch(
     request: &ContentGraphInstallRequest,
     cancellation: &CancellationToken,
 ) -> Result<Vec<ContentInstallRequest>, AppError> {
+    let order = resolve_content_install_order(client, request, cancellation).await?;
+    let mut requests = Vec::new();
+    for version in order {
+        if request.skip_version_ids.iter().any(|id| id == &version.id) {
+            continue;
+        }
+        let file = installable_file(&version, request.kind)?;
+        if content_already_installed(&request.instance, request.kind, &file) {
+            continue;
+        }
+        let display_name = if version.id == request.version.id {
+            request.display_name.clone()
+        } else if version.name.trim().is_empty() {
+            file.filename.clone()
+        } else {
+            version.name.clone()
+        };
+        requests.push(ContentInstallRequest {
+            instance: request.instance.clone(),
+            kind: request.kind,
+            file,
+            display_name,
+            conflict: request.conflict,
+        });
+    }
+    Ok(requests)
+}
+
+/// Resolves the primary version and required dependencies into dependency-first
+/// order without applying local skip rules.
+pub async fn resolve_content_install_order(
+    client: &ModrinthClient,
+    request: &ContentGraphInstallRequest,
+    cancellation: &CancellationToken,
+) -> Result<Vec<RemoteVersion>, AppError> {
     installable_file(&request.version, request.kind)?;
     let mut discovered = HashSet::new();
     discovered.insert(request.version.id.clone());
@@ -174,29 +253,249 @@ pub async fn resolve_content_install_batch(
             stack.push((dependency, false));
         }
     }
+    Ok(order)
+}
 
-    let mut requests = Vec::new();
-    for version in order {
-        let file = installable_file(&version, request.kind)?;
-        if content_already_installed(&request.instance, request.kind, &file) {
-            continue;
-        }
-        let display_name = if version.id == request.version.id {
-            request.display_name.clone()
-        } else if version.name.trim().is_empty() {
-            file.filename.clone()
-        } else {
-            version.name.clone()
-        };
-        requests.push(ContentInstallRequest {
-            instance: request.instance.clone(),
-            kind: request.kind,
-            file,
-            display_name,
-            conflict: request.conflict,
+/// Builds a user-facing install preflight from the resolved dependency graph and
+/// the local mod metadata index.
+///
+/// The preflight never downloads content. It reports whether a required
+/// dependency is already present, will be installed, or conflicts with an
+/// installed mod. Satisfied dependency versions are returned in
+/// [`ContentInstallPreflight::skip_version_ids`] so the task does not create a
+/// duplicate copy.
+pub async fn preflight_content_install(
+    client: &ModrinthClient,
+    request: &ContentGraphInstallRequest,
+    installed: &InstalledModIndex,
+    cancellation: &CancellationToken,
+) -> Result<ContentInstallPreflight, AppError> {
+    let order = resolve_content_install_order(client, request, cancellation).await?;
+    let Some(main) = order.last().cloned() else {
+        return Err(AppError::ContentDependency {
+            message: "resolved dependency graph is empty".to_owned(),
         });
+    };
+    let mut projects = HashMap::new();
+    let main_project = project_for_version(client, &main, &mut projects, cancellation).await?;
+    let main_item = classify_preflight_item(
+        request,
+        &main,
+        &main_project,
+        installed,
+        request.display_name.clone(),
+    )?;
+    let mut dependencies = Vec::new();
+    let mut skip_version_ids = Vec::new();
+    for version in &order[..order.len().saturating_sub(1)] {
+        let project = project_for_version(client, version, &mut projects, cancellation).await?;
+        let item = classify_preflight_item(
+            request,
+            version,
+            &project,
+            installed,
+            if version.name.trim().is_empty() {
+                project.title.clone()
+            } else {
+                version.name.clone()
+            },
+        )?;
+        if matches!(
+            &item.status,
+            ContentPreflightStatus::AlreadyInstalled { .. }
+        ) {
+            skip_version_ids.push(version.id.clone());
+        }
+        dependencies.push(item);
     }
-    Ok(requests)
+
+    let mut incompatible = Vec::new();
+    for dependency in main
+        .dependencies
+        .iter()
+        .filter(|dependency| dependency.kind == RemoteDependencyKind::Incompatible)
+    {
+        let Some(project) =
+            dependency_project(client, dependency, &mut projects, cancellation).await?
+        else {
+            continue;
+        };
+        if let Some(installed_mod) = find_installed_mod(installed, &project) {
+            incompatible.push(ContentPreflightItem {
+                project_id: project.id.clone(),
+                project_slug: project.slug.clone(),
+                title: project.title.clone(),
+                version_id: dependency.version_id.clone().unwrap_or_default(),
+                version_number: installed_mod.metadata.version.clone().unwrap_or_default(),
+                file_name: installed_mod.file_name.clone(),
+                status: ContentPreflightStatus::Conflict,
+            });
+        }
+    }
+
+    let mut warnings = installed.warnings.clone();
+    for dependency in &dependencies {
+        match &dependency.status {
+            ContentPreflightStatus::AlreadyInstalled { enabled: false } => warnings.push(format!(
+                "前置 {} 已安装但已禁用，请启用后再启动游戏。",
+                dependency.title
+            )),
+            ContentPreflightStatus::InstalledDifferentVersion { version, .. } => {
+                warnings.push(format!(
+                    "已安装 {} 的另一版本{}，本次会安装所需的 {}。",
+                    dependency.title,
+                    version
+                        .as_deref()
+                        .map(|version| format!(" {version}"))
+                        .unwrap_or_default(),
+                    dependency.version_number
+                ))
+            }
+            ContentPreflightStatus::AlreadyInstalled { enabled: true } => {}
+            ContentPreflightStatus::WillInstall | ContentPreflightStatus::Conflict => {}
+        }
+    }
+    if !incompatible.is_empty() {
+        warnings.push(format!(
+            "检测到 {} 个已安装的不兼容 Mod。",
+            incompatible.len()
+        ));
+    }
+    if request.kind == ContentKind::ShaderPack && !installed.has_shader_loader() {
+        warnings.push(
+            "当前实例未检测到 Iris、Oculus 或 OptiFine；光影文件可以安装，但不会生效。".to_owned(),
+        );
+    }
+    if request.kind == ContentKind::Mod && request.loader.is_none() {
+        warnings.push("当前实例没有 Mod 加载器，安装后 Mod 不会生效。".to_owned());
+    }
+    if main.version_type != "release" {
+        warnings.push(format!(
+            "这是一个 {} 版本，不是正式版；建议优先选择标记为“推荐”的正式版。",
+            main.version_type
+        ));
+    }
+
+    Ok(ContentInstallPreflight {
+        main: main_item,
+        dependencies,
+        incompatible,
+        optional_count: main
+            .dependencies
+            .iter()
+            .filter(|dependency| dependency.kind == RemoteDependencyKind::Optional)
+            .count(),
+        warnings,
+        skip_version_ids,
+    })
+}
+
+fn classify_preflight_item(
+    request: &ContentGraphInstallRequest,
+    version: &RemoteVersion,
+    project: &RemoteProject,
+    installed: &InstalledModIndex,
+    title: String,
+) -> Result<ContentPreflightItem, AppError> {
+    let file = installable_file(version, request.kind)?;
+    let installed_mod = find_installed_mod(installed, project);
+    let status = if content_already_installed(&request.instance, request.kind, &file) {
+        ContentPreflightStatus::AlreadyInstalled {
+            enabled: installed_mod.is_none_or(|installed| installed.enabled),
+        }
+    } else if let Some(installed_mod) = installed_mod {
+        if same_mod_version(
+            installed_mod.metadata.version.as_deref(),
+            &version.version_number,
+        ) {
+            ContentPreflightStatus::AlreadyInstalled {
+                enabled: installed_mod.enabled,
+            }
+        } else {
+            ContentPreflightStatus::InstalledDifferentVersion {
+                version: installed_mod.metadata.version.clone(),
+                enabled: installed_mod.enabled,
+            }
+        }
+    } else {
+        ContentPreflightStatus::WillInstall
+    };
+    Ok(ContentPreflightItem {
+        project_id: project.id.clone(),
+        project_slug: project.slug.clone(),
+        title,
+        version_id: version.id.clone(),
+        version_number: version.version_number.clone(),
+        file_name: file.filename,
+        status,
+    })
+}
+
+fn find_installed_mod<'a>(
+    installed: &'a InstalledModIndex,
+    project: &RemoteProject,
+) -> Option<&'a rmcl_content::InstalledMod> {
+    [project.slug.as_str(), project.title.as_str()]
+        .into_iter()
+        .filter_map(|candidate| installed.find(candidate))
+        .next()
+        .or_else(|| {
+            let normalized = normalize_mod_id(&project.slug);
+            installed.mods.iter().find(|installed| {
+                normalize_mod_id(&installed.metadata.id) == normalized
+                    || normalize_mod_id(installed.metadata.name.as_deref().unwrap_or_default())
+                        == normalized
+            })
+        })
+}
+
+fn normalize_mod_id(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn same_mod_version(installed: Option<&str>, required: &str) -> bool {
+    installed.is_some_and(|installed| installed.eq_ignore_ascii_case(required))
+}
+
+async fn project_for_version(
+    client: &ModrinthClient,
+    version: &RemoteVersion,
+    projects: &mut HashMap<String, RemoteProject>,
+    cancellation: &CancellationToken,
+) -> Result<RemoteProject, AppError> {
+    if let Some(project) = projects.get(&version.project_id) {
+        return Ok(project.clone());
+    }
+    let project = client.project(&version.project_id, cancellation).await?;
+    projects.insert(version.project_id.clone(), project.clone());
+    Ok(project)
+}
+
+async fn dependency_project(
+    client: &ModrinthClient,
+    dependency: &RemoteDependency,
+    projects: &mut HashMap<String, RemoteProject>,
+    cancellation: &CancellationToken,
+) -> Result<Option<RemoteProject>, AppError> {
+    if let Some(project_id) = dependency.project_id.as_deref() {
+        if let Some(project) = projects.get(project_id) {
+            return Ok(Some(project.clone()));
+        }
+        let project = client.project(project_id, cancellation).await?;
+        projects.insert(project_id.to_owned(), project.clone());
+        return Ok(Some(project));
+    }
+    if let Some(version_id) = dependency.version_id.as_deref() {
+        let version = client.version(version_id, cancellation).await?;
+        return project_for_version(client, &version, projects, cancellation)
+            .await
+            .map(Some);
+    }
+    Ok(None)
 }
 
 async fn resolve_dependency(
