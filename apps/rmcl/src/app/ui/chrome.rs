@@ -1,4 +1,7 @@
+use std::sync::{Arc, OnceLock};
+
 use gpui_kit::{
+    Image, ImageFormat,
     assets::IconName,
     component::{
         ActiveTheme, Icon, Sizable, Size, StyledExt, TitleBar,
@@ -34,7 +37,7 @@ impl LauncherApp {
                 .w_full()
                 .gap_3()
                 .pr_2()
-                .child(brand_mark(cx))
+                .child(brand_mark())
                 .child(div().text_sm().font_semibold().child("RMCL"))
                 .child(
                     Tag::new()
@@ -336,20 +339,20 @@ impl LauncherApp {
     }
 }
 
-fn brand_mark(cx: &App) -> impl IntoElement {
+fn brand_mark() -> impl IntoElement {
+    static ICON: OnceLock<Arc<Image>> = OnceLock::new();
+    let icon = ICON
+        .get_or_init(|| {
+            Arc::new(Image::from_bytes(
+                ImageFormat::Png,
+                include_bytes!("../../../../../packaging/icons/png/rmcl-128.png").to_vec(),
+            ))
+        })
+        .clone();
     div()
         .size_5()
         .flex_shrink_0()
+        .overflow_hidden()
         .rounded(px(6.))
-        .bg(cx.theme().primary)
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            div()
-                .text_sm()
-                .font_semibold()
-                .text_color(cx.theme().primary_foreground)
-                .child("R"),
-        )
+        .child(img(icon).size_full().object_fit(ObjectFit::Cover))
 }
