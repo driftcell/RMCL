@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,8 +19,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    name: Detect Rust changes
+    runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.rust }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            rust:
+              - 'apps/**'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain*'
+              - '.cargo/**'
+              - '.config/**'
+              - '.github/workflows/**'
+
   lint:
     name: Format, Clippy, and doctests
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -53,7 +82,8 @@ jobs:
 
   test:
     name: Nextest (${{ matrix.os }})
-    needs: lint
+    needs: [changes, lint]
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' && needs.lint.result == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

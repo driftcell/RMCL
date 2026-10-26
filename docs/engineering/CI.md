@@ -2,7 +2,7 @@
 
 状态：已接受的初始 CI 设计
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## 工作流
 
@@ -12,9 +12,27 @@
 - Pull Request
 - 手动触发
 
-工作流只授予 `contents: read` 权限。同一分支或 PR 的新运行会取消旧运行，避免过期结果和无效资源消耗。
+工作流授予 `contents: read` 和 `pull-requests: read` 权限。同一分支或 PR 的新运行会取消旧运行，避免过期结果和无效资源消耗。
+
+## 路径过滤
+
+`Detect Rust changes` job 使用 `dorny/paths-filter` 判断改动是否涉及 Rust 代码或构建配置。只有以下路径变化时才运行 `lint` 和 `test`：
+
+- `apps/**`、`crates/**`
+- 根 `Cargo.toml`、`Cargo.lock`
+- `rust-toolchain*`、`.cargo/**`
+- `.config/**`（nextest 配置）
+- `.github/workflows/**`
+
+纯文档、notes、`CHANGELOG.md`、`release-plz.toml` 等改动会跳过测试。`lint` 和 `test` 因 job 条件被跳过时，GitHub 会把必需检查报告为 skipped，等同于成功；不能改成 workflow 级 `paths`/`paths-ignore`，否则整个 workflow 不运行，必需检查会一直 pending，PR 无法合并。
+
+`workflow_dispatch` 始终运行完整检查。检测 job 自身失败时，`lint` 仍会执行，避免因为过滤逻辑故障而静默跳过必需检查。
 
 ## Job 划分
+
+### `changes`
+
+在 Ubuntu 24.04 上运行 `dorny/paths-filter`，输出 `rust` 布尔值。PR 通过 GitHub API 读取变更文件，push 使用 git diff；手动触发直接视为 Rust 变更。它本身不是必需检查，但 `lint` 和 `test` 通过 `needs` 依赖它。
 
 ### `lint`
 
