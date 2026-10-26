@@ -84,27 +84,39 @@ impl ServerStatusClient {
     }
 
     async fn ping_inner(&self, address: &ServerAddress) -> Result<ServerStatus, ServerPingError> {
-        let socket = lookup_host((address.host(), address.port()))
+        let sockets = lookup_host((address.host(), address.port()))
             .await
             .map_err(|source| ServerPingError::Resolve {
                 host: address.host().to_owned(),
                 source,
             })?
-            .next()
-            .ok_or_else(|| ServerPingError::Resolve {
+            .collect::<Vec<_>>();
+        if sockets.is_empty() {
+            return Err(ServerPingError::Resolve {
                 host: address.host().to_owned(),
                 source: std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     "no address records returned",
                 ),
-            })?;
-        let mut stream =
-            TcpStream::connect(socket)
-                .await
-                .map_err(|source| ServerPingError::Connect {
-                    address: socket.to_string(),
-                    source,
-                })?;
+            });
+        }
+        let mut last_error = None;
+        let mut stream = None;
+        for socket in sockets {
+            match TcpStream::connect(socket).await {
+                Ok(connected) => {
+                    stream = Some(connected);
+                    break;
+                }
+                Err(source) => last_error = Some(source),
+            }
+        }
+        let mut stream = stream.ok_or_else(|| ServerPingError::Connect {
+            address: address.to_string(),
+            source: last_error.unwrap_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "no address records returned")
+            }),
+        })?;
         stream.set_nodelay(true).map_err(ServerPingError::Io)?;
 
         let started = std::time::Instant::now();
