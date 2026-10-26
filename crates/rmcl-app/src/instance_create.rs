@@ -8,7 +8,7 @@ use rmcl_instance::{
     InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, MinecraftLayout, VersionId,
 };
 use rmcl_java::JavaRequirement;
-use rmcl_minecraft::Platform;
+use rmcl_minecraft::{GameVersion, Platform};
 use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -35,6 +35,10 @@ pub struct CreateInstanceRequest {
     pub base_version_id: String,
     pub platform: Platform,
     pub loader: Option<LoaderSelection>,
+    /// Existing instance whose game-owned content is copied into the new
+    /// isolated instance. The source instance and its base profile are never
+    /// modified.
+    pub copy_content_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +47,7 @@ pub enum InstanceCreatePhase {
     InstallingBase,
     FetchingLoader,
     WritingInstance,
+    CopyingContent,
     InstallingLoader,
     Completed,
 }
@@ -119,6 +124,57 @@ impl InstanceCreator {
                 "loader version cannot be blank".to_owned(),
             ));
         }
+        if request.copy_content_from.is_some() && request.loader.is_none() {
+            return Err(AppError::InvalidRequest(
+                "copying an existing instance requires a mod loader".to_owned(),
+            ));
+        }
+        let copy_source = if let Some(source_id) = &request.copy_content_from {
+            let source_id = VersionId::new(source_id.clone())?;
+            if source_id == instance_id {
+                return Err(AppError::InvalidRequest(
+                    "source instance ID must differ from the new instance ID".to_owned(),
+                ));
+            }
+            let source_probe = layout.instance(source_id.clone(), IsolationMode::Shared);
+            let source_manifest = source_probe.load_manifest()?.ok_or_else(|| {
+                AppError::InvalidRequest(format!(
+                    "source instance `{source_id}` has no RMCL manifest"
+                ))
+            })?;
+            if let Some(loader) = source_manifest.loader.as_ref() {
+                return Err(AppError::InvalidRequest(format!(
+                    "source instance `{source_id}` already has {} {} installed",
+                    loader.kind.label(),
+                    loader.version
+                )));
+            }
+            let source_base = source_manifest.resolved_minecraft_version(&source_id);
+            if source_base != base_id.as_str() {
+                return Err(AppError::InvalidRequest(format!(
+                    "source instance `{source_id}` is based on Minecraft {source_base}, not {base_id}"
+                )));
+            }
+            let source = layout.instance(source_id.clone(), source_manifest.isolation);
+            if !source.version_json_path().is_file() {
+                return Err(AppError::VersionNotFound(source_id.as_str().to_owned()));
+            }
+            let base_json = layout.version_json_path(&base_id);
+            let base_text = std::fs::read_to_string(&base_json).map_err(|source| AppError::Io {
+                operation: "read base version JSON",
+                path: base_json,
+                source,
+            })?;
+            let base_version = GameVersion::from_json(&base_text)?;
+            if base_version.id != base_id.as_str() || base_version.inherits_from.is_some() {
+                return Err(AppError::InvalidRequest(format!(
+                    "base version `{base_id}` is not a full Vanilla profile"
+                )));
+            }
+            Some(source)
+        } else {
+            None
+        };
 
         // The base version is the parent profile. When creating an instance
         // with the base ID itself, the normal Vanilla installer is the whole
@@ -241,6 +297,31 @@ impl InstanceCreator {
         if let Err(error) = instance.write_manifest(&manifest) {
             let _ = std::fs::remove_file(&version_json_path);
             return Err(error.into());
+        }
+
+        if let Some(source) = copy_source {
+            emit_phase(&events, InstanceCreatePhase::CopyingContent).await;
+            let source_game_dir = source.game_dir();
+            let target_game_dir = instance.game_dir();
+            let source_isolated = source.isolation() == IsolationMode::Isolated;
+            let source_id = source.id().as_str().to_owned();
+            let copy_cancellation = cancellation.clone();
+            let copy_result = tokio::task::spawn_blocking(move || {
+                crate::instances::copy_instance_game_content(
+                    &source_game_dir,
+                    &target_game_dir,
+                    source_isolated,
+                    &source_id,
+                    &copy_cancellation,
+                )
+            })
+            .await
+            .map_err(|error| AppError::BlockingTask(error.to_string()))
+            .and_then(|result| result);
+            if let Err(error) = copy_result {
+                let _ = std::fs::remove_dir_all(instance.root());
+                return Err(error);
+            }
         }
 
         emit_phase(&events, InstanceCreatePhase::InstallingLoader).await;

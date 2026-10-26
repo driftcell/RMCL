@@ -1,8 +1,8 @@
 # 版本继承、加载器安装与实例创建
 
-状态：版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装和自定义实例创建已实现
+状态：版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装、自定义实例创建和从已有实例创建加载器实例已实现
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## 边界
 
@@ -98,6 +98,18 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 
 实例目录已存在时拒绝覆盖。manifest 写入失败会删除刚写入的版本 JSON；后续下载失败则保留一个可修复/删除的实例壳。
 
+### 从已有实例添加加载器
+
+实例详情页在没有加载器时提供“添加 Mod 加载器”。RMCL 不原地改写已有实例的版本 JSON，因为基础版本 JSON 可能同时被其他实例继承，也可能是用户已经使用的 Vanilla 实例。该操作复用实例创建流程：
+
+1. 读取源实例 manifest，要求 manifest 完整、没有加载器，并用 manifest 的 `minecraft_version` 作为基础版本。
+2. 校验基础版本 JSON 是完整 Vanilla profile，且 id 与基础版本一致；拒绝以加载器或其他子 profile 作为基础。
+3. 按加载器版本生成新的实例 ID 和显示名称，安装加载器并创建隔离实例。
+4. 将源实例游戏目录中的内容复制到新实例。隔离实例复制除版本 JSON/JAR、natives、日志、崩溃报告、下载缓存和 manifest 之外的顶层内容；共享实例复制 `mods/`、资源包、光影、存档、`config/` 等常用内容以及 `options.txt`、`servers.dat`。
+5. 源实例保持不变；复制失败时删除刚创建的目标实例。
+
+该流程不会升级、更换或移除已有加载器，也不修改基础版本实例本身。
+
 ### Vanilla 自定义实例
 
 选择 Vanilla 且实例 ID 不同于基础版本时，会创建一个继承基础版本的最小 profile。这样同一基础版本可以有多个隔离实例，而不复制 client JAR、libraries 或 assets。
@@ -119,7 +131,7 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 ## 当前限制
 
 - 只支持 `spec` 格式的 Forge/NeoForge installer；Minecraft 1.12.2 及更早的 legacy Forge installer 明确不支持。
-- 不支持给已有实例追加、升级或移除加载器；加载器只在创建实例时安装。
+- 不支持原地给已有实例追加、升级或移除加载器；实例详情页的“添加 Mod 加载器”会创建新的加载器实例并复制现有内容。
 - 不自动安装 Fabric API / Quilt API / Forge 配套 Mod。
 - 不校验加载器版本与基础版本的完整兼容矩阵；以元数据返回的版本列表为准。
 - 基础版本可能作为独立实例出现；尚未隐藏纯依赖实例。

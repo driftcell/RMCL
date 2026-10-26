@@ -10,7 +10,7 @@ use rmcl_app::{
 #[cfg(unix)]
 use rmcl_app::{ForgeInstaller, JavaService, JavaServiceConfig};
 use rmcl_domain::{OperatingSystem, Platform};
-use rmcl_instance::{IsolationMode, LoaderKind, MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceManifest, IsolationMode, LoaderKind, MinecraftLayout, VersionId};
 use rmcl_net::DownloadConfig;
 use serde_json::json;
 use sha1::{Digest, Sha1};
@@ -132,6 +132,7 @@ fn request(
         base_version_id: "1.21.1".to_owned(),
         platform: platform(),
         loader,
+        copy_content_from: None,
     }
 }
 
@@ -205,6 +206,97 @@ async fn creates_isolated_fabric_instance_from_existing_base() {
     assert_eq!(
         std::fs::read(root.join("libraries/example/loader/1.0/loader-1.0.jar")).unwrap(),
         b"loader-library"
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn copies_existing_instance_content_when_creating_loader_instance() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join(".minecraft");
+    write_base(&root);
+
+    let layout = MinecraftLayout::new(&root);
+    let source_id = VersionId::new("1.21.1").unwrap();
+    let source = layout.instance(source_id.clone(), IsolationMode::Isolated);
+    source.ensure_content_dirs().unwrap();
+    let mut source_manifest = InstanceManifest::new(&source_id, IsolationMode::Isolated);
+    source_manifest.name = "Source".to_owned();
+    source_manifest.minecraft_version = "1.21.1".to_owned();
+    source.write_manifest(&source_manifest).unwrap();
+    write(&source.mods_dir().join("example.jar"), b"mod");
+    write(&source.game_dir().join("options.txt"), b"options");
+    write(&source.game_dir().join("config/example.toml"), b"config");
+    write(&source.game_dir().join("saves/world/level.dat"), b"save");
+    write(&source.game_dir().join("logs/latest.log"), b"log");
+
+    let (loader_base, server) = loader_server().await;
+    let catalog = LoaderCatalog::new(LoaderCatalogConfig {
+        fabric_base: loader_base.clone(),
+        quilt_base: loader_base,
+        user_agent: "RMCL-test".to_owned(),
+        timeout: std::time::Duration::from_secs(5),
+        ..LoaderCatalogConfig::official().unwrap()
+    })
+    .unwrap();
+    let creator = InstanceCreator::new(installer(), catalog);
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(512);
+    let mut request = request(
+        &root,
+        "fabric-copy",
+        Some(LoaderSelection {
+            kind: LoaderKind::Fabric,
+            version: "0.16.10".to_owned(),
+            installer_version: "0.16.10".to_owned(),
+        }),
+    );
+    request.copy_content_from = Some("1.21.1".to_owned());
+
+    let outcome = creator
+        .create(request, CancellationToken::new(), Some(sender))
+        .await
+        .unwrap();
+
+    let mut phases = Vec::new();
+    while let Ok(event) = receiver.try_recv() {
+        if let InstanceCreateEvent::Phase(phase) = event {
+            phases.push(phase);
+        }
+    }
+    assert!(phases.contains(&rmcl_app::InstanceCreatePhase::CopyingContent));
+
+    let target = outcome.install.instance;
+    assert_eq!(
+        std::fs::read(target.mods_dir().join("example.jar")).unwrap(),
+        b"mod"
+    );
+    assert_eq!(
+        std::fs::read(target.game_dir().join("options.txt")).unwrap(),
+        b"options"
+    );
+    assert_eq!(
+        std::fs::read(target.game_dir().join("config/example.toml")).unwrap(),
+        b"config"
+    );
+    assert_eq!(
+        std::fs::read(target.game_dir().join("saves/world/level.dat")).unwrap(),
+        b"save"
+    );
+    assert!(!target.game_dir().join("logs/latest.log").exists());
+    let target_manifest = target.load_manifest().unwrap().unwrap();
+    assert_eq!(
+        target_manifest.loader.as_ref().map(|loader| loader.kind),
+        Some(LoaderKind::Fabric)
+    );
+    assert_eq!(target_manifest.name, "Test Instance");
+
+    assert_eq!(
+        std::fs::read(source.mods_dir().join("example.jar")).unwrap(),
+        b"mod"
+    );
+    assert_eq!(
+        std::fs::read(source.game_dir().join("options.txt")).unwrap(),
+        b"options"
     );
     server.abort();
 }
