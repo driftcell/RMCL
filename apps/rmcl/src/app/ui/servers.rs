@@ -144,8 +144,8 @@ impl LauncherApp {
                         .px_1()
                         .child(
                             div()
-                                .flex_1()
-                                .max_w(px(360.))
+                                .w(px(360.))
+                                .flex_shrink_0()
                                 .child(Input::new(&self.server_query).w_full()),
                         )
                         .child(
@@ -232,8 +232,8 @@ impl LauncherApp {
                     .px_1()
                     .child(
                         div()
-                            .flex_1()
-                            .max_w(px(360.))
+                            .w(px(360.))
+                            .flex_shrink_0()
                             .child(Input::new(&self.discover_query).w_full()),
                     )
                     .child(
