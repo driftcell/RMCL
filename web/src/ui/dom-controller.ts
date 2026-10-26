@@ -4,6 +4,7 @@ import {
   CHAPTERS,
   PLATFORM_BUILDS,
   type PlatformBuildSpec,
+  type ThemeMode,
   VOXEL_NODES,
   type VoxelNodeSpec,
 } from "../data/rmcl-spec";
@@ -11,53 +12,77 @@ import type { ScrollStateSnapshot } from "./scroll-driver";
 
 export interface DomControllerCallbacks {
   onSelectChapter: (index: number) => void;
-  onSelectAccent: (accent: AccentKey) => void;
+  onThemeOrAccentChange: (mode: ThemeMode, accent: AccentKey) => void;
   onClearVoxelSelection: () => void;
+}
+
+interface CachedSectionRefs {
+  sectionEl: HTMLElement;
+  columnEl: HTMLElement;
+  scrubFillEl: HTMLElement;
+  pillEls: HTMLElement[];
+  shotImgEl: HTMLElement | null;
+  wasActive: boolean;
 }
 
 export class DomController {
   private readonly callbacks: DomControllerCallbacks;
-  private readonly sectionEls: HTMLElement[] = [];
-  private readonly railButtonEls: HTMLButtonElement[] = [];
+  private readonly sectionRefs: CachedSectionRefs[] = [];
+  private readonly topNavButtonEls: HTMLButtonElement[] = [];
   private readonly swatchButtonEls: Map<AccentKey, HTMLButtonElement> = new Map();
+  private readonly modeBtnEls: HTMLButtonElement[] = [];
 
-  private readonly stateCodeEl: HTMLElement;
-  private readonly scrollCoordEl: HTMLElement;
-  private readonly railCursorEl: HTMLElement;
-  private readonly railFillEl: HTMLElement;
+  // Consolidated Appearance Dropdown elements
+  private readonly dropdownRootEl: HTMLElement;
+  private readonly dropdownTriggerBtn: HTMLButtonElement;
+  private readonly dropdownDotEl: HTMLElement;
+  private readonly dropdownLabelEl: HTMLElement;
+  private readonly dropdownPopoverEl: HTMLElement;
 
-  // Voxel Inspector DOM elements
-  private readonly inspectorCoordEl: HTMLElement;
-  private readonly inspectorCrateEl: HTMLElement;
-  private readonly inspectorLayerEl: HTMLElement;
-  private readonly inspectorRoleEl: HTMLElement;
-  private readonly inspectorPathEl: HTMLElement;
+  // Inspector elements
+  private readonly inspectorCategoryEl: HTMLElement;
+  private readonly inspectorTitleEl: HTMLElement;
+  private readonly inspectorDescEl: HTMLElement;
   private readonly inspectorHintEl: HTMLElement;
 
-  // Platform switcher DOM elements
+  // Lightbox elements
+  private readonly lightboxEl: HTMLElement;
+  private readonly lightboxImgEl: HTMLImageElement;
+  private readonly lightboxCaptionEl: HTMLElement;
+
+  private currentMode: ThemeMode = "light";
+  private currentAccent: AccentKey = "emerald";
   private activePlatformId: PlatformBuildSpec["id"] = "macos";
   private copyResetTimer: number | null = null;
+  private lastSyncedScroll = -1;
+  private lastActiveChapter = -1;
 
   constructor(callbacks: DomControllerCallbacks) {
     this.callbacks = callbacks;
 
-    this.stateCodeEl = this.mustGet("#bar-state-code");
-    this.scrollCoordEl = this.mustGet("#bar-scroll-coord");
-    this.railCursorEl = this.mustGet("#rail-cursor");
-    this.railFillEl = this.mustGet("#rail-fill");
+    this.dropdownRootEl = this.mustGet("#appearance-dropdown");
+    this.dropdownTriggerBtn = this.mustGet<HTMLButtonElement>("#appearance-trigger");
+    this.dropdownDotEl = this.mustGet("#appearance-trigger-dot");
+    this.dropdownLabelEl = this.mustGet("#appearance-trigger-label");
+    this.dropdownPopoverEl = this.mustGet("#appearance-popover");
 
-    this.inspectorCoordEl = this.mustGet("#inspector-coord");
-    this.inspectorCrateEl = this.mustGet("#inspector-crate");
-    this.inspectorLayerEl = this.mustGet("#inspector-layer");
-    this.inspectorRoleEl = this.mustGet("#inspector-role");
-    this.inspectorPathEl = this.mustGet("#inspector-path");
+    this.inspectorCategoryEl = this.mustGet("#inspector-layer");
+    this.inspectorTitleEl = this.mustGet("#inspector-crate");
+    this.inspectorDescEl = this.mustGet("#inspector-role");
     this.inspectorHintEl = this.mustGet("#inspector-hint");
 
-    this.buildTopSwatches();
-    this.buildDepthRail();
+    this.lightboxEl = this.mustGet("#shot-lightbox");
+    this.lightboxImgEl = this.mustGet<HTMLImageElement>("#lightbox-img");
+    this.lightboxCaptionEl = this.mustGet("#lightbox-caption");
+
+    this.buildAppearanceDropdown();
+    this.buildTopNav();
     this.buildChapters();
     this.bindPlatformControls();
-    this.updateInspector(VOXEL_NODES[2], false);
+    this.bindLightbox();
+
+    this.applyThemeTokens(this.currentMode, this.currentAccent);
+    this.updateInspector(VOXEL_NODES[0], false);
   }
 
   private mustGet<T extends HTMLElement = HTMLElement>(selector: string): T {
@@ -68,7 +93,7 @@ export class DomController {
     return el;
   }
 
-  private buildTopSwatches(): void {
+  private buildAppearanceDropdown(): void {
     const container = this.mustGet("#accent-swatches");
     const keys: AccentKey[] = ["emerald", "ocean", "violet", "amber", "rose"];
 
@@ -76,69 +101,149 @@ export class DomController {
       const palette = ACCENT_PALETTES[key];
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "swatch-btn";
+      btn.className = "swatch-row-btn";
       btn.dataset.accent = key;
       btn.dataset.active = key === "emerald" ? "true" : "false";
-      btn.title = `${palette.name} (${palette.enName})`;
-      btn.setAttribute("aria-label", `切换强调色：${palette.name}`);
 
       const dot = document.createElement("span");
       dot.className = "swatch-dot";
-      dot.style.backgroundColor = palette.primary;
+      dot.style.backgroundColor = palette.lightPrimary;
 
       const label = document.createElement("span");
-      label.className = "swatch-label";
+      label.className = "swatch-row-name";
       label.textContent = palette.name;
 
-      btn.append(dot, label);
+      const check = document.createElement("span");
+      check.className = "swatch-row-check";
+      check.textContent = "✓";
+
+      btn.append(dot, label, check);
       btn.addEventListener("click", () => {
-        this.applyAccentTheme(key);
-        this.callbacks.onSelectAccent(key);
+        this.currentAccent = key;
+        this.applyThemeTokens(this.currentMode, this.currentAccent);
+        this.callbacks.onThemeOrAccentChange(this.currentMode, this.currentAccent);
       });
 
       container.appendChild(btn);
       this.swatchButtonEls.set(key, btn);
     }
-  }
 
-  public applyAccentTheme(key: AccentKey): void {
-    const palette = ACCENT_PALETTES[key];
-    const root = document.documentElement;
-    root.style.setProperty("--accent-primary", palette.primary);
-    root.style.setProperty("--accent-hover", palette.hover);
-    root.style.setProperty("--accent-active", palette.active);
-    root.style.setProperty("--accent-specular", palette.specular);
-    root.style.setProperty("--accent-surface", palette.surfaceTint);
-    root.style.setProperty("--accent-deep", palette.deepSurface);
-    root.style.setProperty("--accent-ink", palette.ink);
+    // Mode switch buttons inside popover
+    const modeBtns = this.dropdownPopoverEl.querySelectorAll<HTMLButtonElement>(
+      ".mode-option-btn",
+    );
+    modeBtns.forEach((btn) => {
+      this.modeBtnEls.push(btn);
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode as ThemeMode | undefined;
+        if (mode && mode !== this.currentMode) {
+          this.currentMode = mode;
+          this.applyThemeTokens(this.currentMode, this.currentAccent);
+          this.callbacks.onThemeOrAccentChange(this.currentMode, this.currentAccent);
+        }
+      });
+    });
 
-    for (const [k, btn] of this.swatchButtonEls.entries()) {
-      btn.dataset.active = k === key ? "true" : "false";
-    }
+    // Toggle popover open/close
+    this.dropdownTriggerBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const isOpen = !this.dropdownPopoverEl.hidden;
+      this.setDropdownOpen(!isOpen);
+    });
 
-    // Also sync any accent buttons inside Chapter 4
-    const inlineBtns = document.querySelectorAll<HTMLButtonElement>(".theme-inline-btn");
-    inlineBtns.forEach((b) => {
-      b.dataset.active = b.dataset.accent === key ? "true" : "false";
+    document.addEventListener("click", (ev) => {
+      if (
+        !this.dropdownPopoverEl.hidden &&
+        !this.dropdownRootEl.contains(ev.target as Node)
+      ) {
+        this.setDropdownOpen(false);
+      }
+    });
+
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        this.setDropdownOpen(false);
+        this.lightboxEl.hidden = true;
+      }
     });
   }
 
-  private buildDepthRail(): void {
-    const nav = this.mustGet("#rail-stages");
+  private setDropdownOpen(open: boolean): void {
+    this.dropdownPopoverEl.hidden = !open;
+    this.dropdownTriggerBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  public applyThemeTokens(mode: ThemeMode, key: AccentKey): void {
+    const p = ACCENT_PALETTES[key];
+    const root = document.documentElement;
+    root.dataset.theme = mode;
+
+    const activeHex = mode === "light" ? p.lightPrimary : p.darkPrimary;
+
+    if (mode === "light") {
+      root.style.setProperty("--bg-void", "#F6F8F7");
+      root.style.setProperty("--bg-surface", "#FFFFFF");
+      root.style.setProperty("--bg-panel", "rgba(255, 255, 255, 0.94)");
+      root.style.setProperty("--text-primary", "#111C16");
+      root.style.setProperty("--text-secondary", "#4E6157");
+      root.style.setProperty("--text-muted", "#7A8D83");
+      root.style.setProperty("--line-subtle", "rgba(17, 28, 22, 0.09)");
+      root.style.setProperty("--line-strong", "rgba(17, 28, 22, 0.18)");
+      root.style.setProperty("--accent-primary", p.lightPrimary);
+      root.style.setProperty("--accent-hover", p.lightHover);
+      root.style.setProperty("--accent-active", p.lightActive);
+      root.style.setProperty("--accent-tint", p.lightTint);
+      root.style.setProperty("--accent-border-tint", p.lightBorderTint);
+      root.style.setProperty("--accent-ink", "#FFFFFF");
+    } else {
+      root.style.setProperty("--bg-void", "#090E0B");
+      root.style.setProperty("--bg-surface", "#101914");
+      root.style.setProperty("--bg-panel", "rgba(12, 19, 15, 0.94)");
+      root.style.setProperty("--text-primary", "#EEF7F2");
+      root.style.setProperty("--text-secondary", "#96AEA2");
+      root.style.setProperty("--text-muted", "#5C7468");
+      root.style.setProperty("--line-subtle", "rgba(238, 247, 242, 0.09)");
+      root.style.setProperty("--line-strong", "rgba(238, 247, 242, 0.2)");
+      root.style.setProperty("--accent-primary", p.darkPrimary);
+      root.style.setProperty("--accent-hover", p.darkHover);
+      root.style.setProperty("--accent-active", p.darkActive);
+      root.style.setProperty("--accent-tint", p.darkTint);
+      root.style.setProperty("--accent-border-tint", p.darkActive);
+      root.style.setProperty("--accent-ink", "#07130C");
+    }
+
+    // Update consolidated dropdown trigger
+    this.dropdownDotEl.style.backgroundColor = activeHex;
+    this.dropdownLabelEl.textContent = `${p.name} · ${mode === "light" ? "浅色" : "深色"}`;
+
+    for (const btn of this.modeBtnEls) {
+      btn.dataset.active = btn.dataset.mode === mode ? "true" : "false";
+    }
+
+    for (const [k, btn] of this.swatchButtonEls.entries()) {
+      btn.dataset.active = k === key ? "true" : "false";
+      const dot = btn.querySelector<HTMLElement>(".swatch-dot");
+      if (dot) {
+        dot.style.backgroundColor =
+          mode === "light" ? ACCENT_PALETTES[k].lightPrimary : ACCENT_PALETTES[k].darkPrimary;
+      }
+    }
+  }
+
+  private buildTopNav(): void {
+    const nav = this.mustGet("#top-stage-nav");
     for (const ch of CHAPTERS) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "rail-stage-btn";
+      btn.className = "top-stage-btn";
       btn.dataset.index = String(ch.index);
-      btn.innerHTML = `
-        <span class="rail-stage-num">0${ch.index}</span>
-        <span class="rail-stage-name">${ch.shortTitle}</span>
-      `;
+      btn.dataset.active = ch.index === 0 ? "true" : "false";
+      btn.textContent = ch.shortTitle;
       btn.addEventListener("click", () => {
         this.callbacks.onSelectChapter(ch.index);
       });
       nav.appendChild(btn);
-      this.railButtonEls.push(btn);
+      this.topNavButtonEls.push(btn);
     }
   }
 
@@ -150,62 +255,53 @@ export class DomController {
       section.className = "chapter-section";
       section.id = `chapter-${ch.id}`;
       section.dataset.index = String(ch.index);
-      // Alternate left/right alignment so the 3D core and typography counter-balance each other
       section.dataset.align = ch.index % 2 === 0 ? "left" : "right";
 
       const isFirst = ch.index === 0;
       const isLast = ch.index === CHAPTERS.length - 1;
 
-      const metricsHtml = ch.metrics
+      const pillsHtml = ch.pills
         .map(
-          (m, idx) => `
-          <div class="metric-cell" data-metric-idx="${idx}">
-            <div class="metric-head">
-              <span class="metric-value">${m.value}</span>
-              <span class="metric-unit">${m.unit}</span>
+          (pill, idx) =>
+            `<span class="feature-pill" data-pill-idx="${idx}">${pill}</span>`,
+        )
+        .join("");
+
+      const screenshotHtml = ch.screenshot
+        ? `
+          <figure class="shot-showcase" data-shot-url="${ch.screenshot.url}" data-shot-caption="${ch.screenshot.caption}">
+            <div class="shot-img-wrap">
+              <img
+                src="${ch.screenshot.url}"
+                alt="${ch.screenshot.caption}"
+                class="shot-img"
+                width="934"
+                height="618"
+                loading="${isFirst ? "eager" : "lazy"}"
+                decoding="async"
+              />
             </div>
-            <p class="metric-caption">${m.caption}</p>
-          </div>
-        `,
-        )
-        .join("");
+            <figcaption class="shot-caption">
+              <span>${ch.screenshot.caption}</span>
+              <span class="shot-zoom-hint">点击放大</span>
+            </figcaption>
+          </figure>
+        `
+        : "";
 
-      const terminalLinesHtml = ch.terminalSpec.lines
-        .map(
-          (line, lIdx) => `
-          <div class="trace-line" data-line-idx="${lIdx}" data-highlight="${line.highlight ? "true" : "false"}">
-            <span class="trace-key">${line.key}</span>
-            <span class="trace-val">${line.value}</span>
-          </div>
-        `,
-        )
-        .join("");
-
-      let extraInteractiveHtml = "";
+      let actionsHtml = "";
       if (isFirst) {
-        extraInteractiveHtml = `
+        actionsHtml = `
           <div class="hero-actions">
             <a class="primary-action" href="https://github.com/driftcell/RMCL/releases" target="_blank" rel="noreferrer">
-              下载 Release 构建
+              免费下载 RMCL
             </a>
             <button type="button" class="secondary-action" data-scroll-next="1">
-              向下滚动拆解核心
+              向下滚动探索
             </button>
           </div>
         `;
       } else if (isLast) {
-        const accentPills = (["emerald", "ocean", "violet", "amber", "rose"] as AccentKey[])
-          .map((k) => {
-            const p = ACCENT_PALETTES[k];
-            return `
-              <button type="button" class="theme-inline-btn" data-accent="${k}" data-active="${k === "emerald" ? "true" : "false"}">
-                <span class="swatch-dot" style="background:${p.primary}"></span>
-                <span>${p.name}</span>
-              </button>
-            `;
-          })
-          .join("");
-
         const platformTabs = PLATFORM_BUILDS.map(
           (pb) => `
             <button type="button" class="platform-tab-btn" data-platform="${pb.id}" data-active="${pb.id === "macos" ? "true" : "false"}">
@@ -215,37 +311,31 @@ export class DomController {
         ).join("");
 
         const initialPlatform = PLATFORM_BUILDS[0];
-        extraInteractiveHtml = `
+        actionsHtml = `
           <div class="convergence-controls">
-            <div class="theme-strip">
-              <span class="strip-title">外观强调色 (同步 apps/rmcl/src/theme.rs)</span>
-              <div class="theme-inline-list">${accentPills}</div>
-            </div>
-
             <div class="platform-matrix">
               <div class="platform-tabs" role="tablist">${platformTabs}</div>
               <div class="platform-detail">
                 <div class="platform-meta-row">
-                  <span id="plat-arch" class="platform-arch">${initialPlatform.arch}</span>
+                  <span id="plat-arch" class="platform-arch">${initialPlatform.subtitle}</span>
                   <span id="plat-req" class="platform-req">${initialPlatform.requirement}</span>
                 </div>
-                <p id="plat-note" class="platform-note">${initialPlatform.note}</p>
                 <div class="command-box">
                   <div class="command-header">
-                    <span id="plat-cmd-label">${initialPlatform.commandLabel}</span>
-                    <button type="button" id="copy-cmd-btn" class="copy-cmd-btn">复制命令</button>
+                    <span id="plat-cmd-label">${initialPlatform.tipLabel}</span>
+                    <button type="button" id="copy-cmd-btn" class="copy-cmd-btn">复制</button>
                   </div>
-                  <pre class="command-pre"><code id="plat-cmd-code">${initialPlatform.command}</code></pre>
+                  <pre class="command-pre"><code id="plat-cmd-code">${initialPlatform.tipCommand}</code></pre>
                 </div>
               </div>
             </div>
 
             <div class="hero-actions">
               <a class="primary-action" href="https://github.com/driftcell/RMCL/releases" target="_blank" rel="noreferrer">
-                前往 GitHub Releases
+                前往 GitHub 下载安装包
               </a>
               <a class="secondary-action" href="https://github.com/driftcell/RMCL" target="_blank" rel="noreferrer">
-                浏览 Rust 源码与架构文档
+                查看开源项目主页
               </a>
             </div>
           </div>
@@ -255,47 +345,62 @@ export class DomController {
       section.innerHTML = `
         <div class="chapter-column">
           <div class="chapter-progress-head">
-            <span class="chapter-state-id">${ch.stateCode}</span>
+            <span class="chapter-state-id">${ch.stepLabel}</span>
             <div class="chapter-scrub-bar">
               <div class="chapter-scrub-fill"></div>
             </div>
           </div>
           <h1 class="chapter-headline">${ch.headline}</h1>
           <p class="chapter-lead">${ch.lead}</p>
-          <div class="metrics-strip">
-            ${metricsHtml}
+          <div class="pills-row">
+            ${pillsHtml}
           </div>
-          <div class="trace-block">
-            <div class="trace-header">
-              <span class="trace-path">${ch.terminalSpec.path}</span>
-              <span class="trace-phase-pct">0%</span>
-            </div>
-            <div class="trace-body">
-              ${terminalLinesHtml}
-            </div>
-          </div>
-          ${extraInteractiveHtml}
+          ${screenshotHtml}
+          ${actionsHtml}
         </div>
       `;
 
       track.appendChild(section);
-      this.sectionEls.push(section);
+
+      this.sectionRefs.push({
+        sectionEl: section,
+        columnEl: section.querySelector<HTMLElement>(".chapter-column")!,
+        scrubFillEl: section.querySelector<HTMLElement>(".chapter-scrub-fill")!,
+        pillEls: Array.from(section.querySelectorAll<HTMLElement>(".feature-pill")),
+        shotImgEl: section.querySelector<HTMLElement>(".shot-img"),
+        wasActive: false,
+      });
     }
 
     const nextBtn = track.querySelector<HTMLButtonElement>("[data-scroll-next]");
     nextBtn?.addEventListener("click", () => {
       this.callbacks.onSelectChapter(1);
     });
+  }
 
-    const inlineThemeBtns = track.querySelectorAll<HTMLButtonElement>(".theme-inline-btn");
-    inlineThemeBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const accent = btn.dataset.accent as AccentKey | undefined;
-        if (accent) {
-          this.applyAccentTheme(accent);
-          this.callbacks.onSelectAccent(accent);
-        }
+  private bindLightbox(): void {
+    const figures = document.querySelectorAll<HTMLElement>(".shot-showcase");
+    figures.forEach((fig) => {
+      fig.addEventListener("click", () => {
+        const url = fig.dataset.shotUrl;
+        const caption = fig.dataset.shotCaption;
+        if (!url) return;
+        this.lightboxImgEl.src = url;
+        this.lightboxImgEl.alt = caption || "";
+        this.lightboxCaptionEl.textContent = caption || "";
+        this.lightboxEl.hidden = false;
       });
+    });
+
+    const closeBtn = document.getElementById("lightbox-close");
+    closeBtn?.addEventListener("click", () => {
+      this.lightboxEl.hidden = true;
+    });
+
+    this.lightboxEl.addEventListener("click", (ev) => {
+      if (ev.target === this.lightboxEl) {
+        this.lightboxEl.hidden = true;
+      }
     });
   }
 
@@ -303,7 +408,6 @@ export class DomController {
     const tabs = document.querySelectorAll<HTMLButtonElement>(".platform-tab-btn");
     const archEl = document.getElementById("plat-arch");
     const reqEl = document.getElementById("plat-req");
-    const noteEl = document.getElementById("plat-note");
     const cmdLabelEl = document.getElementById("plat-cmd-label");
     const cmdCodeEl = document.getElementById("plat-cmd-code");
     const copyBtn = document.getElementById("copy-cmd-btn");
@@ -317,11 +421,10 @@ export class DomController {
         tabs.forEach((t) => {
           t.dataset.active = t.dataset.platform === spec.id ? "true" : "false";
         });
-        if (archEl) archEl.textContent = spec.arch;
+        if (archEl) archEl.textContent = spec.subtitle;
         if (reqEl) reqEl.textContent = spec.requirement;
-        if (noteEl) noteEl.textContent = spec.note;
-        if (cmdLabelEl) cmdLabelEl.textContent = spec.commandLabel;
-        if (cmdCodeEl) cmdCodeEl.textContent = spec.command;
+        if (cmdLabelEl) cmdLabelEl.textContent = spec.tipLabel;
+        if (cmdCodeEl) cmdCodeEl.textContent = spec.tipCommand;
       });
     });
 
@@ -329,15 +432,13 @@ export class DomController {
       const spec = PLATFORM_BUILDS.find((p) => p.id === this.activePlatformId);
       if (!spec) return;
       try {
-        await navigator.clipboard.writeText(spec.command);
-        copyBtn.textContent = "已复制命令";
-        copyBtn.dataset.copied = "true";
+        await navigator.clipboard.writeText(spec.tipCommand);
+        copyBtn.textContent = "已复制";
         if (this.copyResetTimer !== null) {
           window.clearTimeout(this.copyResetTimer);
         }
         this.copyResetTimer = window.setTimeout(() => {
-          copyBtn.textContent = "复制命令";
-          copyBtn.dataset.copied = "false";
+          copyBtn.textContent = "复制";
         }, 1800);
       } catch {
         copyBtn.textContent = "请手动复制";
@@ -351,95 +452,65 @@ export class DomController {
   }
 
   public updateInspector(spec: VoxelNodeSpec | null, isLocked: boolean): void {
-    const node = spec ?? VOXEL_NODES[2];
-    const [x, y, z] = node.coords;
-    const fmt = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
-    this.inspectorCoordEl.textContent = `[${fmt(x)}, ${fmt(y)}, ${fmt(z)}]`;
-    this.inspectorCrateEl.textContent = node.crateName;
-    this.inspectorLayerEl.textContent = node.layerLabel;
-    this.inspectorRoleEl.textContent = node.role;
-    this.inspectorPathEl.textContent = node.artifactPath;
+    const node = spec ?? VOXEL_NODES[0];
+    this.inspectorCategoryEl.textContent = node.categoryLabel;
+    this.inspectorTitleEl.textContent = node.featureTitle;
+    this.inspectorDescEl.textContent = node.description;
     this.inspectorHintEl.textContent = isLocked
-      ? "已锁定单元 · 点击此处或空白区解除"
-      : "悬停或点击 3D 核心单元检视对应 Crate";
+      ? "已固定此功能卡片 · 点击解除"
+      : "悬停 3D 方块查看亮点";
   }
 
-  /**
-   * Synchronizes all scroll-driven DOM elements with the current scroll progress & velocity.
-   */
   public syncWithScroll(snapshot: ScrollStateSnapshot, reducedMotion: boolean): void {
-    const { smoothProgress, velocity, activeChapterIndex, chapterLocalProgress } = snapshot;
+    const { smoothProgress, velocity, activeChapterIndex } = snapshot;
 
-    const activeChapter = CHAPTERS[activeChapterIndex];
-    this.stateCodeEl.textContent = activeChapter.stateCode;
-    this.scrollCoordEl.textContent = smoothProgress.toFixed(3);
+    if (
+      Math.abs(smoothProgress - this.lastSyncedScroll) < 0.0003 &&
+      Math.abs(velocity) < 0.001 &&
+      activeChapterIndex === this.lastActiveChapter
+    ) {
+      return;
+    }
+    this.lastSyncedScroll = smoothProgress;
 
-    // Update left-edge depth rail cursor & active stage button
-    const railPct = (smoothProgress * 100).toFixed(2);
-    this.railCursorEl.style.transform = `translate3d(0, ${railPct}%, 0)`;
-    this.railFillEl.style.transform = `scaleY(${smoothProgress.toFixed(4)})`;
+    if (activeChapterIndex !== this.lastActiveChapter) {
+      this.lastActiveChapter = activeChapterIndex;
 
-    for (let i = 0; i < this.railButtonEls.length; i++) {
-      const btn = this.railButtonEls[i];
-      btn.dataset.active = i === activeChapterIndex ? "true" : "false";
-      btn.dataset.passed = i < activeChapterIndex ? "true" : "false";
+      for (let i = 0; i < this.topNavButtonEls.length; i++) {
+        const btn = this.topNavButtonEls[i];
+        btn.dataset.active = i === activeChapterIndex ? "true" : "false";
+      }
     }
 
-    // Drive per-section kinetic transforms, scrub bars, metric activation, and trace cursors
-    for (let i = 0; i < this.sectionEls.length; i++) {
-      const section = this.sectionEls[i];
+    for (let i = 0; i < this.sectionRefs.length; i++) {
+      const ref = this.sectionRefs[i];
       const ch = CHAPTERS[i];
       const [start, end] = ch.range;
       const span = Math.max(0.001, end - start);
       const localP = Math.max(0, Math.min(1, (smoothProgress - start) / span));
       const isCurrent = i === activeChapterIndex;
 
-      section.dataset.active = isCurrent ? "true" : "false";
-
-      const fillEl = section.querySelector<HTMLElement>(".chapter-scrub-fill");
-      if (fillEl) {
-        fillEl.style.transform = `scaleX(${localP.toFixed(3)})`;
+      if (ref.wasActive !== isCurrent) {
+        ref.wasActive = isCurrent;
+        ref.sectionEl.dataset.active = isCurrent ? "true" : "false";
       }
 
-      const pctEl = section.querySelector<HTMLElement>(".trace-phase-pct");
-      if (pctEl) {
-        pctEl.textContent = `${Math.round(localP * 100)}%`;
-      }
+      ref.scrubFillEl.style.transform = `scaleX(${localP.toFixed(3)})`;
 
-      // Activate metrics sequentially as the reader scrolls through the chapter
-      const metrics = section.querySelectorAll<HTMLElement>(".metric-cell");
-      metrics.forEach((mEl, mIdx) => {
-        const threshold = mIdx * 0.25;
-        mEl.dataset.lit = localP >= threshold ? "true" : "false";
-      });
-
-      // Scrub the active line inside the execution trace terminal
-      const traceLines = section.querySelectorAll<HTMLElement>(".trace-line");
-      const activeLineIdx = Math.min(
-        traceLines.length - 1,
-        Math.floor(localP * traceLines.length),
-      );
-      traceLines.forEach((lEl, lIdx) => {
-        lEl.dataset.activeLine = isCurrent && lIdx === activeLineIdx ? "true" : "false";
-      });
-
-      // Subtle scroll-linked kinetic parallax on the chapter column
-      const colEl = section.querySelector<HTMLElement>(".chapter-column");
-      if (colEl) {
-        if (reducedMotion) {
-          colEl.style.transform = "none";
-        } else {
-          const driftY = (0.5 - localP) * 28;
-          const velShift = Math.max(-10, Math.min(10, velocity * -14));
-          colEl.style.transform = `translate3d(0, ${(driftY + velShift).toFixed(1)}px, 0)`;
+      for (let pIdx = 0; pIdx < ref.pillEls.length; pIdx++) {
+        const lit = localP >= pIdx * 0.22 ? "true" : "false";
+        if (ref.pillEls[pIdx].dataset.lit !== lit) {
+          ref.pillEls[pIdx].dataset.lit = lit;
         }
       }
-    }
 
-    // Sync chapterLocalProgress CSS variable for any subtle stage indicators
-    document.documentElement.style.setProperty(
-      "--chapter-progress",
-      chapterLocalProgress.toFixed(3),
-    );
+      if (reducedMotion) {
+        ref.columnEl.style.transform = "none";
+      } else {
+        const driftY = (0.5 - localP) * 18;
+        const velShift = Math.max(-6, Math.min(6, velocity * -8));
+        ref.columnEl.style.transform = `translate3d(0, ${(driftY + velShift).toFixed(1)}px, 0)`;
+      }
+    }
   }
 }
