@@ -56,7 +56,7 @@ impl LauncherApp {
         };
         let library = self.content_library.as_ref();
         let items = self.filtered_content(cx);
-        let pending = self.content_action_pending || self.content_loading;
+        let pending = self.content_operations_pending();
         let kind = self.content_tab.kind();
         let counts = ContentTab::ALL.map(|tab| {
             let kind = tab.kind();
@@ -294,7 +294,7 @@ impl LauncherApp {
                             .outline()
                             .icon(IconName::Globe)
                             .label("下载内容")
-                            .disabled(self.content_action_pending || self.content_loading)
+                            .disabled(self.content_operations_pending())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_content_browser(this.content_tab.kind(), window, cx)
                             })),
@@ -305,9 +305,7 @@ impl LauncherApp {
                             .icon(IconName::Play)
                             .label("启动")
                             .disabled(
-                                !self.log_state.can_start()
-                                    || self.content_action_pending
-                                    || self.content_loading,
+                                !self.log_state.can_start() || self.content_operations_pending(),
                             )
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.start_launch(launch_id.clone(), window, cx)
@@ -339,7 +337,7 @@ impl LauncherApp {
                             .icon(IconName::RefreshCw)
                             .tooltip("刷新实例信息")
                             .accessibility_label("刷新实例信息")
-                            .disabled(self.content_action_pending || self.content_loading)
+                            .disabled(self.content_operations_pending())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reload_versions(window, cx);
                                 this.load_instance_content(window, cx);

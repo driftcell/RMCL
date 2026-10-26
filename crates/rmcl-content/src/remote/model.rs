@@ -132,6 +132,17 @@ impl RemoteProject {
         }
     }
 
+    /// Returns the instance loader to send when listing versions of this project.
+    ///
+    /// Only mods are loader-specific. Resource packs advertise `minecraft`, while
+    /// shaders advertise `iris`/`optifine`; filtering those by the instance's mod
+    /// loader would hide every version on Fabric/Quilt/Forge/NeoForge instances.
+    pub fn version_loader_filter(&self, instance_loader: Option<&str>) -> Option<String> {
+        (self.kind() == Some(ContentKind::Mod))
+            .then(|| instance_loader.map(str::to_owned))
+            .flatten()
+    }
+
     pub fn page_url(&self) -> String {
         format!("https://modrinth.com/{}/{}", self.project_type, self.slug)
     }
@@ -219,4 +230,45 @@ pub struct RemoteDependency {
 
 pub(crate) fn parse_sha1(value: &str) -> Option<Sha1Hash> {
     Sha1Hash::from_str(value).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(project_type: &str) -> RemoteProject {
+        RemoteProject {
+            source: ContentSource::Modrinth,
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            author: String::new(),
+            icon_url: None,
+            downloads: 0,
+            follows: 0,
+            categories: Vec::new(),
+            game_versions: Vec::new(),
+            loaders: Vec::new(),
+            project_type: project_type.to_owned(),
+            updated: None,
+        }
+    }
+
+    #[test]
+    fn version_loader_filter_only_applies_to_mods() {
+        assert_eq!(
+            project("mod").version_loader_filter(Some("fabric")),
+            Some("fabric".to_owned())
+        );
+        assert_eq!(
+            project("resourcepack").version_loader_filter(Some("fabric")),
+            None
+        );
+        assert_eq!(
+            project("shader").version_loader_filter(Some("fabric")),
+            None
+        );
+        assert_eq!(project("mod").version_loader_filter(None), None);
+    }
 }

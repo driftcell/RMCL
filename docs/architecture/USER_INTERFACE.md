@@ -2,7 +2,7 @@
 
 状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、下载、设置、离线/正版账户、皮肤头像和任务日志界面已实现
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## GPUI Kit 基线
 
@@ -160,15 +160,15 @@ Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元
 
 ## 当前不包含
 
-authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实例追加/升级/移除加载器、实例级 Java/启动参数/内存/窗口配置、实例复制与导入导出、CurseForge、Mod 依赖自动安装与更新检查、整合包、Java runtime 列表与显式覆盖、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
+authlib-injector、OptiFine 等加载器、legacy Forge installer、给已有实例追加/升级/移除加载器、实例级任意启动参数、实例复制与导入导出、CurseForge、内容更新检查、整合包、Java runtime 列表与自动下载管理界面、披风与皮肤上传、Unicode 完整本地化、崩溃原因分析、自动更新和安装包。
 
 ## 验证
 
 - `apps/rmcl/src/state.rs` 的纯 Rust 测试覆盖任务切换、日志隔离、重复/过期输入、有界缓冲和终态通知去重。
 - `rmcl-store` 覆盖 TOML 往返、schema 1 升级、schema 拒绝、损坏文件保留、原子覆盖和默认路径。
 - `rmcl-app` 覆盖版本扫描、远程 manifest 缓存、取消、快速启动、缺失文件、版本删除、安装/启动任务、Microsoft 凭据生命周期、官方皮肤头像合成和本地内容异步用例。
-- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖解析、API 错误和取消。
-- `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态。
+- `rmcl-content` 覆盖本地内容扫描、同名导入改名、Mod 禁用/启用、资源包 `options.txt` 现代/旧格式、损坏选项保护和删除路径安全；Modrinth mock 测试覆盖搜索 facets、版本/文件/依赖解析、API 错误和取消，并验证只有 Mod 的版本查询会按实例加载器过滤。
+- `rmcl-app` 覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布和 `ContentInstall` 任务快照/终态；`apps/rmcl/src/state.rs` 验证内容安装任务运行期间禁止本地内容操作。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。

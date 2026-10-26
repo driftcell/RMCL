@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use rmcl_app::{TaskId, TaskSnapshot, TaskStatus};
+use rmcl_app::{TaskId, TaskKind, TaskSnapshot, TaskStatus};
 use rmcl_launch::GameLog;
 
 const UI_LOG_CAPACITY: usize = 256;
@@ -48,6 +48,16 @@ impl LauncherState {
                 .snapshot
                 .as_ref()
                 .is_some_and(|snapshot| snapshot.status == TaskStatus::Running)
+    }
+
+    /// Whether a remote content installation currently owns the instance.
+    ///
+    /// Local content actions must not race with a `ContentInstall` task writing
+    /// into the same `mods/`, `resourcepacks/`, or `shaderpacks/` directory.
+    pub fn has_running_content_task(&self) -> bool {
+        self.snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.kind == TaskKind::ContentInstall && !snapshot.status.is_terminal()
+        })
     }
 
     pub fn begin_command(&mut self) {
@@ -232,5 +242,19 @@ mod tests {
         assert!(state.mark_terminal_notified(id));
         assert!(!state.mark_terminal_notified(id));
         assert!(state.mark_terminal_notified(TaskId::from_raw(8)));
+    }
+
+    #[test]
+    fn running_content_task_blocks_other_content_actions() {
+        let mut state = LauncherState::new();
+        let mut content = snapshot(1, TaskStatus::Running);
+        content.kind = TaskKind::ContentInstall;
+        state.apply_snapshot(content);
+        assert!(state.has_running_content_task());
+
+        let mut completed = snapshot(1, TaskStatus::Completed);
+        completed.kind = TaskKind::ContentInstall;
+        state.apply_snapshot(completed);
+        assert!(!state.has_running_content_task());
     }
 }

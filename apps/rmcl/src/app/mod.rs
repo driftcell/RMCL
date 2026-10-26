@@ -1021,7 +1021,13 @@ impl LauncherApp {
     }
 
     fn can_start_operation(&self) -> bool {
-        self.log_state.can_start() && !self.content_action_pending
+        self.log_state.can_start() && !self.content_operations_pending()
+    }
+
+    fn content_operations_pending(&self) -> bool {
+        self.content_action_pending
+            || self.content_loading
+            || self.log_state.has_running_content_task()
     }
 
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
@@ -4047,10 +4053,8 @@ impl LauncherApp {
             return;
         };
         let game_version = version.minecraft_version.clone();
-        let loader = version
-            .loader
-            .as_ref()
-            .map(|loader| loader.kind.as_str().to_owned());
+        let loader = project
+            .version_loader_filter(version.loader.as_ref().map(|loader| loader.kind.as_str()));
         let project_id = project.id.clone();
         if let Some(cancellation) = self.content_browser_cancel.take() {
             cancellation.cancel();
@@ -4212,7 +4216,7 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.content_action_pending || self.content_loading {
+        if self.content_operations_pending() {
             return;
         }
         let Some(version) = self.selected_instance_version().cloned() else {
@@ -4283,7 +4287,7 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if paths.is_empty() {
+        if paths.is_empty() || self.content_operations_pending() {
             return;
         }
         let Some(version) = self.selected_instance_version().cloned() else {
@@ -4366,7 +4370,7 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.content_action_pending {
+        if self.content_operations_pending() {
             return;
         }
         let Some(version) = self.selected_instance_version().cloned() else {
@@ -4466,7 +4470,7 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.content_action_pending {
+        if self.content_operations_pending() {
             return;
         }
         let Some(version) = self.selected_instance_version().cloned() else {
