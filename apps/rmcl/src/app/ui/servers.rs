@@ -1,12 +1,13 @@
 use gpui_kit::{
     assets::IconName,
     component::{
-        ActiveTheme, Disableable, Icon, Sizable, StyledExt,
+        ActiveTheme, Disableable, Icon, Sizable, Size, StyledExt,
         button::{Button, ButtonVariants},
         h_flex,
         input::Input,
         scroll::ScrollableElement,
         select::Select,
+        spinner::Spinner,
         tab::{Tab, TabBar},
         tag::Tag,
         v_flex,
@@ -14,7 +15,7 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use rmcl_app::{FeaturedServer, featured_instance_id, featured_servers};
+use rmcl_app::{FeaturedServer, ServerStatus, featured_instance_id, featured_servers};
 use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
@@ -22,6 +23,34 @@ use super::common::{card, empty_state, error_banner, page_header, section_title}
 
 impl LauncherApp {
     pub fn render_servers(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .p_6()
+            .gap_5()
+            .child(page_header(Page::Servers, div(), cx))
+            .child(
+                h_flex().gap_3().items_center().child(
+                    TabBar::new("server-tabs")
+                        .segmented()
+                        .selected_index(self.server_tab.index())
+                        .on_click(cx.listener(|this, index: &usize, window, cx| {
+                            this.select_server_tab(ServerTab::from_index(*index), window, cx)
+                        }))
+                        .children(
+                            ServerTab::ALL
+                                .into_iter()
+                                .map(|tab| Tab::new().label(tab.label())),
+                        ),
+                ),
+            )
+            .child(match self.server_tab {
+                ServerTab::Favorites => self.render_server_favorites(cx).into_any_element(),
+                ServerTab::Discover => self.render_server_discover(cx),
+            })
+    }
+
+    fn server_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let refreshing = match self.server_tab {
             ServerTab::Favorites => self.servers.refreshing,
             ServerTab::Discover => self.servers.featured.refreshing,
@@ -41,36 +70,12 @@ impl LauncherApp {
             .icon(IconName::Plus)
             .label("添加服务器")
             .on_click(cx.listener(|this, _, window, cx| this.open_server_dialog(None, window, cx)));
-        let actions = h_flex().gap_2().child(refresh);
-        let actions = match self.server_tab {
-            ServerTab::Favorites => actions.child(add),
-            ServerTab::Discover => actions,
-        };
 
-        v_flex()
-            .flex_1()
-            .min_h_0()
-            .p_6()
-            .gap_5()
-            .child(page_header(Page::Servers, actions, cx))
-            .child(
-                h_flex().gap_3().items_center().child(
-                    TabBar::new("server-tabs")
-                        .segmented()
-                        .selected_index(self.server_tab.index())
-                        .on_click(cx.listener(|this, index: &usize, window, cx| {
-                            this.select_server_tab(ServerTab::from_index(*index), window, cx)
-                        }))
-                        .children(
-                            ServerTab::ALL
-                                .into_iter()
-                                .map(|tab| Tab::new().label(tab.label())),
-                        ),
-                ),
-            )
-            .child(match self.server_tab {
-                ServerTab::Favorites => self.render_server_favorites(cx).into_any_element(),
-                ServerTab::Discover => self.render_server_discover(cx),
+        h_flex()
+            .gap_2()
+            .child(refresh)
+            .when(self.server_tab == ServerTab::Favorites, |this| {
+                this.child(add)
             })
     }
 
@@ -177,6 +182,7 @@ impl LauncherApp {
                                     .max_w(px(360.))
                                     .child(Input::new(&self.server_query).w_full()),
                             )
+                            .child(self.server_toolbar(cx))
                             .child(
                                 div()
                                     .text_xs()
@@ -266,6 +272,7 @@ impl LauncherApp {
                             .max_w(px(360.))
                             .child(Input::new(&self.discover_query).w_full()),
                     )
+                    .child(self.server_toolbar(cx))
                     .child(
                         div()
                             .text_xs()
@@ -300,28 +307,7 @@ impl LauncherApp {
         let view = self.servers.featured.statuses.get(&server.id);
         let loading = view.is_some_and(|view| view.loading);
         let status = view.and_then(|view| view.status.as_ref());
-        let error = view.and_then(|view| view.error.as_deref());
         let icon_path = view.and_then(|view| view.icon_path.as_deref());
-        let status_tag = if loading {
-            Tag::info().child("查询中").small()
-        } else if status.is_some() {
-            Tag::success().child("在线").small()
-        } else {
-            Tag::danger().child("离线").small()
-        };
-        let live = status.map(|status| {
-            let players = match (status.online_players, status.max_players) {
-                (Some(online), Some(max)) => format!("{online}/{max} 人"),
-                (Some(online), None) => format!("{online} 人"),
-                _ => "人数未知".to_owned(),
-            };
-            let version = status
-                .version_name
-                .as_deref()
-                .filter(|version| !version.is_empty())
-                .unwrap_or("版本未知");
-            format!("{players} · {version} · {} ms", status.latency.as_millis())
-        });
         let instance_id = server
             .version
             .as_deref()
@@ -360,6 +346,16 @@ impl LauncherApp {
                     this.toggle_featured_server_favorite(server.clone(), window, cx)
                 }
             }));
+        let source_button = server.source_url.as_ref().map(|url| {
+            let url = url.clone();
+            Button::new(format!("featured-source-{}", server.id))
+                .ghost()
+                .small()
+                .icon(IconName::ExternalLink)
+                .tooltip("打开官网")
+                .accessibility_label("打开官网")
+                .on_click(move |_, _, cx| cx.open_url(&url))
+        });
         let installable = can_install && server.can_install();
         let install_label = if server.requires_mods {
             "需要整合包"
@@ -403,16 +399,21 @@ impl LauncherApp {
                             .gap_1()
                             .child(
                                 h_flex()
+                                    .w_full()
                                     .gap_2()
                                     .items_center()
                                     .child(
                                         div()
+                                            .flex_1()
+                                            .min_w_0()
                                             .text_base()
                                             .font_semibold()
                                             .truncate()
                                             .child(server.name.clone()),
                                     )
-                                    .child(status_tag),
+                                    .when_some(server_players(status, cx), |this, players| {
+                                        this.child(players)
+                                    }),
                             )
                             .child(h_flex().gap_1().flex_wrap().children(tags))
                             .child(
@@ -432,14 +433,7 @@ impl LauncherApp {
                                     .text_color(cx.theme().foreground)
                                     .child(server.description.clone()),
                             )
-                            .when_some(live, |this, live| {
-                                this.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(live),
-                                )
-                            }),
+                            .child(server_status_line(loading, status, cx)),
                     )
                     .child(
                         v_flex()
@@ -475,26 +469,9 @@ impl LauncherApp {
                                     )
                                     .child(favorite_button),
                             )
-                            .child(
-                                Button::new(format!("featured-source-{}", server.id))
-                                    .ghost()
-                                    .icon(IconName::ExternalLink)
-                                    .label(server.source_label.clone())
-                                    .on_click({
-                                        let url = server.source_url.clone();
-                                        move |_, _, cx| cx.open_url(&url)
-                                    }),
-                            ),
+                            .when_some(source_button, |this, button| this.child(button)),
                     ),
             )
-            .when_some(error, |this, error| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().danger)
-                        .child(error.to_owned()),
-                )
-            })
             .into_any_element()
     }
 
@@ -508,32 +485,10 @@ impl LauncherApp {
         let view = self.servers.statuses.get(&server.id);
         let loading = view.is_some_and(|view| view.loading);
         let status = view.and_then(|view| view.status.as_ref());
-        let error = view.and_then(|view| view.error.as_deref());
         let icon_path = view.and_then(|view| view.icon_path.as_deref());
-        let status_tag = if loading {
-            Tag::info().child("查询中").small()
-        } else if status.is_some() {
-            Tag::success().child("在线").small()
-        } else {
-            Tag::danger().child("离线").small()
-        };
         let motd = status
             .map(|status| status.motd.trim())
-            .filter(|motd| !motd.is_empty())
-            .unwrap_or("没有可用 MOTD");
-        let details = status.map(|status| {
-            let players = match (status.online_players, status.max_players) {
-                (Some(online), Some(max)) => format!("{online}/{max} 人"),
-                (Some(online), None) => format!("{online} 人"),
-                _ => "人数未知".to_owned(),
-            };
-            let version = status
-                .version_name
-                .as_deref()
-                .filter(|version| !version.is_empty())
-                .unwrap_or("版本未知");
-            format!("{players} · {version} · {} ms", status.latency.as_millis())
-        });
+            .filter(|motd| !motd.is_empty());
         let id = server.id.clone();
 
         card(cx)
@@ -550,16 +505,21 @@ impl LauncherApp {
                             .gap_1()
                             .child(
                                 h_flex()
+                                    .w_full()
                                     .gap_2()
                                     .items_center()
                                     .child(
                                         div()
+                                            .flex_1()
+                                            .min_w_0()
                                             .text_base()
                                             .font_semibold()
                                             .truncate()
                                             .child(server.name.clone()),
                                     )
-                                    .child(status_tag),
+                                    .when_some(server_players(status, cx), |this, players| {
+                                        this.child(players)
+                                    }),
                             )
                             .child(
                                 div()
@@ -567,20 +527,15 @@ impl LauncherApp {
                                     .text_color(cx.theme().muted_foreground)
                                     .child(server.address.clone()),
                             )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().foreground)
-                                    .child(motd.to_owned()),
-                            )
-                            .when_some(details, |this, details| {
+                            .when_some(motd, |this, motd| {
                                 this.child(
                                     div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(details),
+                                        .text_sm()
+                                        .text_color(cx.theme().foreground)
+                                        .child(motd.to_owned()),
                                 )
-                            }),
+                            })
+                            .child(server_status_line(loading, status, cx)),
                     )
                     .child(
                         h_flex()
@@ -597,17 +552,6 @@ impl LauncherApp {
                                         move |this, _, window, cx| {
                                             this.join_server(id.clone(), window, cx)
                                         }
-                                    })),
-                            )
-                            .child(
-                                Button::new(format!("server-refresh-{id}"))
-                                    .ghost()
-                                    .icon(IconName::RefreshCw)
-                                    .tooltip("刷新全部服务器状态")
-                                    .accessibility_label("刷新全部服务器状态")
-                                    .disabled(loading || self.servers.refreshing)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.refresh_servers(window, cx)
                                     })),
                             )
                             .child(
@@ -638,16 +582,98 @@ impl LauncherApp {
                             ),
                     ),
             )
-            .when_some(error, |this, error| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().danger)
-                        .child(error.to_owned()),
-                )
-            })
             .into_any_element()
     }
+}
+
+fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement> {
+    let status = status?;
+    let players = match (status.online_players, status.max_players) {
+        (Some(online), Some(max)) => format!("{online}/{max} 人"),
+        (Some(online), None) => format!("{online} 人"),
+        _ => return None,
+    };
+    Some(
+        h_flex()
+            .gap_1()
+            .flex_shrink_0()
+            .items_center()
+            .child(
+                Icon::new(IconName::Users)
+                    .xsmall()
+                    .text_color(cx.theme().muted_foreground),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(players),
+            )
+            .into_any_element(),
+    )
+}
+
+fn server_status_line(loading: bool, status: Option<&ServerStatus>, cx: &App) -> AnyElement {
+    if loading {
+        return h_flex()
+            .gap_1()
+            .items_center()
+            .child(
+                Spinner::new()
+                    .with_size(Size::XSmall)
+                    .color(cx.theme().primary),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("查询中"),
+            )
+            .into_any_element();
+    }
+
+    let Some(status) = status else {
+        return h_flex()
+            .gap_1()
+            .items_center()
+            .child(
+                Icon::new(IconName::CircleX)
+                    .xsmall()
+                    .text_color(cx.theme().danger),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().danger)
+                    .child("无法连接"),
+            )
+            .into_any_element();
+    };
+
+    let version = status
+        .version_name
+        .as_deref()
+        .filter(|version| !version.is_empty());
+    let detail = version.map_or_else(
+        || format!("{} ms", status.latency.as_millis()),
+        |version| format!("{} ms · {version}", status.latency.as_millis()),
+    );
+
+    h_flex()
+        .gap_1()
+        .items_center()
+        .child(
+            Icon::new(IconName::CircleCheck)
+                .xsmall()
+                .text_color(cx.theme().success),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(detail),
+        )
+        .into_any_element()
 }
 
 fn server_icon(path: Option<&std::path::Path>, cx: &App) -> AnyElement {

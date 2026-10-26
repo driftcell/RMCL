@@ -22,8 +22,7 @@ pub struct FeaturedServer {
     pub description: String,
     pub tags: Vec<String>,
     pub requires_mods: bool,
-    pub source_url: String,
-    pub source_label: String,
+    pub source_url: Option<String>,
 }
 
 impl FeaturedServer {
@@ -91,8 +90,8 @@ struct FeaturedServerSpec {
     tags: Vec<String>,
     #[serde(default)]
     requires_mods: bool,
-    source_url: String,
-    source_label: String,
+    #[serde(default)]
+    source_url: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -157,14 +156,6 @@ fn parse_featured_servers(json: &str) -> Result<Vec<FeaturedServer>, FeaturedSer
                 reason: "description cannot be blank".to_owned(),
             });
         }
-        let source_label = spec.source_label.trim().to_owned();
-        if source_label.is_empty() {
-            return Err(FeaturedServerError::Invalid {
-                id: id.clone(),
-                reason: "source_label cannot be blank".to_owned(),
-            });
-        }
-
         let address =
             ServerAddress::parse(&spec.address).map_err(|source| FeaturedServerError::Address {
                 id: id.clone(),
@@ -195,18 +186,26 @@ fn parse_featured_servers(json: &str) -> Result<Vec<FeaturedServer>, FeaturedSer
             });
         }
 
-        let source_url =
-            Url::parse(spec.source_url.trim()).map_err(|source| FeaturedServerError::Url {
-                id: id.clone(),
-                url: spec.source_url.clone(),
-                source,
-            })?;
-        if source_url.scheme() != "https" || source_url.host_str().is_none() {
-            return Err(FeaturedServerError::Invalid {
-                id: id.clone(),
-                reason: "source_url must be an absolute https URL".to_owned(),
-            });
-        }
+        let source_url = spec
+            .source_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(|url| {
+                let parsed = Url::parse(url).map_err(|source| FeaturedServerError::Url {
+                    id: id.clone(),
+                    url: url.to_owned(),
+                    source,
+                })?;
+                if parsed.scheme() != "https" || parsed.host_str().is_none() {
+                    return Err(FeaturedServerError::Invalid {
+                        id: id.clone(),
+                        reason: "source_url must be an absolute https URL".to_owned(),
+                    });
+                }
+                Ok(parsed.to_string())
+            })
+            .transpose()?;
 
         let tags = spec
             .tags
@@ -229,8 +228,7 @@ fn parse_featured_servers(json: &str) -> Result<Vec<FeaturedServer>, FeaturedSer
             description,
             tags,
             requires_mods: spec.requires_mods,
-            source_url: source_url.to_string(),
-            source_label,
+            source_url,
         });
     }
 
@@ -285,8 +283,8 @@ mod tests {
     #[test]
     fn duplicate_ids_are_rejected() {
         let json = r#"[
-            {"id":"a","name":"A","address":"a.example.com","version":"1.21.1","description":"a","source_url":"https://a.example.com/","source_label":"a"},
-            {"id":"a","name":"B","address":"b.example.com","version":"1.21.1","description":"b","source_url":"https://b.example.com/","source_label":"b"}
+            {"id":"a","name":"A","address":"a.example.com","version":"1.21.1","description":"a","source_url":"https://a.example.com/"},
+            {"id":"a","name":"B","address":"b.example.com","version":"1.21.1","description":"b","source_url":"https://b.example.com/"}
         ]"#;
         assert!(matches!(
             parse_featured_servers(json),
@@ -297,7 +295,7 @@ mod tests {
     #[test]
     fn invalid_address_is_rejected() {
         let json = r#"[
-            {"id":"a","name":"A","address":"https://example.com/","version":"1.21.1","description":"a","source_url":"https://a.example.com/","source_label":"a"}
+            {"id":"a","name":"A","address":"https://example.com/","version":"1.21.1","description":"a","source_url":"https://a.example.com/"}
         ]"#;
         assert!(matches!(
             parse_featured_servers(json),
@@ -308,7 +306,7 @@ mod tests {
     #[test]
     fn non_https_source_is_rejected() {
         let json = r#"[
-            {"id":"a","name":"A","address":"a.example.com","version":"1.21.1","description":"a","source_url":"http://a.example.com/","source_label":"a"}
+            {"id":"a","name":"A","address":"a.example.com","version":"1.21.1","description":"a","source_url":"http://a.example.com/"}
         ]"#;
         assert!(matches!(
             parse_featured_servers(json),
@@ -317,9 +315,19 @@ mod tests {
     }
 
     #[test]
+    fn website_is_optional() {
+        let json = r#"[
+            {"id":"a","name":"A","address":"a.example.com","version":"1.21.1","description":"a"},
+            {"id":"b","name":"B","address":"b.example.com","version":"1.21.1","description":"b","source_url":"  "}
+        ]"#;
+        let servers = parse_featured_servers(json).unwrap();
+        assert!(servers.iter().all(|server| server.source_url.is_none()));
+    }
+
+    #[test]
     fn vanilla_server_requires_a_version() {
         let json = r#"[
-            {"id":"a","name":"A","address":"a.example.com","description":"a","source_url":"https://a.example.com/","source_label":"a"}
+            {"id":"a","name":"A","address":"a.example.com","description":"a","source_url":"https://a.example.com/"}
         ]"#;
         assert!(matches!(
             parse_featured_servers(json),
