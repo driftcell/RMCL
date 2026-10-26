@@ -33,7 +33,7 @@ pub use content::{
     scan_instance_content, set_instance_content_enabled,
 };
 pub use error::{AppError, InstallDownloadFailure};
-pub use featured::{FeaturedServer, FeaturedServerError, featured_instance_id, featured_servers};
+pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};
 pub use forge::{ForgeInstallOutcome, ForgeInstallRequest, ForgeInstaller};
 pub use game::{
     GameLaunchEvent, GameLaunchEventSender, GameLaunchOutcome, GameLaunchRequest, GameLauncher,

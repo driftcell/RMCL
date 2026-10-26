@@ -33,7 +33,7 @@ use rmcl_app::{
     ServerStatusClient, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
     TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
     VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
-    discover_installed_versions, featured_instance_id, featured_servers, import_instance_content,
+    discover_installed_versions, featured_servers, import_instance_content,
     migrate_instance_to_isolated, preflight_content_install, recommended_version, rename_instance,
     scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
     set_instance_launch_settings, spawn_apply_helper,
@@ -51,7 +51,6 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    app::ui::common::warning_banner,
     services::{
         Bootstrap, Services, load_account, load_microsoft_account, open_path, stored_account,
         stored_microsoft_account,
@@ -63,7 +62,7 @@ use crate::{
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
 const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
 const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
-const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SERVER_PING_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,8 +148,9 @@ impl ServerTab {
 
     pub fn from_index(index: usize) -> Self {
         match index {
+            0 => Self::Favorites,
             1 => Self::Discover,
-            _ => Self::Favorites,
+            _ => unreachable!("invalid server tab index: {index}"),
         }
     }
 }
@@ -193,19 +193,6 @@ struct ServersState {
     request: u64,
     cancel: Option<CancellationToken>,
     featured: ServerStatusState,
-}
-
-#[derive(Debug, Clone)]
-struct PendingServerJoin {
-    instance_id: String,
-    server_name: String,
-    server: ServerAddress,
-}
-
-impl PendingServerJoin {
-    fn matches(&self, instance_id: Option<&str>) -> bool {
-        instance_id == Some(self.instance_id.as_str())
-    }
 }
 
 #[derive(Clone, Default)]
@@ -402,7 +389,6 @@ pub struct LauncherApp {
     discover_query: Entity<InputState>,
     server_name_input: Entity<InputState>,
     server_address_input: Entity<InputState>,
-    pending_server_join: Option<PendingServerJoin>,
     _server_task: Option<Task<()>>,
     _featured_task: Option<Task<()>>,
     _server_auto_task: Option<Task<()>>,
@@ -766,7 +752,6 @@ impl LauncherApp {
             discover_query,
             server_name_input,
             server_address_input,
-            pending_server_join: None,
             _server_task: None,
             _featured_task: None,
             _server_auto_task: None,
@@ -1476,6 +1461,18 @@ impl LauncherApp {
         self.log_state.can_start() && !self.content_operations_pending()
     }
 
+    fn server_join_ready(&self) -> (bool, &'static str) {
+        if self.selected_version().is_none() {
+            (false, "请先选择一个实例")
+        } else if self.selected_account().is_none() {
+            (false, "请先添加一个账户")
+        } else if !self.can_start_operation() {
+            (false, "当前有任务或游戏正在运行，请先停止")
+        } else {
+            (true, "使用当前实例和账户进入服务器")
+        }
+    }
+
     fn content_operations_pending(&self) -> bool {
         self.content_action_pending
             || self.content_loading
@@ -1746,20 +1743,28 @@ impl LauncherApp {
         );
     }
 
-    fn open_featured_install_dialog(
+    fn join_featured_server(
         &mut self,
         server: FeaturedServer,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if server.requires_mods || server.version.is_none() {
+        if server.requires_mods {
             window.push_notification(
-                Notification::warning("该服务器需要客户端 Mod 或整合包，暂不能自动安装。")
+                Notification::warning("该服务器需要客户端 Mod 或整合包，请先准备对应实例。")
                     .title("需要整合包"),
                 cx,
             );
             return;
         }
+        let Some(version) = self.selected_version() else {
+            window.push_notification(
+                Notification::warning("请先在主页或实例页选择一个实例。").title("无法进入服务器"),
+                cx,
+            );
+            return;
+        };
+        let version_id = version.id.as_str().to_owned();
         if self.selected_account().is_none() {
             window.push_notification(
                 Notification::warning("请先添加一个账户。").title("无法进入服务器"),
@@ -1775,127 +1780,7 @@ impl LauncherApp {
             );
             return;
         }
-
-        let Some(version) = server.version.clone() else {
-            return;
-        };
-        let instance_id = featured_instance_id(&server.id, &version);
-        let installed = self
-            .installed_versions
-            .iter()
-            .any(|installed| installed.id.as_str() == instance_id);
-        let view = cx.entity().downgrade();
-        let server_for_dialog = server.clone();
-        let instance_id_for_dialog = instance_id.clone();
-        let title = if installed {
-            format!("进入 {}", server.name)
-        } else {
-            format!("安装并进入 {}", server.name)
-        };
-        let confirm_label = if installed {
-            "进入服务器"
-        } else {
-            "安装并进入"
-        }
-        .to_owned();
-        window.open_dialog(cx, move |dialog, _window, cx| {
-            let server = server_for_dialog.clone();
-            let instance_id = instance_id_for_dialog.clone();
-            let view = view.clone();
-            let confirm_label = confirm_label.clone();
-            dialog
-                .title(title.clone())
-                .width(px(540.))
-                .child(
-                    v_flex()
-                        .gap_4()
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .items_center()
-                                .child(Tag::info().child(server.name.clone()))
-                                .child(Tag::secondary().child(server.address.to_string()))
-                                .child(Tag::new().outline().child(format!("Minecraft {version}"))),
-                        )
-                        .child(div().text_sm().child(if installed {
-                            format!("将使用已安装的实例 `{instance_id}` 进入服务器。")
-                        } else {
-                            format!(
-                                "将创建隔离的 Vanilla 实例 `{instance_id}`，安装 Minecraft {version} 后直接进入服务器。"
-                            )
-                        }))
-                        .child(warning_banner(
-                            "第三方服务器",
-                            "服务器由第三方运营；公共服务器通常要求正版账号，版本、白名单或 Mod 要求可能导致无法加入。",
-                            cx,
-                        )),
-                )
-                .footer(
-                    DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
-                        .child(DialogAction::new().child(
-                            Button::new("featured-install-confirm")
-                                .primary()
-                                .label(confirm_label),
-                        )),
-                )
-                .on_ok(move |_, window, cx| {
-                    let Some(view) = view.upgrade() else {
-                        return true;
-                    };
-                    view.update(cx, |this, cx| {
-                        this.confirm_featured_join(
-                            server.clone(),
-                            instance_id.clone(),
-                            window,
-                            cx,
-                        )
-                    })
-                })
-        });
-    }
-
-    fn confirm_featured_join(
-        &mut self,
-        server: FeaturedServer,
-        instance_id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if !self.can_start_operation() {
-            window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法进入服务器"),
-                cx,
-            );
-            return true;
-        }
-        let installed = self
-            .installed_versions
-            .iter()
-            .any(|installed| installed.id.as_str() == instance_id);
-        if installed {
-            self.start_launch_with_server(instance_id, Some(server.address), window, cx);
-            return true;
-        }
-        let Some(version) = server.version.clone() else {
-            return true;
-        };
-        self.pending_server_join = Some(PendingServerJoin {
-            instance_id: instance_id.clone(),
-            server_name: server.name.clone(),
-            server: server.address,
-        });
-        let request = CreateInstanceRequest {
-            minecraft_root: self.config.minecraft_root.clone(),
-            instance_id: instance_id.clone(),
-            name: format!("{} {}", server.name, version),
-            base_version_id: version,
-            platform: self.services.platform.clone(),
-            loader: None,
-        };
-        self.start_create_instance_task(request, instance_id, window, cx);
-        true
+        self.start_launch_with_server(version_id, Some(server.address), window, cx);
     }
 
     fn open_server_dialog(
@@ -2597,7 +2482,6 @@ impl LauncherApp {
                     Some(TaskSubject::Instance { id, name }) => (Some(id), name),
                     _ => (None, "实例".to_owned()),
                 };
-                let created_instance_id = instance_id.clone();
                 self.reload_versions(window, cx);
                 if let Some(instance_id) = instance_id {
                     self.config.selected_version = Some(instance_id.clone());
@@ -2606,32 +2490,10 @@ impl LauncherApp {
                     self.save_config();
                     self.load_instance_content(window, cx);
                 }
-                let pending = self
-                    .pending_server_join
-                    .take()
-                    .filter(|pending| pending.matches(created_instance_id.as_deref()));
-                if let Some(pending) = pending {
-                    window.push_notification(
-                        Notification::info(format!(
-                            "实例已创建，正在进入 {}。",
-                            pending.server_name
-                        ))
-                        .title("正在进入服务器"),
-                        cx,
-                    );
-                    self.start_launch_with_server(
-                        pending.instance_id,
-                        Some(pending.server),
-                        window,
-                        cx,
-                    );
-                } else {
-                    window.push_notification(
-                        Notification::success(format!("实例 {name} 已创建。"))
-                            .title("实例创建完成"),
-                        cx,
-                    );
-                }
+                window.push_notification(
+                    Notification::success(format!("实例 {name} 已创建。")).title("实例创建完成"),
+                    cx,
+                );
             }
             TaskStatus::Completed if snapshot.kind == TaskKind::ContentInstall => {
                 let (instance_id, name) = match snapshot.subject {
@@ -2685,9 +2547,6 @@ impl LauncherApp {
                 }
             }
             TaskStatus::Failed => {
-                if snapshot.kind == TaskKind::InstanceCreate {
-                    self.pending_server_join = None;
-                }
                 self.logs_attention = true;
                 window.push_notification(
                     Notification::error(
@@ -2701,9 +2560,6 @@ impl LauncherApp {
                 );
             }
             TaskStatus::Cancelled => {
-                if snapshot.kind == TaskKind::InstanceCreate {
-                    self.pending_server_join = None;
-                }
                 window.push_notification(Notification::info("任务已取消。").title("已取消"), cx);
             }
             TaskStatus::Running | TaskStatus::Cancelling => {}

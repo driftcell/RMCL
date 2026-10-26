@@ -15,7 +15,7 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use rmcl_app::{FeaturedServer, ServerStatus, featured_instance_id, featured_servers};
+use rmcl_app::{FeaturedServer, ServerStatus, featured_servers};
 use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
@@ -44,39 +44,68 @@ impl LauncherApp {
                         ),
                 ),
             )
+            .child(self.render_join_target(cx))
             .child(match self.server_tab {
                 ServerTab::Favorites => self.render_server_favorites(cx).into_any_element(),
                 ServerTab::Discover => self.render_server_discover(cx),
             })
     }
 
-    fn server_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let refreshing = match self.server_tab {
-            ServerTab::Favorites => self.servers.refreshing,
-            ServerTab::Discover => self.servers.featured.refreshing,
-        };
-        let refresh = Button::new("servers-refresh")
-            .outline()
-            .icon(IconName::RefreshCw)
-            .label(if refreshing {
-                "刷新中"
-            } else {
-                "刷新状态"
-            })
-            .disabled(refreshing)
-            .on_click(cx.listener(|this, _, window, cx| this.refresh_active_servers(window, cx)));
-        let add = Button::new("servers-add")
+    fn render_join_target(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        card(cx).child(section_title("启动目标", "", cx)).child(
+            h_flex()
+                .gap_3()
+                .child(
+                    v_flex()
+                        .gap_1()
+                        .flex_1()
+                        .max_w(px(320.))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("实例"),
+                        )
+                        .child(
+                            Select::new(&self.version_select)
+                                .placeholder("选择实例")
+                                .accessibility_label("选择实例")
+                                .menu_width(px(280.))
+                                .menu_max_h(px(260.))
+                                .cleanable(false)
+                                .w_full(),
+                        ),
+                )
+                .child(
+                    v_flex()
+                        .gap_1()
+                        .flex_1()
+                        .max_w(px(320.))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("账户"),
+                        )
+                        .child(
+                            Select::new(&self.account_select)
+                                .placeholder("选择账户")
+                                .accessibility_label("选择账户")
+                                .menu_width(px(280.))
+                                .menu_max_h(px(260.))
+                                .cleanable(false)
+                                .w_full(),
+                        ),
+                ),
+        )
+    }
+
+    fn add_server_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Button::new("servers-add")
             .primary()
             .icon(IconName::Plus)
             .label("添加服务器")
-            .on_click(cx.listener(|this, _, window, cx| this.open_server_dialog(None, window, cx)));
-
-        h_flex()
-            .gap_2()
-            .child(refresh)
-            .when(self.server_tab == ServerTab::Favorites, |this| {
-                this.child(add)
-            })
+            .on_click(cx.listener(|this, _, window, cx| this.open_server_dialog(None, window, cx)))
     }
 
     fn render_server_favorites(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -93,128 +122,66 @@ impl LauncherApp {
             .cloned()
             .collect::<Vec<_>>();
         let total = self.config.servers.len();
-        let has_version = self.selected_version().is_some();
-        let has_account = self.selected_account().is_some();
-        let can_join = has_version && has_account && self.can_start_operation();
-        let join_tooltip = if !has_version {
-            "请先选择一个实例"
-        } else if !has_account {
-            "请先添加一个账户"
-        } else if !self.can_start_operation() {
-            "当前有任务或游戏正在运行，请先停止"
-        } else {
-            "使用当前实例和账户进入服务器"
-        };
+        let (can_join, join_tooltip) = self.server_join_ready();
 
         let mut rows = Vec::new();
         for server in &servers {
             rows.push(self.render_server_row(server, can_join, join_tooltip, cx));
         }
 
-        v_flex()
-            .flex_1()
-            .min_h_0()
-            .gap_5()
-            .child(
-                card(cx).child(section_title("启动目标", "", cx)).child(
+        v_flex().flex_1().min_h_0().gap_5().child(
+            v_flex()
+                .id("servers-body")
+                .flex_1()
+                .min_h_0()
+                .gap_4()
+                .overflow_y_scrollbar()
+                .child(
                     h_flex()
+                        .w_full()
                         .gap_3()
+                        .items_center()
+                        .px_1()
                         .child(
-                            v_flex()
-                                .gap_1()
+                            div()
                                 .flex_1()
-                                .max_w(px(320.))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child("实例"),
-                                )
-                                .child(
-                                    Select::new(&self.version_select)
-                                        .placeholder("选择实例")
-                                        .accessibility_label("选择实例")
-                                        .menu_width(px(280.))
-                                        .menu_max_h(px(260.))
-                                        .cleanable(false)
-                                        .w_full(),
-                                ),
+                                .max_w(px(360.))
+                                .child(Input::new(&self.server_query).w_full()),
                         )
                         .child(
-                            v_flex()
-                                .gap_1()
-                                .flex_1()
-                                .max_w(px(320.))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child("账户"),
-                                )
-                                .child(
-                                    Select::new(&self.account_select)
-                                        .placeholder("选择账户")
-                                        .accessibility_label("选择账户")
-                                        .menu_width(px(280.))
-                                        .menu_max_h(px(260.))
-                                        .cleanable(false)
-                                        .w_full(),
-                                ),
-                        ),
-                ),
-            )
-            .child(
-                v_flex()
-                    .id("servers-body")
-                    .flex_1()
-                    .min_h_0()
-                    .gap_4()
-                    .overflow_y_scrollbar()
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .gap_3()
-                            .items_center()
-                            .px_1()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .max_w(px(360.))
-                                    .child(Input::new(&self.server_query).w_full()),
-                            )
-                            .child(self.server_toolbar(cx))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!("共 {total} 个服务器")),
-                            ),
-                    )
-                    .when(servers.is_empty(), |this| {
-                        this.child(empty_state(
-                            IconName::Network,
-                            if total == 0 {
-                                "还没有服务器"
-                            } else {
-                                "没有匹配的服务器"
-                            },
-                            if total == 0 {
-                                "添加 Java 版服务器后可以查看 MOTD、在线人数和延迟。"
-                            } else {
-                                "尝试清除搜索条件。"
-                            },
-                            Button::new("servers-empty-add")
-                                .primary()
-                                .icon(IconName::Plus)
-                                .label("添加服务器")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_server_dialog(None, window, cx)
-                                })),
-                            cx,
-                        ))
-                    })
-                    .children(rows),
-            )
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("共 {total} 个服务器")),
+                        )
+                        .child(div().flex_1())
+                        .child(self.add_server_button(cx)),
+                )
+                .when(servers.is_empty(), |this| {
+                    this.child(empty_state(
+                        IconName::Network,
+                        if total == 0 {
+                            "还没有服务器"
+                        } else {
+                            "没有匹配的服务器"
+                        },
+                        if total == 0 {
+                            "添加 Java 版服务器后可以查看 MOTD、在线人数和延迟。"
+                        } else {
+                            "尝试清除搜索条件。"
+                        },
+                        Button::new("servers-empty-add")
+                            .primary()
+                            .icon(IconName::Plus)
+                            .label("添加服务器")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_server_dialog(None, window, cx)
+                            })),
+                        cx,
+                    ))
+                })
+                .children(rows),
+        )
     }
 
     fn render_server_discover(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -244,14 +211,11 @@ impl LauncherApp {
             })
             .collect::<Vec<_>>();
         let total = featured.len();
-        let account = self
-            .selected_account()
-            .map(|account| account.username().to_owned());
-        let can_install = account.is_some() && self.can_start_operation();
+        let (can_join, join_tooltip) = self.server_join_ready();
 
         let mut rows = Vec::new();
         for server in &servers {
-            rows.push(self.render_featured_server_row(server, can_install, cx));
+            rows.push(self.render_featured_server_row(server, can_join, join_tooltip, cx));
         }
 
         v_flex()
@@ -272,7 +236,6 @@ impl LauncherApp {
                             .max_w(px(360.))
                             .child(Input::new(&self.discover_query).w_full()),
                     )
-                    .child(self.server_toolbar(cx))
                     .child(
                         div()
                             .text_xs()
@@ -284,13 +247,8 @@ impl LauncherApp {
                 this.child(empty_state(
                     IconName::Globe,
                     "没有匹配的精选服务器",
-                    "尝试清除搜索条件，或稍后刷新。",
-                    Button::new("featured-empty-clear")
-                        .outline()
-                        .label("刷新状态")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.refresh_featured_servers(window, cx)
-                        })),
+                    "尝试清除搜索条件。",
+                    div(),
                     cx,
                 ))
             })
@@ -301,23 +259,14 @@ impl LauncherApp {
     fn render_featured_server_row(
         &self,
         server: &FeaturedServer,
-        can_install: bool,
+        can_join: bool,
+        join_tooltip: &str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = self.servers.featured.statuses.get(&server.id);
-        let loading = view.is_some_and(|view| view.loading);
+        let loading = view.is_none_or(|view| view.loading);
         let status = view.and_then(|view| view.status.as_ref());
         let icon_path = view.and_then(|view| view.icon_path.as_deref());
-        let instance_id = server
-            .version
-            .as_deref()
-            .map(|version| featured_instance_id(&server.id, version));
-        let installed = instance_id.as_ref().is_some_and(|instance_id| {
-            self.installed_versions
-                .iter()
-                .any(|version| version.id.as_str() == instance_id)
-        });
-        let has_account = self.selected_account().is_some();
         let favorited = self.featured_server_is_favorite(&server.address);
         let favorite_tooltip = if favorited {
             "已收藏；点击取消收藏"
@@ -356,24 +305,16 @@ impl LauncherApp {
                 .accessibility_label("打开官网")
                 .on_click(move |_, _, cx| cx.open_url(&url))
         });
-        let installable = can_install && server.can_install();
-        let install_label = if server.requires_mods {
+        let actionable = can_join && !server.requires_mods;
+        let action_label = if server.requires_mods {
             "需要整合包"
-        } else if installed {
-            "进入服务器"
         } else {
-            "安装并进入"
+            "进入"
         };
-        let install_tooltip = if server.requires_mods {
-            "需要在服务器页面准备对应的整合包"
-        } else if !has_account {
-            "请先添加账户"
-        } else if !can_install {
-            "请等待现有任务结束"
-        } else if installed {
-            "使用已安装实例进入服务器"
+        let action_tooltip = if server.requires_mods {
+            "需要准备对应的 Mod 或整合包"
         } else {
-            "创建 Vanilla 实例并直接进入服务器"
+            join_tooltip
         };
 
         let mut tags = Vec::new();
@@ -448,18 +389,14 @@ impl LauncherApp {
                                     .child(
                                         Button::new(format!("featured-join-{}", server.id))
                                             .primary()
-                                            .icon(if installed {
-                                                IconName::Play
-                                            } else {
-                                                IconName::Download
-                                            })
-                                            .label(install_label)
-                                            .disabled(!installable)
-                                            .tooltip(install_tooltip)
+                                            .icon(IconName::Play)
+                                            .label(action_label)
+                                            .disabled(!actionable)
+                                            .tooltip(action_tooltip)
                                             .on_click(cx.listener({
                                                 let server = server.clone();
                                                 move |this, _, window, cx| {
-                                                    this.open_featured_install_dialog(
+                                                    this.join_featured_server(
                                                         server.clone(),
                                                         window,
                                                         cx,
@@ -483,7 +420,7 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = self.servers.statuses.get(&server.id);
-        let loading = view.is_some_and(|view| view.loading);
+        let loading = view.is_none_or(|view| view.loading);
         let status = view.and_then(|view| view.status.as_ref());
         let icon_path = view.and_then(|view| view.icon_path.as_deref());
         let motd = status
@@ -614,7 +551,7 @@ fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement>
 }
 
 fn server_status_line(loading: bool, status: Option<&ServerStatus>, cx: &App) -> AnyElement {
-    if loading {
+    if loading && status.is_none() {
         return h_flex()
             .gap_1()
             .items_center()

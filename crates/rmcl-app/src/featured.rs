@@ -26,9 +26,10 @@ pub struct FeaturedServer {
 }
 
 impl FeaturedServer {
-    /// Whether the discovery action can create a Vanilla instance and join.
-    pub fn can_install(&self) -> bool {
-        !self.requires_mods && self.version.is_some()
+    /// Whether the discovery entry is a Vanilla server that can be joined
+    /// directly with the user's selected instance.
+    pub fn can_join(&self) -> bool {
+        !self.requires_mods
     }
 }
 
@@ -44,35 +45,6 @@ pub fn featured_servers() -> Result<&'static [FeaturedServer], &'static str> {
         Ok(servers) => Ok(servers),
         Err(error) => Err(error),
     }
-}
-
-/// Build the deterministic instance ID used by an "install and join" action.
-///
-/// The ID includes both the curated server ID and the selected Minecraft
-/// version, so changing the version does not reuse an incompatible instance.
-pub fn featured_instance_id(server_id: &str, version: &str) -> String {
-    let server_id = sanitize_component(server_id);
-    let version = sanitize_component(version);
-    if version.is_empty() {
-        format!("rmcl-{server_id}")
-    } else {
-        format!("rmcl-{server_id}-{version}")
-    }
-}
-
-fn sanitize_component(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
-                character.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,7 +232,7 @@ mod tests {
             }
         }
         assert!(servers.iter().any(|server| server.requires_mods));
-        assert!(servers.iter().any(|server| server.can_install()));
+        assert!(servers.iter().any(|server| server.can_join()));
     }
 
     #[test]
@@ -268,16 +240,6 @@ mod tests {
         let servers = featured_servers().unwrap();
         assert!(!servers.is_empty());
         assert_eq!(servers.len(), parsed().len());
-    }
-
-    #[test]
-    fn instance_id_is_stable_and_safe() {
-        assert_eq!(featured_instance_id("hypixel", "26.3"), "rmcl-hypixel-26.3");
-        assert_eq!(
-            featured_instance_id("server/name", "1.21 pre1"),
-            "rmcl-server-name-1.21-pre1"
-        );
-        assert_eq!(featured_instance_id("hypixel", "  "), "rmcl-hypixel");
     }
 
     #[test]
