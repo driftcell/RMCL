@@ -8,7 +8,7 @@
     "start": "bun server.ts",
     "serve": "bun index.html",
     "build": "bun build ./index.html --outdir ./dist --minify",
-    "typecheck": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "three": "^0.174.0"

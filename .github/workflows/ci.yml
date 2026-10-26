@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       rust: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.rust }}
+      web: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.web }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -45,6 +46,10 @@ jobs:
               - '.config/**'
               - '.github/scripts/**'
               - '.github/workflows/**'
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/pages.yml'
 
   lint:
     name: Format, Clippy, and doctests
@@ -111,9 +116,37 @@ jobs:
       - name: Run tests in parallel
         run: cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no-tests=fail
 
+  web:
+    name: Web check
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.web != 'false' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install web dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck web
+        working-directory: web
+        run: bun run check
+
+      - name: Build web
+        working-directory: web
+        run: bun run build
+
   ci-success:
     name: CI success
-    needs: [changes, lint, test]
+    needs: [changes, lint, test, web]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -122,22 +155,24 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          WEB_RESULT: ${{ needs.web.result }}
         run: |
           set -euo pipefail
           echo "changes=${CHANGES_RESULT}"
           echo "lint=${LINT_RESULT}"
           echo "test=${TEST_RESULT}"
+          echo "web=${WEB_RESULT}"
 
           if [[ "${CHANGES_RESULT}" != "success" ]]; then
             echo "Detect Rust changes did not succeed." >&2
             exit 1
           fi
 
-          for result in "${LINT_RESULT}" "${TEST_RESULT}"; do
+          for result in "${LINT_RESULT}" "${TEST_RESULT}" "${WEB_RESULT}"; do
             case "${result}" in
               success|skipped) ;;
               *)
-                echo "Required Rust job did not succeed: ${result}" >&2
+                echo "Required job did not succeed: ${result}" >&2
                 exit 1
                 ;;
             esac
