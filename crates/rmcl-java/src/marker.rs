@@ -220,6 +220,8 @@ async fn validate_file(
     if actual != expected {
         return Err(invalid(root, "file SHA-1 does not match marker"));
     }
+    #[cfg(not(unix))]
+    let _ = executable;
     #[cfg(unix)]
     if executable {
         use std::os::unix::fs::PermissionsExt;
