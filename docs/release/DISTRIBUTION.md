@@ -111,11 +111,13 @@ Runner 标签会随 GitHub 镜像退役而变化：`macos-15-intel` 是当前可
 ## 发布步骤
 
 1. 确认目标提交的 CI 已通过；Release workflow 负责构建和分发，不替代 lint、测试和真实运行验收。
-2. 更新 `Cargo.toml` 的 workspace 版本并提交。
-3. 创建与版本一致的标签，例如 `git tag -a v0.1.0 -m "RMCL 0.1.0"`。
-4. 推送标签：`git push origin v0.1.0`。
-5. 在 Actions 中确认 `Release` workflow 的四个构建 job 全部成功；发布 job 会自动生成 `SHA256SUMS` 并发布草稿。
+2. 功能/fix PR 合并后，由 release-plz 创建 release PR；检查版本、`CHANGELOG.md` 和 `Cargo.lock`，补充用户可见的 Highlights。
+3. 在 release PR 的四个必需检查通过后 Squash merge；release-plz 创建与版本一致的 `v<version>` 标签。
+4. 标签触发 `release.yml`；发布 job 从 `CHANGELOG.md` 提取当前版本作为 Release body，生成 `SHA256SUMS` 并发布。
+5. 在 Actions 中确认 `Release` workflow 的四个构建 job 全部成功。
 6. 下载至少一个平台的产物做启动 smoke，再确认 Release 已发布。
+
+release-plz、`RELEASE_PLZ_TOKEN` 和手动兜底流程见 [分支、PR 与发布](../engineering/RELEASING.md)。
 
 Linux 构建使用 Ubuntu 24.04，产物面向较新的 glibc 和 GPUI Kit 所需图形库；当前 tar.gz 不捆绑 WebKitGTK、GTK、Vulkan 等系统依赖。需要覆盖旧发行版时，应增加容器化构建或 AppImage，而不是把 Ubuntu 24.04 产物描述成通用二进制。
 
