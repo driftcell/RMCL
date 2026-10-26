@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RMCL — 原生 Rust Minecraft: Java Edition 启动器</title>
+    <meta
+      name="description"
+      content="RMCL 是基于 Rust 2024 与 GPUI Kit 独立构建的原生 Minecraft: Java Edition 启动器。支持版本隔离、多加载器合成、Modrinth 前置预检与直连进服。"
+    />
+    <link rel="icon" type="image/svg+xml" href="./public/rmcl.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <!-- Fixed 3D WebGL Stage -->
+    <div id="webgl-stage" class="webgl-stage" aria-hidden="true"></div>
+
+    <!-- Real-time 3D -> 2D Projected Spatial Callout Overlay -->
+    <div class="hud-overlay" aria-hidden="true">
+      <svg id="hud-svg" class="hud-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="hud-labels" class="hud-labels"></div>
+    </div>
+
+    <!-- Top Architectural Instrument Bar -->
+    <header class="site-bar">
+      <a href="#chapter-monolith" class="brand-cluster" aria-label="RMCL 回到顶部">
+        <img src="./public/rmcl.svg" alt="" class="brand-icon" width="26" height="26" />
+        <span class="brand-name">RMCL</span>
+        <span class="brand-version">v0.4.2</span>
+      </a>
+
+      <div class="bar-telemetry" aria-live="polite">
+        <span id="bar-state-code" class="bar-state-code">STATE 00 / ASSEMBLED CORE</span>
+        <span class="bar-divider">/</span>
+        <span id="bar-scroll-coord" class="bar-scroll-coord">0.000</span>
+      </div>
+
+      <div class="bar-actions">
+        <div id="accent-swatches" class="accent-swatches" role="group" aria-label="强调色切换"></div>
+        <a
+          class="bar-repo-link"
+          href="https://github.com/driftcell/RMCL"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <!-- Left-Edge Scroll Depth Gauge & Stage Navigation -->
+    <aside class="depth-rail" aria-label="章节深度导航">
+      <div class="rail-track">
+        <div id="rail-fill" class="rail-fill"></div>
+        <div id="rail-cursor" class="rail-cursor"></div>
+      </div>
+      <nav id="rail-stages" class="rail-stages"></nav>
+    </aside>
+
+    <!-- Bottom-Right Interactive 3D Crate Inspector -->
+    <aside id="voxel-inspector" class="voxel-inspector" aria-label="3D 核心模块检视器">
+      <div class="inspector-top">
+        <span id="inspector-coord" class="inspector-coord">[+1, +1, +1]</span>
+        <span id="inspector-crate" class="inspector-crate">apps/rmcl</span>
+      </div>
+      <div id="inspector-layer" class="inspector-layer">L2 / 加载器与桌面交互层</div>
+      <p id="inspector-role" class="inspector-role">GPUI Kit 桌面壳与即时状态投影</p>
+      <div class="inspector-foot">
+        <code id="inspector-path" class="inspector-path">apps/rmcl/src/app/mod.rs</code>
+        <span id="inspector-hint" class="inspector-hint">悬停或点击 3D 核心单元检视对应 Crate</span>
+      </div>
+    </aside>
+
+    <!-- Scroll-Driven Narrative Track -->
+    <main id="scroll-track" class="scroll-track"></main>
+
+    <!-- Minimal Footer -->
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-left">
+          <span class="footer-brand">RMCL</span>
+          <span class="footer-copy">Rust 2024 · GPUI Kit 0.8.0 · MIT License</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/driftcell/RMCL/releases" target="_blank" rel="noreferrer">
+            Releases
+          </a>
+          <a href="https://github.com/driftcell/RMCL/blob/main/docs/INDEX.md" target="_blank" rel="noreferrer">
+            架构文档
+          </a>
+          <a href="https://github.com/driftcell/RMCL" target="_blank" rel="noreferrer">
+            GitHub 仓库
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

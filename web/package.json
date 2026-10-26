@@ -1,0 +1,21 @@
+{
+  "name": "rmcl-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot server.ts",
+    "start": "bun server.ts",
+    "serve": "bun index.html",
+    "build": "bun build ./index.html --outdir ./dist --minify",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/three": "^0.174.0",
+    "typescript": "^5.8.2"
+  }
+}
