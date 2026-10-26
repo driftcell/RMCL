@@ -4598,20 +4598,28 @@ impl LauncherApp {
         self.java_dialog_runtimes.clear();
         cx.notify();
         let java = self.services.java.clone();
+        let runtime = self.services.runtime.handle().clone();
         let view = cx.entity().downgrade();
         self._java_task = Some(cx.spawn_in(window, async move |_, cx| {
-            let discovery = java.discover().await;
-            let runtimes = discovery.runtimes;
-            let failure_count = discovery.failures.len();
+            let discovery = runtime.spawn(async move { java.discover().await }).await;
             let _ = view.update_in(cx, |this, _, cx| {
                 this.java_dialog_loading = false;
-                this.java_dialog_runtimes = runtimes;
-                if this.java_dialog_runtimes.is_empty() {
-                    this.java_dialog_error = Some(if failure_count == 0 {
-                        "没有找到 Java。请检查 JAVA_HOME、PATH 或 RMCL 管理的 runtime。".to_owned()
-                    } else {
-                        format!("没有可用 Java；{failure_count} 个候选探测失败。")
-                    });
+                match discovery {
+                    Ok(discovery) => {
+                        let failure_count = discovery.failures.len();
+                        this.java_dialog_runtimes = discovery.runtimes;
+                        if this.java_dialog_runtimes.is_empty() {
+                            this.java_dialog_error = Some(if failure_count == 0 {
+                                "没有找到 Java。请检查 JAVA_HOME、PATH 或 RMCL 管理的 runtime。"
+                                    .to_owned()
+                            } else {
+                                format!("没有可用 Java；{failure_count} 个候选探测失败。")
+                            });
+                        }
+                    }
+                    Err(error) => {
+                        this.java_dialog_error = Some(format!("Java 探测任务失败：{error}"));
+                    }
                 }
                 cx.notify();
             });
@@ -4628,9 +4636,13 @@ impl LauncherApp {
         self.java_custom_probing = true;
         cx.notify();
         let java = self.services.java.clone();
+        let runtime = self.services.runtime.handle().clone();
         let view = cx.entity().downgrade();
         self._java_task = Some(cx.spawn_in(window, async move |_, cx| {
-            let result = java.probe(path).await;
+            let result = runtime
+                .spawn(async move { java.probe(path).await.map_err(|error| error.to_string()) })
+                .await;
+            let result = result.unwrap_or_else(|error| Err(format!("Java 探测任务失败：{error}")));
             let _ = view.update_in(cx, |this, window, cx| {
                 this.java_custom_probing = false;
                 match result {
@@ -4646,7 +4658,7 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("无法使用该 Java"),
+                            Notification::error(error).title("无法使用该 Java"),
                             cx,
                         );
                     }
