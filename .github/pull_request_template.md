@@ -1,15 +1,13 @@
-### What does this PR do?
+### 这个 PR 做了什么？
 
 <!--
-Describe the user-visible change and the task/issue it closes.
-Link the task or issue if one exists.
+说明用户可见的变化，并关联任务或 issue。
 -->
 
-### How did you verify your code works?
+### 如何验证代码有效？
 
 <!--
-List the exact commands and manual checks you ran.
-Mention the platform and whether a real game/window was involved.
+列出实际运行的命令和手动检查，说明平台以及是否涉及真实游戏或窗口。
 -->
 
 - [ ] `cargo fmt --all -- --check`
@@ -17,9 +15,9 @@ Mention the platform and whether a real game/window was involved.
 - [ ] `cargo nextest run --workspace --locked`
 - [ ] `cargo test --workspace --doc --locked`
 
-### Release notes
+### 发布说明
 
 <!--
-User-visible changes, configuration migrations, breaking changes, or "none".
-The PR title must remain a Conventional Commit because it becomes the squash commit.
+用户可见变化、配置迁移、破坏性变更；没有就写“无”。
+PR 标题必须保持 Conventional Commits，因为 Squash 后会成为提交信息。
 -->
