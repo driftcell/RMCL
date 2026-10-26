@@ -41,8 +41,12 @@
 - `release-plz release-pr` 根据 Conventional Commits 计算版本、更新 `CHANGELOG.md`、`Cargo.toml` 和 `Cargo.lock`，打开 `release-plz-*` PR
 - `release-plz release` 只处理已合并的 release PR；`release_always = false` 确保普通提交不会直接打标签
 - 配置使用 `git_only = true`，不发布 crates.io
-- `rmcl` 是唯一发布 package；其他 workspace crate 的变更通过 `changelog_include` 汇总
-- release-plz 只创建 tag，不创建 GitHub Release；现有 `release.yml` 负责四平台构建、`SHA256SUMS` 和 Release
+- 所有 workspace crate 保持 release-enabled，release-plz 才会分析各 crate 的提交；`rmcl` 通过 `changelog_include` 把这些提交汇总到根目录 `CHANGELOG.md`
+- 只有 `rmcl` 设置 `git_tag_enable = true`；所有 package 共用 `git_tag_name = "v{{ version }}"`，从同一个应用 tag 读取上次发布版本
+- 只有 `rmcl` 设置 `changelog_update = true`；其他 crate 不写 changelog，也不创建 tag
+- release-plz 只创建 tag，不创建 GitHub Release（`git_release_enable = false`）；现有 `release.yml` 负责四平台构建、`SHA256SUMS` 和 Release
+
+不能把 workspace 默认改成 `release = false` 再用 `changelog_include` 汇总：release-plz 只为 release-enabled package 计算 diff，被排除的 crate 即使写在 `changelog_include` 里也不会参与变更检测。这个约束的排查过程见 [release-plz 变更检测](../../notes/development/release_plz_change_detection.md)。
 
 ### 必需的 PAT
 

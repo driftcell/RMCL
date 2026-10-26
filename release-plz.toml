@@ -2,10 +2,16 @@
 # RMCL is a binary application and is not published to crates.io.
 git_only = true
 release_always = false
-release = false
 release_commits = "^(feat|fix|perf|refactor)"
 changelog_path = "CHANGELOG.md"
+# NOTE: every workspace package stays release-enabled so release-plz analyzes
+# commits in the library crates. `changelog_include` alone does not add changes
+# of packages excluded with `release = false`.
+changelog_update = false
+# All packages share the application tag for version detection, but only `rmcl`
+# creates the tag; see the package override below.
 git_tag_enable = false
+git_tag_name = "v{{ version }}"
 git_release_enable = false
 semver_check = false
 pr_branch_prefix = "release-plz-"
@@ -26,7 +32,7 @@ commit_parsers = [
 
 [[package]]
 name = "rmcl"
-release = true
+changelog_update = true
 changelog_include = [
   "rmcl-app",
   "rmcl-archive",
@@ -43,4 +49,3 @@ changelog_include = [
   "rmcl-store",
 ]
 git_tag_enable = true
-git_tag_name = "v{{ version }}"
