@@ -142,20 +142,6 @@ impl LauncherApp {
                                                 } else {
                                                     Tag::new().outline().child("共享").small()
                                                 })
-                                            })
-                                            .when(has_account, |this| {
-                                                this.child(
-                                                    Tag::new()
-                                                        .outline()
-                                                        .child(
-                                                            self.selected_account()
-                                                                .map(|account| {
-                                                                    account.username().to_owned()
-                                                                })
-                                                                .unwrap_or_default(),
-                                                        )
-                                                        .small(),
-                                                )
                                             }),
                                     )
                                     .child(
@@ -250,27 +236,6 @@ impl LauncherApp {
                                             .w_full(),
                                     ),
                             )
-                            .when(has_account, |this| {
-                                this.child(
-                                    v_flex()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child("账户"),
-                                        )
-                                        .child(
-                                            Select::new(&self.account_select)
-                                                .placeholder("选择账户")
-                                                .accessibility_label("选择账户")
-                                                .menu_width(px(280.))
-                                                .menu_max_h(px(260.))
-                                                .cleanable(false)
-                                                .w_full(),
-                                        ),
-                                )
-                            })
                             .when(selected.is_some(), |this| {
                                 this.child(
                                     Button::new("home-launch")

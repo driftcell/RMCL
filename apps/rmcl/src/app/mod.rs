@@ -13,7 +13,6 @@ use gpui_kit::{
         input::{Input, InputEvent, InputState},
         notification::Notification,
         scroll::ScrollableElement,
-        searchable_list::SearchableListItem,
         select::{SearchableVec, SelectEvent, SelectState},
         spinner::Spinner,
         tag::Tag,
@@ -334,33 +333,6 @@ enum MicrosoftLoginUi {
     },
 }
 
-#[derive(Clone, Debug)]
-struct AccountSelectItem {
-    key: String,
-    username: String,
-}
-
-impl AccountSelectItem {
-    fn new(account: &Account) -> Self {
-        Self {
-            key: account_key(account),
-            username: account.username().to_owned(),
-        }
-    }
-}
-
-impl SearchableListItem for AccountSelectItem {
-    type Value = String;
-
-    fn title(&self) -> SharedString {
-        self.username.clone().into()
-    }
-
-    fn value(&self) -> &Self::Value {
-        &self.key
-    }
-}
-
 pub struct LauncherApp {
     services: Rc<Services>,
     page: Page,
@@ -421,7 +393,6 @@ pub struct LauncherApp {
     account_heads: HashMap<Uuid, PathBuf>,
     editing_account: Option<String>,
     version_select: Entity<SelectState<SearchableVec<String>>>,
-    account_select: Entity<SelectState<SearchableVec<AccountSelectItem>>>,
     theme_select: Entity<SelectState<SearchableVec<String>>>,
     accent_select: Entity<SelectState<SearchableVec<String>>>,
     visibility_select: Entity<SelectState<SearchableVec<String>>>,
@@ -529,24 +500,6 @@ impl LauncherApp {
         });
         let version_select = cx
             .new(|cx| SelectState::new(version_items, version_index, window, cx).searchable(true));
-
-        let account_items = SearchableVec::new(
-            accounts
-                .iter()
-                .map(AccountSelectItem::new)
-                .collect::<Vec<_>>(),
-        );
-        let account_index = config.selected_account.as_ref().and_then(|selected| {
-            accounts
-                .iter()
-                .position(|account| {
-                    account.username() == selected
-                        && stored_account_kind(account) == config.selected_account_kind
-                })
-                .map(|row| IndexPath::default().row(row))
-        });
-        let account_select = cx
-            .new(|cx| SelectState::new(account_items, account_index, window, cx).searchable(true));
 
         let theme_select = cx.new(|cx| {
             SelectState::new(
@@ -681,14 +634,6 @@ impl LauncherApp {
             },
         ));
         subscriptions.push(cx.subscribe(
-            &account_select,
-            |this, _, event: &SelectEvent<SearchableVec<AccountSelectItem>>, cx| {
-                if let SelectEvent::Confirm(Some(value)) = event {
-                    this.select_account(value.clone(), cx);
-                }
-            },
-        ));
-        subscriptions.push(cx.subscribe(
             &theme_select,
             |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
@@ -784,7 +729,6 @@ impl LauncherApp {
             account_heads: HashMap::new(),
             editing_account: None,
             version_select,
-            account_select,
             theme_select,
             accent_select,
             visibility_select,
@@ -1222,32 +1166,10 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn select_account(&mut self, value: String, cx: &mut Context<Self>) {
-        let Some(account) = self
-            .accounts
-            .iter()
-            .find(|account| account_key(account) == value)
-            .cloned()
-        else {
-            return;
-        };
-        let kind = stored_account_kind(&account);
-        if self.config.selected_account.as_deref() == Some(account.username())
-            && self.config.selected_account_kind == kind
-        {
-            return;
-        }
-        self.config.selected_account = Some(account.username().to_owned());
-        self.config.selected_account_kind = kind;
-        self.save_config();
-        cx.notify();
-    }
-
     fn select_account_key(
         &mut self,
         username: &str,
         kind: StoredAccountKind,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.config.selected_account.as_deref() == Some(username)
@@ -1265,7 +1187,6 @@ impl LauncherApp {
         self.config.selected_account = Some(username.to_owned());
         self.config.selected_account_kind = kind;
         self.save_config();
-        self.sync_account_select(window, cx);
         cx.notify();
     }
 
@@ -1409,28 +1330,6 @@ impl LauncherApp {
                 .map(|row| IndexPath::default().row(row))
         });
         self.version_select.update(cx, |state, cx| {
-            state.set_items(items, window, cx);
-            state.set_selected_index(selected, window, cx);
-        });
-    }
-
-    fn sync_account_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let items = SearchableVec::new(
-            self.accounts
-                .iter()
-                .map(AccountSelectItem::new)
-                .collect::<Vec<_>>(),
-        );
-        let selected = self.config.selected_account.as_ref().and_then(|selected| {
-            self.accounts
-                .iter()
-                .position(|account| {
-                    account.username() == selected
-                        && stored_account_kind(account) == self.config.selected_account_kind
-                })
-                .map(|row| IndexPath::default().row(row))
-        });
-        self.account_select.update(cx, |state, cx| {
             state.set_items(items, window, cx);
             state.set_selected_index(selected, window, cx);
         });
@@ -2702,7 +2601,7 @@ impl LauncherApp {
                         .on_click(move |_, window, cx| {
                             if let Some(view) = row_view.upgrade() {
                                 view.update(cx, |this, cx| {
-                                    this.select_account_key(&row_username, kind, window, cx);
+                                    this.select_account_key(&row_username, kind, cx);
                                     window.close_dialog(cx);
                                     cx.notify();
                                 });
@@ -3345,7 +3244,6 @@ impl LauncherApp {
             self.config.selected_account = Some(profile.username().to_owned());
         }
         self.save_config();
-        self.sync_account_select(window, cx);
         self.refresh_account_heads(window, cx);
         cx.notify();
     }
@@ -3401,7 +3299,6 @@ impl LauncherApp {
         self.config.selected_account = Some(account.username().to_owned());
         self.config.selected_account_kind = StoredAccountKind::Microsoft;
         self.save_config();
-        self.sync_account_select(window, cx);
         self.refresh_account_heads(window, cx);
         cx.notify();
     }
@@ -3531,7 +3428,6 @@ impl LauncherApp {
                 .unwrap_or(StoredAccountKind::Offline);
         }
         self.save_config();
-        self.sync_account_select(window, cx);
         window.push_notification(Notification::success("账户已删除。").title("账户"), cx);
         cx.notify();
     }
@@ -3568,7 +3464,6 @@ impl LauncherApp {
         self.accounts.push(Account::Offline(account));
         self.config.selected_account = Some(username);
         self.config.selected_account_kind = StoredAccountKind::Offline;
-        self.sync_account_select(window, cx);
         self.save_config();
         window.push_notification(Notification::success("离线账户已保存。").title("账户"), cx);
         cx.notify();
