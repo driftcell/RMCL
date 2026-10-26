@@ -340,12 +340,6 @@ impl LauncherApp {
                                 this.child(
                                     div().text_sm().text_color(cx.theme().danger).child(error),
                                 )
-                            })
-                            .when(!super::super::updates_installable(), |this| {
-                                this.child(mono(
-                                    "开发构建禁用手动安装；设置 RMCL_ALLOW_DEV_UPDATE=1 可测试。",
-                                    cx,
-                                ))
                             }),
                     )
                     .child(
