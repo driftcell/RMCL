@@ -4,6 +4,7 @@ mod accounts;
 mod catalog;
 mod content;
 mod error;
+mod featured;
 mod forge;
 mod game;
 mod install;
@@ -32,6 +33,7 @@ pub use content::{
     scan_instance_content, set_instance_content_enabled,
 };
 pub use error::{AppError, InstallDownloadFailure};
+pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};
 pub use forge::{ForgeInstallOutcome, ForgeInstallRequest, ForgeInstaller};
 pub use game::{
     GameLaunchEvent, GameLaunchEventSender, GameLaunchOutcome, GameLaunchRequest, GameLauncher,

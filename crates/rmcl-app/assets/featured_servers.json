@@ -1,0 +1,123 @@
+[
+  {
+    "id": "hypixel",
+    "name": "Hypixel",
+    "address": "mc.hypixel.net",
+    "version": "26.3",
+    "version_note": "支持 1.8 / 26.3",
+    "description": "全球知名的小游戏网络，包含 Bed Wars、SkyBlock、Murder Mystery 等。",
+    "tags": ["小游戏", "PvP"],
+    "requires_mods": false,
+    "source_url": "https://hypixel.net/"
+  },
+  {
+    "id": "complex-gaming",
+    "name": "Complex Gaming",
+    "address": "bee.mc-complex.com",
+    "version": "26.3",
+    "version_note": "支持 1.7.2–26.3",
+    "description": "大型综合服务器，包含 SMP、Skyblock、Factions 等模式。",
+    "tags": ["SMP", "Skyblock", "Factions"],
+    "requires_mods": false,
+    "source_url": "https://www.mc-complex.com/"
+  },
+  {
+    "id": "donutsmp",
+    "name": "DonutSMP",
+    "address": "play.donutsmp.net",
+    "version": "26.3",
+    "version_note": "支持 1.7.2–26.3",
+    "description": "以生存和经济为核心的 SMP 服务器。",
+    "tags": ["SMP", "生存"],
+    "requires_mods": false,
+    "source_url": "https://donutsmp.net/"
+  },
+  {
+    "id": "pika-network",
+    "name": "PikaNetwork",
+    "address": "mc.pika-network.net",
+    "version": "26.3",
+    "version_note": "支持 1.8–26.3",
+    "description": "小游戏与生存网络，包含 BedWars、Practice、Skyblock 等。",
+    "tags": ["小游戏", "SMP"],
+    "requires_mods": false,
+    "source_url": "https://pika-network.net/"
+  },
+  {
+    "id": "cubecraft",
+    "name": "CubeCraft",
+    "address": "play.cubecraft.net",
+    "version": "1.21.11",
+    "version_note": "支持 1.20–1.21",
+    "description": "以团队小游戏为主的服务器，包含 EggWars、SkyWars、Parkour 等。",
+    "tags": ["小游戏", "团队"],
+    "requires_mods": false,
+    "source_url": "https://www.cubecraft.net/"
+  },
+  {
+    "id": "sunrealms",
+    "name": "SunRealms",
+    "address": "mc.sunrealms.net",
+    "version": "26.3",
+    "version_note": "支持 1.7.2–26.3",
+    "description": "综合 SMP 网络，包含 Skyblock、Prison、Dungeons 等。",
+    "tags": ["SMP", "Skyblock", "Prison"],
+    "requires_mods": false,
+    "source_url": "https://sunrealms.net/"
+  },
+  {
+    "id": "insanitycraft",
+    "name": "InsanityCraft",
+    "address": "join.insanitycraft.net",
+    "version": "26.2",
+    "version_note": "支持 1.8–26.2",
+    "description": "生存与阵营服务器，包含 Survival、Factions、Skyblock 等。",
+    "tags": ["生存", "Factions"],
+    "requires_mods": false,
+    "source_url": "https://insanitycraft.net/"
+  },
+  {
+    "id": "lemoncloud",
+    "name": "LemonCloud",
+    "address": "one.lemoncloud.net",
+    "version": "26.3",
+    "version_note": "支持 1.20–26.3",
+    "description": "以 Skyblock 和 Factions 为主的服务器网络。",
+    "tags": ["Skyblock", "Factions"],
+    "requires_mods": false,
+    "source_url": "https://lemoncloud.net/"
+  },
+  {
+    "id": "wynncraft",
+    "name": "Wynncraft",
+    "address": "play.wynncraft.com",
+    "version": "26.3",
+    "version_note": "支持 1.9–26.3",
+    "description": "大型 MMORPG 服务器，包含任务、职业和自定义地图。",
+    "tags": ["RPG", "MMO"],
+    "requires_mods": false,
+    "source_url": "https://wynncraft.com/"
+  },
+  {
+    "id": "opblocks",
+    "name": "OPBlocks",
+    "address": "play.opblocks.com",
+    "version": "26.3",
+    "version_note": "支持 1.7.2–26.3",
+    "description": "Skyblock、生存和 Prison 网络。",
+    "tags": ["Skyblock", "Prison"],
+    "requires_mods": false,
+    "source_url": "https://opblocks.com/"
+  },
+  {
+    "id": "craft-down-under",
+    "name": "Craft Down Under",
+    "address": "nohub.playcdu.co",
+    "version": null,
+    "version_note": "需要从服务器页面选择整合包",
+    "description": "包含 50+ 整合包的大型 Modded 网络。",
+    "tags": ["整合包", "Modded"],
+    "requires_mods": true,
+    "source_url": "https://playcdu.co/"
+  }
+]

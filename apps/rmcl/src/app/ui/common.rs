@@ -17,12 +17,14 @@ pub fn page_header(page: Page, actions: impl IntoElement, cx: &App) -> impl Into
             v_flex()
                 .gap_1()
                 .child(div().text_2xl().font_semibold().child(page.title()))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(page.subtitle()),
-                ),
+                .when(!page.subtitle().is_empty(), |this| {
+                    this.child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(page.subtitle()),
+                    )
+                }),
         )
         .child(h_flex().gap_2().child(actions))
 }

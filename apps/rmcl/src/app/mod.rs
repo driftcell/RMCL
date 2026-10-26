@@ -25,18 +25,18 @@ use gpui_kit::{
 use rmcl_app::{
     AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
     ContentInstallPreflight, ContentKind, ContentLibrary, ContentPreflightItem,
-    ContentPreflightStatus, ContentSource, CreateInstanceRequest, GameLaunchRequest, InstallPhase,
-    InstalledVersion, InstanceCreatePhase, JavaRuntime, JavaRuntimeSource, LoaderKind,
-    LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
-    RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount,
-    ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient, TaskEvent, TaskKind,
-    TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress,
-    UpdateRelease, VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, delete_instance_content, discover_installed_versions,
-    import_instance_content, migrate_instance_to_isolated, preflight_content_install,
-    recommended_version, rename_instance, scan_installed_mods, scan_instance_content,
-    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
-    spawn_apply_helper,
+    ContentPreflightStatus, ContentSource, CreateInstanceRequest, FeaturedServer,
+    GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase, JavaRuntime,
+    JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
+    MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
+    RepositoryPath, ResolvedMicrosoftAccount, ServerIconCache, ServerPingError, ServerStatus,
+    ServerStatusClient, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
+    TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
+    VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
+    discover_installed_versions, featured_servers, import_instance_content,
+    migrate_instance_to_isolated, preflight_content_install, recommended_version, rename_instance,
+    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
+    set_instance_launch_settings, spawn_apply_helper,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
@@ -62,7 +62,7 @@ use crate::{
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
 const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
 const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
-const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SERVER_PING_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,7 +83,7 @@ impl Page {
         match self {
             Self::Home => "主页",
             Self::Versions => "实例",
-            Self::Servers => "服务器",
+            Self::Servers => "联机",
             Self::Instance => "实例详情",
             Self::CreateInstance => "新建实例",
             Self::ContentBrowser => "在线内容",
@@ -97,7 +97,7 @@ impl Page {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
-            Self::Servers => "收藏 Java 版服务器，查看状态并直接进入。",
+            Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
             Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
@@ -118,6 +118,39 @@ impl Page {
             Self::Downloads => IconName::Download,
             Self::Logs => IconName::ScrollText,
             Self::Settings => IconName::Settings,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ServerTab {
+    #[default]
+    Favorites,
+    Discover,
+}
+
+impl ServerTab {
+    pub const ALL: [Self; 2] = [Self::Favorites, Self::Discover];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Favorites => "收藏",
+            Self::Discover => "发现",
+        }
+    }
+
+    pub fn index(self) -> usize {
+        match self {
+            Self::Favorites => 0,
+            Self::Discover => 1,
+        }
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::Favorites,
+            1 => Self::Discover,
+            _ => unreachable!("invalid server tab index: {index}"),
         }
     }
 }
@@ -146,11 +179,20 @@ pub struct ContentBrowserState {
 }
 
 #[derive(Default)]
+struct ServerStatusState {
+    statuses: HashMap<String, ServerStatusView>,
+    refreshing: bool,
+    request: u64,
+    cancel: Option<CancellationToken>,
+}
+
+#[derive(Default)]
 struct ServersState {
     statuses: HashMap<String, ServerStatusView>,
     refreshing: bool,
     request: u64,
     cancel: Option<CancellationToken>,
+    featured: ServerStatusState,
 }
 
 #[derive(Clone, Default)]
@@ -342,10 +384,13 @@ pub struct LauncherApp {
     content_browser_cancel: Option<CancellationToken>,
     _content_browser_task: Option<Task<()>>,
     servers: ServersState,
+    server_tab: ServerTab,
     server_query: Entity<InputState>,
+    discover_query: Entity<InputState>,
     server_name_input: Entity<InputState>,
     server_address_input: Entity<InputState>,
     _server_task: Option<Task<()>>,
+    _featured_task: Option<Task<()>>,
     _server_auto_task: Option<Task<()>>,
     update: UpdateState,
     _update_task: Option<Task<()>>,
@@ -535,6 +580,7 @@ impl LauncherApp {
         let remote_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
         let server_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索服务器"));
+        let discover_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索精选服务器"));
         let server_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用服务器地址"));
         let server_address_input =
@@ -585,6 +631,13 @@ impl LauncherApp {
         );
         subscriptions.push(
             cx.subscribe(&server_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&discover_query, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
@@ -694,10 +747,13 @@ impl LauncherApp {
             content_browser_cancel: None,
             _content_browser_task: None,
             servers: ServersState::default(),
+            server_tab: ServerTab::default(),
             server_query,
+            discover_query,
             server_name_input,
             server_address_input,
             _server_task: None,
+            _featured_task: None,
             _server_auto_task: None,
             update: UpdateState::default(),
             _update_task: None,
@@ -779,7 +835,7 @@ impl LauncherApp {
                 let keep_running = this
                     .update_in(cx, |view, window, cx| {
                         if view.page == Page::Servers {
-                            view.refresh_servers(window, cx);
+                            view.refresh_active_servers(window, cx);
                         }
                         true
                     })
@@ -1405,6 +1461,18 @@ impl LauncherApp {
         self.log_state.can_start() && !self.content_operations_pending()
     }
 
+    fn server_join_ready(&self) -> (bool, &'static str) {
+        if self.selected_version().is_none() {
+            (false, "请先选择一个实例")
+        } else if self.selected_account().is_none() {
+            (false, "请先添加一个账户")
+        } else if !self.can_start_operation() {
+            (false, "当前有任务或游戏正在运行，请先停止")
+        } else {
+            (true, "使用当前实例和账户进入服务器")
+        }
+    }
+
     fn content_operations_pending(&self) -> bool {
         self.content_action_pending
             || self.content_loading
@@ -1420,10 +1488,38 @@ impl LauncherApp {
         for status in self.servers.statuses.values_mut() {
             status.loading = false;
         }
+        if let Some(cancellation) = self.servers.featured.cancel.take() {
+            cancellation.cancel();
+        }
+        self.servers.featured.request = self.servers.featured.request.wrapping_add(1);
+        self.servers.featured.refreshing = false;
+        for status in self.servers.featured.statuses.values_mut() {
+            status.loading = false;
+        }
+    }
+
+    fn select_server_tab(&mut self, tab: ServerTab, window: &mut Window, cx: &mut Context<Self>) {
+        if self.server_tab == tab {
+            return;
+        }
+        self.server_tab = tab;
+        self.cancel_server_refresh();
+        self.refresh_active_servers(window, cx);
+        cx.notify();
+    }
+
+    fn refresh_active_servers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.server_tab {
+            ServerTab::Favorites => self.refresh_servers(window, cx),
+            ServerTab::Discover => self.refresh_featured_servers(window, cx),
+        }
     }
 
     fn refresh_servers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.page != Page::Servers || self.servers.refreshing {
+        if self.page != Page::Servers
+            || self.server_tab != ServerTab::Favorites
+            || self.servers.refreshing
+        {
             return;
         }
         let servers = self.config.servers.clone();
@@ -1513,6 +1609,178 @@ impl LauncherApp {
             });
         }));
         cx.notify();
+    }
+
+    fn refresh_featured_servers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.page != Page::Servers
+            || self.server_tab != ServerTab::Discover
+            || self.servers.featured.refreshing
+        {
+            return;
+        }
+        let Ok(servers) = featured_servers() else {
+            return;
+        };
+        self.servers
+            .featured
+            .statuses
+            .retain(|id, _| servers.iter().any(|server| server.id == *id));
+        if servers.is_empty() {
+            self.servers.featured.statuses.clear();
+            cx.notify();
+            return;
+        }
+
+        if let Some(cancellation) = self.servers.featured.cancel.take() {
+            cancellation.cancel();
+        }
+        self.servers.featured.request = self.servers.featured.request.wrapping_add(1);
+        let request = self.servers.featured.request;
+        let cancellation = CancellationToken::new();
+        self.servers.featured.cancel = Some(cancellation.clone());
+        self.servers.featured.refreshing = true;
+
+        let mut entries = Vec::with_capacity(servers.len());
+        for server in servers {
+            let status = self
+                .servers
+                .featured
+                .statuses
+                .entry(server.id.clone())
+                .or_default();
+            status.loading = true;
+            status.error = None;
+            entries.push((server.id.clone(), server.address.clone()));
+        }
+
+        let client = self.services.servers.clone();
+        let icons = self.services.server_icons.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let entry_ids = entries.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        self._featured_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let results = runtime
+                .spawn(async move { ping_servers(client, icons, entries, cancellation).await })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.servers.featured.request != request {
+                    return;
+                }
+                view.servers.featured.refreshing = false;
+                match results {
+                    Ok(results) => {
+                        for (id, result) in results {
+                            let Some(status) = view.servers.featured.statuses.get_mut(&id) else {
+                                continue;
+                            };
+                            status.loading = false;
+                            match result {
+                                Ok((status_value, icon_path)) => {
+                                    status.status = Some(status_value);
+                                    if icon_path.is_some() {
+                                        status.icon_path = icon_path;
+                                    }
+                                    status.error = None;
+                                }
+                                Err(error) => {
+                                    status.status = None;
+                                    status.error = Some(error.to_string());
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        for id in entry_ids {
+                            if let Some(status) = view.servers.featured.statuses.get_mut(&id) {
+                                status.loading = false;
+                                status.status = None;
+                                status.error = Some(format!("后台任务失败：{error}"));
+                            }
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn featured_server_is_favorite(&self, address: &ServerAddress) -> bool {
+        self.config.servers.iter().any(|stored| {
+            ServerAddress::parse(&stored.address)
+                .map(|stored_address| stored_address == *address)
+                .unwrap_or(false)
+        })
+    }
+
+    fn toggle_featured_server_favorite(
+        &mut self,
+        server: FeaturedServer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let saved_index = self.config.servers.iter().position(|stored| {
+            ServerAddress::parse(&stored.address)
+                .map(|stored_address| stored_address == server.address)
+                .unwrap_or(false)
+        });
+        if let Some(index) = saved_index {
+            self.config.servers.remove(index);
+            self.save_config();
+            cx.notify();
+            window.push_notification(Notification::info("已取消收藏。").title("服务器"), cx);
+            return;
+        }
+        self.config.servers.push(StoredServer {
+            id: Uuid::new_v4().to_string(),
+            name: server.name,
+            address: server.address.to_string(),
+        });
+        self.save_config();
+        cx.notify();
+        window.push_notification(
+            Notification::success("已加入服务器收藏。").title("服务器"),
+            cx,
+        );
+    }
+
+    fn join_featured_server(
+        &mut self,
+        server: FeaturedServer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if server.requires_mods {
+            window.push_notification(
+                Notification::warning("该服务器需要客户端 Mod 或整合包，请先准备对应实例。")
+                    .title("需要整合包"),
+                cx,
+            );
+            return;
+        }
+        let Some(version) = self.selected_version() else {
+            window.push_notification(
+                Notification::warning("请先在主页或实例页选择一个实例。").title("无法进入服务器"),
+                cx,
+            );
+            return;
+        };
+        let version_id = version.id.as_str().to_owned();
+        if self.selected_account().is_none() {
+            window.push_notification(
+                Notification::warning("请先添加一个账户。").title("无法进入服务器"),
+                cx,
+            );
+            return;
+        }
+        if !self.can_start_operation() {
+            window.push_notification(
+                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
+                    .title("无法进入服务器"),
+                cx,
+            );
+            return;
+        }
+        self.start_launch_with_server(version_id, Some(server.address), window, cx);
     }
 
     fn open_server_dialog(
@@ -1765,7 +2033,7 @@ impl LauncherApp {
             self.load_catalog(false, window, cx);
         }
         if page == Page::Servers {
-            self.refresh_servers(window, cx);
+            self.refresh_active_servers(window, cx);
         }
         cx.notify();
     }
