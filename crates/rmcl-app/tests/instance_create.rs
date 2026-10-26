@@ -1,11 +1,14 @@
-use std::{io::Write, path::Path};
+#[cfg(unix)]
+use std::io::Write;
+use std::path::Path;
 
 use axum::{Json, Router, routing::get};
 use rmcl_app::{
-    CreateInstanceRequest, ForgeInstaller, InstanceCreateEvent, InstanceCreator, JavaService,
-    JavaServiceConfig, LoaderCatalog, LoaderCatalogConfig, LoaderSelection, VanillaInstaller,
-    VanillaSources,
+    CreateInstanceRequest, InstanceCreateEvent, InstanceCreator, LoaderCatalog,
+    LoaderCatalogConfig, LoaderSelection, VanillaInstaller, VanillaSources,
 };
+#[cfg(unix)]
+use rmcl_app::{ForgeInstaller, JavaService, JavaServiceConfig};
 use rmcl_domain::{OperatingSystem, Platform};
 use rmcl_instance::{IsolationMode, LoaderKind, MinecraftLayout, VersionId};
 use rmcl_net::DownloadConfig;
@@ -14,6 +17,7 @@ use sha1::{Digest, Sha1};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+#[cfg(unix)]
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 fn sha1(bytes: &[u8]) -> String {
@@ -262,6 +266,7 @@ async fn instance_create_task_exposes_subject_and_completes() {
     server.abort();
 }
 
+#[cfg(unix)]
 fn forge_installer_jar(path: &Path) {
     let file = std::fs::File::create(path).unwrap();
     let mut zip = ZipWriter::new(file);
@@ -295,6 +300,7 @@ fn forge_installer_jar(path: &Path) {
     zip.finish().unwrap();
 }
 
+#[cfg(unix)]
 fn write_fake_java(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
 
@@ -309,6 +315,7 @@ fn write_fake_java(path: &Path) {
     std::fs::set_permissions(path, permissions).unwrap();
 }
 
+#[cfg(unix)]
 async fn forge_installer_server() -> (Url, tokio::task::JoinHandle<()>) {
     let temporary = TempDir::new().unwrap();
     let installer_path = temporary.path().join("installer.jar");
@@ -329,6 +336,7 @@ async fn forge_installer_server() -> (Url, tokio::task::JoinHandle<()>) {
     (base, handle)
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn creates_isolated_forge_instance_through_installer() {
     let temporary = TempDir::new().unwrap();
