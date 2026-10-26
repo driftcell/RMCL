@@ -197,29 +197,49 @@ impl LauncherApp {
         let total = self.content_browser.total_hits;
         let error = self.content_browser.search_error.clone();
         let visible = projects.len() as u64;
+        let count = if loading && projects.is_empty() {
+            "正在搜索…".to_owned()
+        } else {
+            format!("共 {total} 个结果 · 已加载 {visible}")
+        };
         v_flex()
             .gap_4()
             .child(
                 card(cx).child(
-                    h_flex()
+                    v_flex()
                         .w_full()
                         .gap_3()
-                        .items_center()
                         .child(
-                            Input::new(&self.remote_query)
-                                .prefix(Icon::new(IconName::Search).small())
-                                .cleanable(true)
-                                .w(px(300.)),
-                        )
-                        .child(
-                            Button::new("content-browser-search")
-                                .primary()
-                                .icon(IconName::Search)
-                                .label("搜索")
-                                .disabled(loading)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.load_remote_search(true, window, cx)
-                                })),
+                            h_flex()
+                                .w_full()
+                                .gap_3()
+                                .items_center()
+                                .child(
+                                    Input::new(&self.remote_query)
+                                        .prefix(Icon::new(IconName::Search).small())
+                                        .cleanable(true)
+                                        .w(px(300.))
+                                        .flex_shrink_0(),
+                                )
+                                .child(
+                                    Button::new("content-browser-search")
+                                        .primary()
+                                        .icon(IconName::Search)
+                                        .label("搜索")
+                                        .disabled(loading)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.load_remote_search(true, window, cx)
+                                        })),
+                                )
+                                .child(div().flex_1())
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .whitespace_nowrap()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(count),
+                                ),
                         )
                         .child(
                             TabBar::new("content-browser-sort")
@@ -235,13 +255,6 @@ impl LauncherApp {
                                         .into_iter()
                                         .map(|sort| Tab::new().label(sort.label())),
                                 ),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(format!("共 {total} 个结果 · 已加载 {visible}")),
                         ),
                 ),
             )
@@ -275,12 +288,13 @@ impl LauncherApp {
                             .into_any_element()
                     })
                     .collect::<Vec<_>>();
+                let result_subtitle = if loading {
+                    format!("{} 个项目 · 正在搜索…", projects.len())
+                } else {
+                    format!("{} 个项目", projects.len())
+                };
                 card(cx)
-                    .child(section_title(
-                        "搜索结果",
-                        &format!("{} 个项目", projects.len()),
-                        cx,
-                    ))
+                    .child(section_title("搜索结果", &result_subtitle, cx))
                     .children(rows)
                     .when(visible < total, |this| {
                         this.child(
