@@ -43,6 +43,7 @@
 ## 工程
 
 - [开发与文档规范](engineering/CONVENTIONS.md)：注释、命名、测试和文档维护规则。
+- [分支、PR 与发布](engineering/RELEASING.md)：分支保护、Squash merge、release-plz、CHANGELOG 和 Release workflow。
 - [持续集成](engineering/CI.md)：nextest、三平台测试矩阵和本地复现。
 - [Rust 工具链](engineering/TOOLCHAIN.md)：stable channel、组件和版本策略。
 - [独立实现与许可](engineering/LICENSING.md)：MIT 路线及其工程前提。

@@ -59,6 +59,14 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 
 见 `docs/engineering/LICENSING.md`。
 
+## 分支与发布
+
+- `main` 已启用分支保护，禁止直接 push；所有修改通过分支和 Pull Request。
+- PR 只允许 Squash merge，合并后自动删除 head branch。
+- PR 标题使用 Conventional Commits；Squash 后标题成为 `main` 的提交信息。
+- 发布使用 release-plz release PR；不要手工直接改版本。流程见 [分支、PR 与发布](docs/engineering/RELEASING.md)。
+- 合并前必须确认必需 CI 检查全部通过。
+
 ## Git 提交
 
 - 每完成一个边界清晰且验证通过的任务，创建一次 git commit。

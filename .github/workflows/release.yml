@@ -230,6 +230,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Extract release notes
+        shell: bash
+        run: |
+          chmod +x scripts/release-notes.sh
+          scripts/release-notes.sh "${GITHUB_REF_NAME}" CHANGELOG.md "${RUNNER_TEMP}/release-notes.md"
+          cat "${RUNNER_TEMP}/release-notes.md"
+
       - name: Download packages
         uses: actions/download-artifact@v4
         with:
@@ -250,7 +262,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: RMCL ${{ needs.prepare.outputs.version }}
           files: dist/*
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/release-notes.md
+          generate_release_notes: false
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true

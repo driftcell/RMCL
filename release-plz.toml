@@ -1,0 +1,46 @@
+[workspace]
+# RMCL is a binary application and is not published to crates.io.
+git_only = true
+release_always = false
+release = false
+release_commits = "^(feat|fix|perf|refactor)"
+changelog_path = "CHANGELOG.md"
+git_tag_enable = false
+git_release_enable = false
+semver_check = false
+pr_branch_prefix = "release-plz-"
+pr_labels = ["release"]
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs", skip = true },
+  { message = "^test", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^chore", skip = true },
+]
+
+[[package]]
+name = "rmcl"
+release = true
+changelog_include = [
+  "rmcl-app",
+  "rmcl-archive",
+  "rmcl-auth",
+  "rmcl-content",
+  "rmcl-domain",
+  "rmcl-install",
+  "rmcl-instance",
+  "rmcl-java",
+  "rmcl-launch",
+  "rmcl-minecraft",
+  "rmcl-net",
+  "rmcl-platform",
+  "rmcl-store",
+]
+git_tag_enable = true
+git_tag_name = "v{{ version }}"

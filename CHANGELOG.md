@@ -1,0 +1,46 @@
+# Changelog
+
+All notable changes to RMCL are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.4.0] - 2026-10-26
+
+### Added
+
+- GitHub Release 自动更新：启动检查、手动检查、SHA-256 校验、平台包替换和重启。
+- 服务器收藏与 Java Edition Server List Ping：MOTD、在线人数、延迟、图标缓存、自动刷新和 Quick Play/legacy 一键进服。
+- 正式版推荐和安装前置预检：本地 Mod 元数据索引、远程主 Mod JAR 元数据、常见 semver/Maven 版本范围、重复/冲突提示和已满足前置跳过。
+- 配置 schema 4：新增 `auto_check_updates`；旧 schema 1/2/3 在内存中升级。
+
+### Fixed
+
+- 远程资源包和光影的版本列表不再错误套用实例 Mod 加载器。
+- 内容安装任务运行期间禁止本地内容并发编辑。
+- 服务器地址解析会尝试全部 DNS 地址，避免首个地址失败后直接放弃。
+
+### Known limitations
+
+- 自动更新目前只有 SHA-256，没有独立签名；首个包含 updater 的版本仍需手动升级一次。
+- 真实 Windows/Linux/macOS 自动更新重启、服务器一键进服和真实窗口交互仍需逐平台手工验收。
+
+## [0.3.0] - 2026-10-26
+
+### Added
+
+- 服务器列表、Server List Ping、服务器图标和 60 秒自动刷新。
+- 服务器一键进服：1.20+ Quick Play，旧版本 `--server`/`--port`。
+
+## [0.2.0] - 2026-10-26
+
+### Added
+
+- Modrinth 远程内容、必需依赖解析、内容安装任务和本地内容管理。
+- 实例隔离、加载器安装、实例级 Java/内存/窗口设置等基础能力。
+
+### Fixed
+
+- 远程资源包/光影版本过滤和内容安装并发编辑问题。
