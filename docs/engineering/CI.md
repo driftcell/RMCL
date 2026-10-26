@@ -16,7 +16,7 @@
 
 ## 路径过滤
 
-`Detect Rust changes` job 使用 `dorny/paths-filter` 判断改动是否涉及 Rust 代码或构建配置。只有以下路径变化时才运行 `lint` 和 `test`：
+`Detect Rust changes` job 使用 `dorny/paths-filter` 判断改动是否涉及 Rust 代码或 Web 站点。只有以下路径变化时才运行 `lint` 和 `test`：
 
 - `apps/**`、`crates/**`
 - 根 `Cargo.toml`、`Cargo.lock`
@@ -25,7 +25,13 @@
 - `.github/scripts/**`
 - `.github/workflows/**`
 
-纯文档、notes、`CHANGELOG.md`、`release-plz.toml` 等改动会跳过 Rust 测试。跳过的 job 本身不能被分支保护当作稳定成功，因此必需检查只要求最终的 `CI success` gate；不能改成 workflow 级 `paths`/`paths-ignore`，否则整个 workflow 不运行，必需检查会一直 pending。
+以下路径变化时运行 `web` job：
+
+- `web/**`
+- `.github/workflows/ci.yml`
+- `.github/workflows/pages.yml`
+
+纯文档、notes、`CHANGELOG.md`、`release-plz.toml` 等改动会跳过所有业务 job；纯 `web/**` 改动会跳过 Rust 编译但运行 Web 检查。跳过的 job 本身不能被分支保护当作稳定成功，因此必需检查只要求最终的 `CI success` gate；不能改成 workflow 级 `paths`/`paths-ignore`，否则整个 workflow 不运行，必需检查会一直 pending。
 
 `workflow_dispatch` 始终运行完整检查。检测 job 自身失败时，`lint` 仍会执行，避免因为过滤逻辑故障而静默跳过必需检查。
 
@@ -33,7 +39,7 @@
 
 ### `changes`
 
-在 Ubuntu 24.04 上运行 `dorny/paths-filter`，输出 `rust` 布尔值。PR 通过 GitHub API 读取变更文件，push 使用 git diff；手动触发直接视为 Rust 变更。它本身不是分支保护的必需检查，但 `lint`、`test` 和 `ci-success` 通过 `needs` 依赖它。
+在 Ubuntu 24.04 上运行 `dorny/paths-filter`，输出 `rust` 和 `web` 布尔值。PR 通过 GitHub API 读取变更文件，push 使用 git diff；手动触发直接视为全部变更。它本身不是分支保护的必需检查，但 `lint`、`test`、`web` 和 `ci-success` 通过 `needs` 依赖它。
 
 ### `lint`
 
@@ -59,13 +65,25 @@ cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no
 
 `--test-threads num-cpus` 明确按可用并行度并发执行测试。`--no-tests=fail` 防止未来因 target 配置错误而出现“没有测试但 CI 成功”。
 
+### `web`
+
+在 Ubuntu 24.04 上安装 Bun 1.4.4，然后在 `web/` 目录执行：
+
+```bash
+bun install --frozen-lockfile
+bun run check
+bun run build
+```
+
+`check` 是 `tsc --noEmit`；`build` 使用 Bun 打包 `index.html` 到 `web/dist/`。Pages 部署 workflow 复用同样的命令。
+
 ### `ci-success`
 
-`main` 分支保护唯一要求的检查。该 job 使用 `if: always()` 始终运行，并依赖 `changes`、`lint` 和 `test`：
+`main` 分支保护唯一要求的检查。该 job 使用 `if: always()` 始终运行，并依赖 `changes`、`lint`、`test` 和 `web`：
 
 - `changes` 必须是 `success`；检测逻辑失败时 gate 失败。
-- `lint` 和 `test` 允许 `success` 或 `skipped`，其他结果（失败、取消）都使 gate 失败。
-- 因此纯文档或纯 `web/**` 改动可以跳过 Rust 编译，同时得到一个稳定的成功检查。
+- `lint`、`test` 和 `web` 允许 `success` 或 `skipped`，其他结果（失败、取消）都使 gate 失败。
+- 因此纯文档改动可以跳过全部业务 job，纯 `web/**` 改动可以跳过 Rust 编译，纯 Rust 改动可以跳过 Web 检查，同时始终得到一个稳定的成功检查。
 - 单个 job 或矩阵 context 不再被分支保护直接要求，避免 skipped 或未展开的 `Nextest (matrix)` 检查永久阻塞 PR。
 
 ## 配置与依赖
@@ -75,6 +93,7 @@ cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no
 - Ubuntu job 在 Rust 安装前通过 `.github/scripts/install-gpui-deps.sh` 安装 GPUI Kit 0.8.0 文档要求的 fontconfig、Wayland、WebKitGTK、XKB/X11、SSL、zstd 和 Vulkan 开发库；不启用 ALSA/speech 等可选 feature。
 - 安装脚本先把 `azure.archive.ubuntu.com` 替换为 `mirrors.edge.kernel.org`，并关闭 recommends，避免 GitHub 托管 runner 落到慢速 apt 节点。可用 `UBUNTU_MIRROR` 覆盖镜像地址。
 - Rust 编译产物由 `Swatinem/rust-cache` 缓存，nextest 由 `taiki-e/install-action` 安装。
+- Web 使用 `web/bun.lock`、Bun 1.4.4 和 `--frozen-lockfile`；`bun install` 在 CI 中只在 `web/` 目录执行。
 - 不默认启用 `--all-features`，避免未来把互斥 feature 错当成必须兼容的组合。
 - 初始工作流不需要 secrets，不访问真实账号，也不上传发布产物。
 
@@ -87,6 +106,14 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo nextest run --workspace --locked --profile ci
 cargo test --workspace --doc --locked
+```
+
+Web 站点在 `web/` 目录运行：
+
+```bash
+bun install --frozen-lockfile
+bun run check
+bun run build
 ```
 
 CI 编译和测试通过不等于图形界面或真实游戏启动验证通过；后者仍按平台单独验收。
