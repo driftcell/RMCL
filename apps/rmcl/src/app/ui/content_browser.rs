@@ -206,25 +206,40 @@ impl LauncherApp {
             .gap_4()
             .child(
                 card(cx).child(
-                    h_flex()
+                    v_flex()
                         .w_full()
                         .gap_3()
-                        .items_center()
                         .child(
-                            Input::new(&self.remote_query)
-                                .prefix(Icon::new(IconName::Search).small())
-                                .cleanable(true)
-                                .w(px(300.)),
-                        )
-                        .child(
-                            Button::new("content-browser-search")
-                                .primary()
-                                .icon(IconName::Search)
-                                .label("搜索")
-                                .disabled(loading)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.load_remote_search(true, window, cx)
-                                })),
+                            h_flex()
+                                .w_full()
+                                .gap_3()
+                                .items_center()
+                                .child(
+                                    Input::new(&self.remote_query)
+                                        .prefix(Icon::new(IconName::Search).small())
+                                        .cleanable(true)
+                                        .w(px(300.))
+                                        .flex_shrink_0(),
+                                )
+                                .child(
+                                    Button::new("content-browser-search")
+                                        .primary()
+                                        .icon(IconName::Search)
+                                        .label("搜索")
+                                        .disabled(loading)
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.load_remote_search(true, window, cx)
+                                        })),
+                                )
+                                .child(div().flex_1())
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .whitespace_nowrap()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(count),
+                                ),
                         )
                         .child(
                             TabBar::new("content-browser-sort")
@@ -240,15 +255,6 @@ impl LauncherApp {
                                         .into_iter()
                                         .map(|sort| Tab::new().label(sort.label())),
                                 ),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .whitespace_nowrap()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(count),
                         ),
                 ),
             )
