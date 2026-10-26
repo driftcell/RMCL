@@ -6,6 +6,7 @@ use gpui_kit::{
         h_flex,
         input::Input,
         scroll::ScrollableElement,
+        select::Select,
         tab::{Tab, TabBar},
         tag::Tag,
         v_flex,
@@ -17,7 +18,7 @@ use rmcl_app::{FeaturedServer, featured_instance_id, featured_servers};
 use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
-use super::common::{card, empty_state, error_banner, page_header, section_title, warning_banner};
+use super::common::{card, empty_state, error_banner, page_header, section_title};
 
 impl LauncherApp {
     pub fn render_servers(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -99,23 +100,6 @@ impl LauncherApp {
         } else {
             "使用当前实例和账户进入服务器"
         };
-        let missing_target = match (has_version, has_account) {
-            (false, false) => Some((
-                "尚未选择实例和账户",
-                "请先选择一个实例，并在侧栏账户卡片中添加账户。",
-            )),
-            (false, true) => Some(("尚未选择实例", "请先在主页或实例页选择一个实例。")),
-            (true, false) => Some(("尚未添加账户", "请先在侧栏账户卡片中添加账户。")),
-            (true, true) => None,
-        };
-        let instance = self
-            .selected_version()
-            .map(|version| version.display_name().to_owned())
-            .unwrap_or_else(|| "未选择实例".to_owned());
-        let account = self
-            .selected_account()
-            .map(|account| account.username().to_owned())
-            .unwrap_or_else(|| "未选择账户".to_owned());
 
         let mut rows = Vec::new();
         for server in &servers {
@@ -127,17 +111,52 @@ impl LauncherApp {
             .min_h_0()
             .gap_5()
             .child(
-                card(cx)
-                    .child(section_title("启动目标", "", cx))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(Tag::info().child(format!("实例：{instance}")))
-                            .child(Tag::secondary().child(format!("账户：{account}"))),
-                    )
-                    .when_some(missing_target, |this, (title, message)| {
-                        this.child(warning_banner(title, message, cx))
-                    }),
+                card(cx).child(section_title("启动目标", "", cx)).child(
+                    h_flex()
+                        .gap_3()
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .flex_1()
+                                .max_w(px(320.))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("实例"),
+                                )
+                                .child(
+                                    Select::new(&self.version_select)
+                                        .placeholder("选择实例")
+                                        .accessibility_label("选择实例")
+                                        .menu_width(px(280.))
+                                        .menu_max_h(px(260.))
+                                        .cleanable(false)
+                                        .w_full(),
+                                ),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .flex_1()
+                                .max_w(px(320.))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("账户"),
+                                )
+                                .child(
+                                    Select::new(&self.account_select)
+                                        .placeholder("选择账户")
+                                        .accessibility_label("选择账户")
+                                        .menu_width(px(280.))
+                                        .menu_max_h(px(260.))
+                                        .cleanable(false)
+                                        .w_full(),
+                                ),
+                        ),
+                ),
             )
             .child(
                 v_flex()
@@ -151,6 +170,7 @@ impl LauncherApp {
                             .w_full()
                             .gap_3()
                             .items_center()
+                            .px_1()
                             .child(
                                 div()
                                     .flex_1()
@@ -229,67 +249,45 @@ impl LauncherApp {
         }
 
         v_flex()
+            .id("featured-servers-body")
             .flex_1()
             .min_h_0()
-            .gap_5()
+            .gap_4()
+            .overflow_y_scrollbar()
             .child(
-                card(cx)
-                    .child(section_title("精选服务器", "", cx))
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .items_center()
+                    .px_1()
                     .child(
-                        h_flex().gap_2().child(
-                            Tag::info()
-                                .child(format!("账户：{}", account.as_deref().unwrap_or("未选择"))),
-                        ),
+                        div()
+                            .flex_1()
+                            .max_w(px(360.))
+                            .child(Input::new(&self.discover_query).w_full()),
                     )
-                    .when(account.is_none(), |this| {
-                        this.child(warning_banner(
-                            "尚未添加账户",
-                            "安装完成后需要账户才能进入服务器；请先在侧栏账户卡片中添加账户。",
-                            cx,
-                        ))
-                    }),
-            )
-            .child(
-                v_flex()
-                    .id("featured-servers-body")
-                    .flex_1()
-                    .min_h_0()
-                    .gap_4()
-                    .overflow_y_scrollbar()
                     .child(
-                        h_flex()
-                            .w_full()
-                            .gap_3()
-                            .items_center()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .max_w(px(360.))
-                                    .child(Input::new(&self.discover_query).w_full()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(format!("显示 {} / {total} 个服务器", servers.len())),
-                            ),
-                    )
-                    .when(servers.is_empty(), |this| {
-                        this.child(empty_state(
-                            IconName::Globe,
-                            "没有匹配的精选服务器",
-                            "尝试清除搜索条件，或稍后刷新。",
-                            Button::new("featured-empty-clear")
-                                .outline()
-                                .label("刷新状态")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.refresh_featured_servers(window, cx)
-                                })),
-                            cx,
-                        ))
-                    })
-                    .children(rows),
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("显示 {} / {total} 个服务器", servers.len())),
+                    ),
             )
+            .when(servers.is_empty(), |this| {
+                this.child(empty_state(
+                    IconName::Globe,
+                    "没有匹配的精选服务器",
+                    "尝试清除搜索条件，或稍后刷新。",
+                    Button::new("featured-empty-clear")
+                        .outline()
+                        .label("刷新状态")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.refresh_featured_servers(window, cx)
+                        })),
+                    cx,
+                ))
+            })
+            .children(rows)
             .into_any_element()
     }
 
@@ -405,26 +403,16 @@ impl LauncherApp {
                             .gap_1()
                             .child(
                                 h_flex()
-                                    .w_full()
                                     .gap_2()
                                     .items_center()
                                     .child(
-                                        h_flex()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .gap_2()
-                                            .items_center()
-                                            .child(
-                                                div()
-                                                    .min_w_0()
-                                                    .text_base()
-                                                    .font_semibold()
-                                                    .truncate()
-                                                    .child(server.name.clone()),
-                                            )
-                                            .child(status_tag),
+                                        div()
+                                            .text_base()
+                                            .font_semibold()
+                                            .truncate()
+                                            .child(server.name.clone()),
                                     )
-                                    .child(favorite_button),
+                                    .child(status_tag),
                             )
                             .child(h_flex().gap_1().flex_wrap().children(tags))
                             .child(
@@ -455,31 +443,37 @@ impl LauncherApp {
                     )
                     .child(
                         v_flex()
-                            .w(px(180.))
+                            .w(px(190.))
                             .flex_shrink_0()
                             .gap_1()
                             .items_end()
                             .child(
-                                Button::new(format!("featured-join-{}", server.id))
-                                    .primary()
-                                    .icon(if installed {
-                                        IconName::Play
-                                    } else {
-                                        IconName::Download
-                                    })
-                                    .label(install_label)
-                                    .disabled(!installable)
-                                    .tooltip(install_tooltip)
-                                    .on_click(cx.listener({
-                                        let server = server.clone();
-                                        move |this, _, window, cx| {
-                                            this.open_featured_install_dialog(
-                                                server.clone(),
-                                                window,
-                                                cx,
-                                            )
-                                        }
-                                    })),
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        Button::new(format!("featured-join-{}", server.id))
+                                            .primary()
+                                            .icon(if installed {
+                                                IconName::Play
+                                            } else {
+                                                IconName::Download
+                                            })
+                                            .label(install_label)
+                                            .disabled(!installable)
+                                            .tooltip(install_tooltip)
+                                            .on_click(cx.listener({
+                                                let server = server.clone();
+                                                move |this, _, window, cx| {
+                                                    this.open_featured_install_dialog(
+                                                        server.clone(),
+                                                        window,
+                                                        cx,
+                                                    )
+                                                }
+                                            })),
+                                    )
+                                    .child(favorite_button),
                             )
                             .child(
                                 Button::new(format!("featured-source-{}", server.id))

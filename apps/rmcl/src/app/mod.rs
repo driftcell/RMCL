@@ -84,7 +84,7 @@ impl Page {
         match self {
             Self::Home => "主页",
             Self::Versions => "实例",
-            Self::Servers => "服务器",
+            Self::Servers => "联机",
             Self::Instance => "实例详情",
             Self::CreateInstance => "新建实例",
             Self::ContentBrowser => "在线内容",
