@@ -2,13 +2,15 @@
 
 状态：`rmcl-app` 安装、安装任务、Java ensure 和游戏任务已实现
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## 边界
 
 `rmcl-app` 组合现有元数据、安装计划、下载器、安全解压、Java 和启动 API，不重复这些 crate 的领域规则，也不依赖 GPUI。`VanillaInstaller`、`JavaService`、`GameLauncher` 可独立调用，`TaskManager` 在它们之上提供应用级生命周期。
 
 实例内容的本地扫描与变更由 `rmcl-content` 提供，`rmcl-app` 只提供 `spawn_blocking` 异步包装；见 [本地内容管理](LOCAL_CONTENT.md)。Modrinth 元数据客户端也在 `rmcl-content`，但远程文件下载由 `rmcl-app` 的 `ContentInstaller` 复用 `rmcl-net` 执行，并由 `TaskManager` 以 `ContentInstall` 任务持有下载、取消和进度；见 [远程内容与 Modrinth](REMOTE_CONTENT.md)。
+
+服务器状态查询由 `rmcl-app` 的 `ServerStatusClient` 直接实现 Java Edition Server List Ping，图标由 `ServerIconCache` 按内容哈希缓存；它不注册 `TaskManager` 任务，也不与安装/启动争用实例互斥。一键进服只把类型化服务器目标放入现有 `GameLaunchRequest`，仍由普通游戏任务持有进程、日志和取消；见 [服务器列表与一键进服](SERVERS.md)。
 
 `VanillaInstallRequest` 要求调用方提供 `.minecraft` 根、精确版本 ID、目标平台和 `VersionSource`：
 
@@ -115,9 +117,8 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 ## 当前不包含
 
-- Microsoft 登录、专用 Quick Play 配置和账号令牌存储
-- 实例级 Java、启动参数、内存和窗口设置，以及实例复制、导入导出和重命名
-- legacy Forge installer、特殊资产名称重建和镜像策略
+- authlib-injector、legacy Forge installer、特殊资产名称重建和镜像策略
+- 实例复制、导入导出和任意 JVM/游戏启动参数；实例级 Java、内存和窗口设置已实现
 - CurseForge、可选依赖与冲突求解、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传
 - 核心侧日志归档、崩溃原因分析、进程树管理和启动器退出后的 detach
@@ -125,7 +126,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 启动器偏好和账户元数据由 `rmcl-store` 持久化，见 [启动器配置](CONFIGURATION.md)。`rmcl-app` 不读写该配置；Microsoft 令牌由系统凭据存储管理，见 [正版账号、令牌与皮肤](AUTHENTICATION.md)。
 
-本地测试使用 mock 和假 JVM 覆盖远程 manifest、两阶段下载、两个 native JAR、重复安装复用、快速启动跳过安装、缺失基础文件、任务互斥、取消、Java 自动安装、日志脱敏、自然非零退出、停止和有界日志；这些测试不访问外部服务。
+本地测试使用 mock 和假 JVM 覆盖远程 manifest、两阶段下载、两个 native JAR、重复安装复用、快速启动跳过安装、缺失基础文件、任务互斥、取消、Java 自动安装、日志脱敏、自然非零退出、停止、有界日志和 Quick Play 服务器参数；这些测试不访问外部服务。
 
 2026-10-25 使用官方 manifest 和已有真实仓库缓存验证了 `VanillaInstaller::official`：`26.3` 的 5229 个 base/asset 文件全部校验并跳过，`1.7.10` 的 708 个文件全部校验并跳过且 3 个 native JAR 完成合并。该结果验证官方来源解析与复用，不把缓存 smoke 描述为全新下载；新文件下载由上述本地 mock 覆盖。
 

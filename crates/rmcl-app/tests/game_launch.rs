@@ -9,7 +9,7 @@ use rmcl_app::{
     VanillaInstallRequest, VanillaInstaller, VanillaSources, VersionSource,
 };
 use rmcl_auth::OfflineAccount;
-use rmcl_domain::{OperatingSystem, Platform};
+use rmcl_domain::{OperatingSystem, Platform, ServerAddress};
 use rmcl_launch::LaunchAccount;
 use rmcl_net::DownloadConfig;
 use serde_json::json;
@@ -70,6 +70,8 @@ fn fixture(mode: ScriptMode) -> Fixture {
         max_memory_mb: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
+        minecraft_version: "1.21.1".to_owned(),
+        server: None,
         resolution: None,
         demo: false,
     };
@@ -248,6 +250,29 @@ async fn instance_memory_and_resolution_reach_the_launch_plan() {
     assert!(outcome.exit.success);
     let raw = std::fs::read_to_string(fixture.root.join("raw-args.txt")).unwrap();
     assert!(raw.lines().any(|line| line == "-Xmx4096M"));
+}
+
+#[tokio::test]
+async fn quick_play_server_reaches_the_launch_plan() {
+    let mut fixture = fixture(ScriptMode::Exit);
+    fixture.request.minecraft_version = "1.21.1".to_owned();
+    fixture.request.server = Some(ServerAddress::parse("play.example.com:25566").unwrap());
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    let raw = std::fs::read_to_string(fixture.root.join("raw-args.txt")).unwrap();
+    let lines = raw.lines().collect::<Vec<_>>();
+    let index = lines
+        .iter()
+        .position(|line| *line == "--quickPlayMultiplayer")
+        .unwrap();
+    assert_eq!(lines[index + 1], "play.example.com:25566");
+    assert!(!lines.contains(&"--server"));
 }
 
 #[tokio::test]

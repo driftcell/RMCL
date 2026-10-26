@@ -112,10 +112,21 @@ impl LaunchPlan {
             .chain(options.additional_jvm_arguments)
             .map(|argument| replace_placeholders(&argument, &placeholders))
             .collect();
-        let game_arguments = game_arguments
+        let mut game_arguments: Vec<String> = game_arguments
             .into_iter()
             .map(|argument| replace_placeholders(&argument, &placeholders))
             .collect();
+        if let Some(server) = options.server.as_ref() {
+            if supports_quick_play(&options.minecraft_version)? {
+                game_arguments.push("--quickPlayMultiplayer".to_owned());
+                game_arguments.push(server.quick_play_address());
+            } else {
+                game_arguments.push("--server".to_owned());
+                game_arguments.push(server.legacy_host().to_owned());
+                game_arguments.push("--port".to_owned());
+                game_arguments.push(server.port().to_string());
+            }
+        }
         Ok(Self {
             java: options.java.executable,
             main_class,
@@ -323,6 +334,48 @@ fn placeholders(
         values.insert("resolution_height".to_owned(), height.to_string());
     }
     values
+}
+
+fn supports_quick_play(version: &str) -> Result<bool, LaunchError> {
+    let version = version.trim();
+    if let Some(supported) = release_version_supports_quick_play(version) {
+        return Ok(supported);
+    }
+    if let Some(supported) = snapshot_supports_quick_play(version) {
+        return Ok(supported);
+    }
+    if version.starts_with('a') || version.starts_with('b') {
+        return Ok(false);
+    }
+    Err(LaunchError::InvalidArguments(format!(
+        "cannot determine whether Minecraft version `{version}` supports Quick Play"
+    )))
+}
+
+fn release_version_supports_quick_play(version: &str) -> Option<bool> {
+    let base = version.split(['-', '+']).next()?;
+    let mut parts = base.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    if major == 1 {
+        let minor = parts.next()?.parse::<u32>().ok()?;
+        Some(minor >= 20)
+    } else if major >= 20 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn snapshot_supports_quick_play(version: &str) -> Option<bool> {
+    let (year, rest) = version.split_once('w')?;
+    let year = year.parse::<u32>().ok()?;
+    let week = rest
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u32>()
+        .ok()?;
+    Some((year, week) >= (23, 14))
 }
 
 fn replace_placeholders(argument: &str, values: &BTreeMap<String, String>) -> String {

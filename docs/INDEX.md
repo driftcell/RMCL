@@ -18,6 +18,7 @@
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
+- [服务器列表与一键进服](architecture/SERVERS.md)：全局服务器收藏、Server List Ping、MOTD/人数/延迟、图标缓存与 Quick Play/legacy 进服。
 - [本地内容管理](architecture/LOCAL_CONTENT.md)：Mod、资源包和光影的扫描、导入、删除、冲突策略与 `options.txt` 语义。
 - [远程内容与 Modrinth](architecture/REMOTE_CONTENT.md)：搜索、版本列表、文件校验、必需依赖解析、内容安装任务与 UI 流程。
 - [版本继承、加载器安装与实例创建](architecture/LOADERS.md)：继承合并、jar 重定向、加载器 profile、Forge/NeoForge installer processors、实例创建事务与 UI。

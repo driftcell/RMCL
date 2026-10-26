@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 2;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +23,7 @@ pub struct LauncherConfig {
     pub selected_account_kind: StoredAccountKind,
     pub accounts: Vec<StoredOfflineAccount>,
     pub microsoft_accounts: Vec<StoredMicrosoftAccount>,
+    pub servers: Vec<StoredServer>,
     pub auto_install_java: bool,
     pub launcher_visibility: LauncherVisibility,
     pub appearance: AppearanceConfig,
@@ -39,6 +40,7 @@ impl Default for LauncherConfig {
             selected_account_kind: StoredAccountKind::Offline,
             accounts: Vec::new(),
             microsoft_accounts: Vec::new(),
+            servers: Vec::new(),
             auto_install_java: true,
             launcher_visibility: LauncherVisibility::default(),
             appearance: AppearanceConfig::default(),
@@ -59,6 +61,15 @@ pub struct StoredMicrosoftAccount {
     pub uuid: String,
     #[serde(default)]
     pub skin_url: Option<String>,
+}
+
+/// A launcher-owned server bookmark. The address remains a string so one bad
+/// entry cannot make the whole configuration unreadable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredServer {
+    pub id: String,
+    pub name: String,
+    pub address: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -159,9 +170,9 @@ impl ConfigStore {
             });
         }
         let mut config = config;
-        // Schema 1 predates Microsoft account metadata. Its selected account is
-        // always an offline profile and every new field has a safe default.
-        if config.schema_version == 1 {
+        // Schema 1 predates Microsoft account metadata and schema 3 adds server
+        // bookmarks. Every new field has a safe default.
+        if config.schema_version < CONFIG_SCHEMA_VERSION {
             config.schema_version = CONFIG_SCHEMA_VERSION;
         }
         Ok(config)
@@ -277,6 +288,14 @@ mod tests {
         }
     }
 
+    fn server(id: &str, name: &str, address: &str) -> StoredServer {
+        StoredServer {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            address: address.to_owned(),
+        }
+    }
+
     #[test]
     fn defaults_keep_rmcl_state_out_of_hmcl_configuration() {
         let config = default_config_path();
@@ -312,6 +331,7 @@ mod tests {
                 "HowDoesAuthWork",
                 "986dec87-b7ec-47ff-89ff-033fdb95c4b5",
             )],
+            servers: vec![server("server-1", "生存服", "play.example.com")],
             auto_install_java: false,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
             ..LauncherConfig::default()
@@ -359,6 +379,28 @@ accent = "emerald"
         assert_eq!(config.accounts.len(), 1);
         assert_eq!(config.accounts[0].username, "Steve");
         assert!(config.microsoft_accounts.is_empty());
+    }
+
+    #[test]
+    fn schema_two_is_upgraded_with_empty_servers() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 2
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+auto_install_java = true
+launcher_visibility = "keep_visible"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert!(config.servers.is_empty());
     }
 
     #[test]

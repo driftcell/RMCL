@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use rmcl_domain::ServerAddress;
 use rmcl_java::{JavaRequirement, JavaRuntimeSource};
 use rmcl_launch::{
     GameEvent, GameExit, GameLog, GameProcess, LaunchAccount, LaunchError, LaunchOptions,
@@ -24,6 +25,10 @@ pub struct GameLaunchRequest {
     pub max_memory_mb: Option<u32>,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
+    /// Base Minecraft version used for version-dependent launch arguments.
+    pub minecraft_version: String,
+    /// Optional server to join immediately after launch.
+    pub server: Option<ServerAddress>,
     pub resolution: Option<(u32, u32)>,
     pub demo: bool,
 }
@@ -75,6 +80,8 @@ impl GameLauncher {
             max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
+            minecraft_version,
+            server,
             resolution,
             demo,
         } = request;
@@ -101,6 +108,8 @@ impl GameLauncher {
             max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
+            minecraft_version,
+            server,
             resolution,
             demo,
             cancellation,
@@ -127,6 +136,8 @@ impl GameLauncher {
             max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
+            minecraft_version,
+            server,
             resolution,
             demo,
         } = request;
@@ -142,6 +153,8 @@ impl GameLauncher {
             max_memory_mb,
             additional_jvm_arguments,
             additional_game_arguments,
+            minecraft_version,
+            server,
             resolution,
             demo,
             cancellation,
@@ -159,6 +172,8 @@ impl GameLauncher {
         max_memory_mb: Option<u32>,
         additional_jvm_arguments: Vec<String>,
         additional_game_arguments: Vec<String>,
+        minecraft_version: String,
+        server: Option<ServerAddress>,
         resolution: Option<(u32, u32)>,
         demo: bool,
         cancellation: CancellationToken,
@@ -213,6 +228,11 @@ impl GameLauncher {
                 .push(format!("-Xmx{memory}M"));
         }
         options.additional_game_arguments = additional_game_arguments;
+        if let Some(server) = server {
+            options = options.with_server(server, minecraft_version);
+        } else {
+            options.minecraft_version = minecraft_version;
+        }
         if let Some((width, height)) = resolution {
             options = options.with_resolution(width, height);
         }

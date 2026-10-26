@@ -25,6 +25,7 @@ license = "MIT"
 
 [workspace.dependencies]
 axum = "0.8"
+base64 = "0.22"
 crc32fast = "1.5"
 fastrand = "2"
 futures = "0.3"

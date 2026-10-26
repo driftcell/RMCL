@@ -22,6 +22,7 @@ RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit �
 - 新实例默认版本隔离，旧实例可显式迁移并复制全局内容
 - 实例详情页管理 Mod、资源包和光影：本地扫描、导入、删除与启用禁用
 - 从 Modrinth 搜索并安装 Mod、资源包和光影，自动安装 Mod 必需前置，下载带 SHA-1 校验、进度和取消
+- 服务器收藏：添加/编辑/删除、MOTD、在线人数、连接延迟、图标缓存、自动刷新，并可从 1.20+ 直接进服或旧版通过 `--server`/`--port` 进服
 - 新建 Vanilla / Fabric / Quilt / Forge / NeoForge 实例，自动处理版本继承、加载器库和现代 Forge/NeoForge installer processors
 - Microsoft 正版账户与离线账户，支持账户切换和删除
 - 正版刷新令牌存入系统凭据存储，启动时按需刷新
@@ -78,6 +79,7 @@ cargo test --workspace --doc --locked
 - [产品范围](docs/product/SCOPE.md)
 - [里程碑](docs/product/MILESTONES.md)
 - [架构边界](docs/architecture/WORKSPACE.md)
+- [服务器列表](docs/architecture/SERVERS.md)
 - [桌面界面](docs/architecture/USER_INTERFACE.md)
 - [正版账号与皮肤](docs/architecture/AUTHENTICATION.md)
 - [开发约定](AGENTS.md)

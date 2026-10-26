@@ -5478,6 +5478,7 @@ name = "rmcl-app"
 version = "0.2.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "hex",
  "image",
  "reqwest",

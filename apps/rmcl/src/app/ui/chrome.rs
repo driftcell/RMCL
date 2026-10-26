@@ -99,6 +99,7 @@ impl LauncherApp {
                     SidebarMenu::new()
                         .child(self.nav_item(Page::Home, cx))
                         .child(self.nav_item(Page::Versions, cx))
+                        .child(self.nav_item(Page::Servers, cx))
                         .child(self.nav_item(Page::Downloads, cx)),
                 ),
             )

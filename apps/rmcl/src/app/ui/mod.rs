@@ -6,5 +6,6 @@ pub mod downloads;
 pub mod home;
 pub mod instance;
 pub mod logs;
+pub mod servers;
 pub mod settings;
 pub mod versions;

@@ -12,6 +12,7 @@ mod instances;
 mod java;
 mod loader;
 mod model;
+mod servers;
 mod skins;
 mod task;
 mod versions;
@@ -59,6 +60,7 @@ pub use rmcl_instance::{
 pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
+pub use servers::{ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient};
 pub use skins::{SkinCache, SkinError};
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,

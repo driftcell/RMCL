@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rmcl_domain::Platform;
+use rmcl_domain::{Platform, ServerAddress};
 use rmcl_install::{InstallPlan, PlannedFileKind};
 use rmcl_instance::{InstanceLayout, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::JavaRuntime;
@@ -25,6 +25,11 @@ pub struct LaunchOptions {
     pub libraries: Vec<PathBuf>,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
+    /// Base Minecraft version used to choose Quick Play versus legacy
+    /// `--server`/`--port` arguments. Callers must preserve the base version
+    /// for loader instances.
+    pub minecraft_version: String,
+    pub server: Option<ServerAddress>,
     pub features: FeatureMap,
     pub resolution: Option<(u32, u32)>,
     pub demo: bool,
@@ -76,6 +81,8 @@ impl LaunchOptions {
             libraries: Vec::new(),
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
+            minecraft_version: version.id.clone(),
+            server: None,
             features,
             resolution: None,
             demo: false,
@@ -113,6 +120,16 @@ impl LaunchOptions {
     pub fn with_demo(mut self, demo: bool) -> Self {
         self.demo = demo;
         self.features.insert("is_demo_user".to_owned(), demo);
+        self
+    }
+
+    pub fn with_server(
+        mut self,
+        server: ServerAddress,
+        minecraft_version: impl Into<String>,
+    ) -> Self {
+        self.server = Some(server);
+        self.minecraft_version = minecraft_version.into();
         self
     }
 }

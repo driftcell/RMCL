@@ -6,8 +6,8 @@ use std::{
 
 use rmcl_app::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
-    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient, SkinCache,
-    TaskManager, VanillaInstaller, VersionCatalog,
+    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModrinthClient,
+    ServerIconCache, ServerStatusClient, SkinCache, TaskManager, VanillaInstaller, VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -31,6 +31,8 @@ pub struct Services {
     pub config_store: ConfigStore,
     pub microsoft_accounts: MicrosoftAccountService,
     pub skins: SkinCache,
+    pub servers: ServerStatusClient,
+    pub server_icons: ServerIconCache,
 }
 
 impl Services {
@@ -72,6 +74,12 @@ impl Services {
             .join("cache")
             .join("skins");
         let skins = SkinCache::new(skin_cache_dir);
+        let server_icon_cache_dir = config_store
+            .path()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("cache")
+            .join("servers");
         Ok(Rc::new(Self {
             runtime,
             tasks,
@@ -83,6 +91,8 @@ impl Services {
             config_store,
             microsoft_accounts,
             skins,
+            servers: ServerStatusClient::default(),
+            server_icons: ServerIconCache::new(server_icon_cache_dir),
         }))
     }
 }

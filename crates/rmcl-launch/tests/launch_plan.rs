@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use rmcl_auth::OfflineAccount;
-use rmcl_domain::{Architecture, OperatingSystem, Platform};
+use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_install::{InstallPlan, PlannedFile, PlannedFileKind};
 use rmcl_instance::{IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::{JavaRuntime, JavaRuntimeSource};
@@ -457,4 +457,106 @@ fn legacy_tokenizer_handles_quotes_and_empty_arguments() {
     let arguments =
         rmcl_launch::tokenize_legacy_arguments("--name 'Steve Smith' --empty \"\"").unwrap();
     assert_eq!(arguments, ["--name", "Steve Smith", "--empty", ""]);
+}
+
+fn server_options(version: &str, address: &str) -> LaunchOptions {
+    let mut options = options();
+    options.minecraft_version = version.to_owned();
+    options.server = Some(ServerAddress::parse(address).unwrap());
+    options
+}
+
+#[test]
+fn modern_versions_join_servers_with_quick_play() {
+    let plan = LaunchPlan::from_options(
+        &modern_version(),
+        server_options("1.21.1", "play.example.com"),
+    )
+    .unwrap();
+
+    let index = plan
+        .game_arguments
+        .iter()
+        .position(|argument| argument == "--quickPlayMultiplayer")
+        .unwrap();
+    assert_eq!(plan.game_arguments[index + 1], "play.example.com");
+    assert!(
+        !plan
+            .game_arguments
+            .iter()
+            .any(|argument| argument == "--server")
+    );
+}
+
+#[test]
+fn legacy_versions_join_servers_with_server_and_port() {
+    let plan = LaunchPlan::from_options(
+        &modern_version(),
+        server_options("1.19.4", "play.example.com:25566"),
+    )
+    .unwrap();
+
+    let index = plan
+        .game_arguments
+        .iter()
+        .position(|argument| argument == "--server")
+        .unwrap();
+    assert_eq!(
+        &plan.game_arguments[index + 1..index + 4],
+        ["play.example.com", "--port", "25566"]
+    );
+    assert!(
+        !plan
+            .game_arguments
+            .iter()
+            .any(|argument| argument == "--quickPlayMultiplayer")
+    );
+}
+
+#[test]
+fn quick_play_version_boundary_covers_snapshots_and_prereleases() {
+    let version = modern_version();
+    for applicable in ["1.20", "1.20-pre1", "23w14a", "24w14a", "26.3"] {
+        let plan =
+            LaunchPlan::from_options(&version, server_options(applicable, "play.example.com"))
+                .unwrap();
+        assert!(
+            plan.game_arguments
+                .iter()
+                .any(|argument| argument == "--quickPlayMultiplayer"),
+            "{applicable} should use Quick Play"
+        );
+    }
+    for legacy in ["1.19.4", "23w13a", "1.7.10"] {
+        let plan =
+            LaunchPlan::from_options(&version, server_options(legacy, "play.example.com")).unwrap();
+        assert!(
+            plan.game_arguments
+                .iter()
+                .any(|argument| argument == "--server"),
+            "{legacy} should use legacy server arguments"
+        );
+    }
+}
+
+#[test]
+fn quick_play_preserves_explicit_ports_and_ipv6_brackets() {
+    let plan = LaunchPlan::from_options(&modern_version(), server_options("1.21.1", "[::1]:25566"))
+        .unwrap();
+    assert!(
+        plan.game_arguments
+            .windows(2)
+            .any(|arguments| arguments == ["--quickPlayMultiplayer", "[::1]:25566"])
+    );
+
+    let plan = LaunchPlan::from_options(
+        &modern_version(),
+        server_options("1.21.1", "play.example.com:25566"),
+    )
+    .unwrap();
+    assert!(
+        plan.game_arguments
+            .windows(2)
+            .any(|arguments| arguments == ["--quickPlayMultiplayer", "play.example.com:25566"])
+    );
 }

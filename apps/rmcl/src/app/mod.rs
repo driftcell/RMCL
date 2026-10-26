@@ -27,18 +27,19 @@ use rmcl_app::{
     InstalledVersion, InstanceCreatePhase, JavaRuntime, JavaRuntimeSource, LoaderKind,
     LoaderSelection, LoaderVersion, LocalContent, MicrosoftAccountServiceError, RemoteProject,
     RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, ResolvedMicrosoftAccount,
-    TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject,
-    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, delete_instance_content, discover_installed_versions,
-    import_instance_content, migrate_instance_to_isolated, rename_instance, scan_instance_content,
+    ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient, TaskEvent, TaskKind,
+    TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, VanillaInstallRequest,
+    VersionManifest, VersionSource, VersionSummary, delete_installed_version,
+    delete_instance_content, discover_installed_versions, import_instance_content,
+    migrate_instance_to_isolated, rename_instance, scan_instance_content,
     set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
-use rmcl_domain::{Architecture, OperatingSystem, Platform};
+use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_launch::{GameLog, LaunchAccount, LogStream};
 use rmcl_store::{
     AccentColor, CONFIG_SCHEMA_VERSION, LauncherConfig, LauncherVisibility, StoredAccountKind,
-    ThemePreference,
+    StoredServer, ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
@@ -56,11 +57,14 @@ use crate::{
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
 const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
 const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
+const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const SERVER_PING_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Home,
     Versions,
+    Servers,
     Instance,
     CreateInstance,
     ContentBrowser,
@@ -74,6 +78,7 @@ impl Page {
         match self {
             Self::Home => "主页",
             Self::Versions => "实例",
+            Self::Servers => "服务器",
             Self::Instance => "实例详情",
             Self::CreateInstance => "新建实例",
             Self::ContentBrowser => "在线内容",
@@ -87,6 +92,7 @@ impl Page {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
+            Self::Servers => "收藏 Java 版服务器，查看状态并直接进入。",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
             Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
@@ -100,6 +106,7 @@ impl Page {
         match self {
             Self::Home => IconName::House,
             Self::Versions => IconName::Boxes,
+            Self::Servers => IconName::Network,
             Self::Instance => IconName::Package,
             Self::CreateInstance => IconName::PackagePlus,
             Self::ContentBrowser => IconName::Globe,
@@ -129,6 +136,22 @@ pub struct ContentBrowserState {
     versions: Vec<RemoteVersion>,
     versions_loading: bool,
     versions_error: Option<String>,
+}
+
+#[derive(Default)]
+struct ServersState {
+    statuses: HashMap<String, ServerStatusView>,
+    refreshing: bool,
+    request: u64,
+    cancel: Option<CancellationToken>,
+}
+
+#[derive(Clone, Default)]
+struct ServerStatusView {
+    loading: bool,
+    status: Option<ServerStatus>,
+    error: Option<String>,
+    icon_path: Option<PathBuf>,
 }
 
 impl ContentTab {
@@ -301,6 +324,12 @@ pub struct LauncherApp {
     content_browser_request: u64,
     content_browser_cancel: Option<CancellationToken>,
     _content_browser_task: Option<Task<()>>,
+    servers: ServersState,
+    server_query: Entity<InputState>,
+    server_name_input: Entity<InputState>,
+    server_address_input: Entity<InputState>,
+    _server_task: Option<Task<()>>,
+    _server_auto_task: Option<Task<()>>,
     create_base_input: Entity<InputState>,
     create_name_input: Entity<InputState>,
     create_id_input: Entity<InputState>,
@@ -485,6 +514,11 @@ impl LauncherApp {
         let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
         let remote_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
+        let server_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索服务器"));
+        let server_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用服务器地址"));
+        let server_address_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("例如 play.example.com:25565"));
         let create_base_input = cx.new(|cx| InputState::new(window, cx).placeholder("例如 1.21.1"));
         let create_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
@@ -524,6 +558,13 @@ impl LauncherApp {
         );
         subscriptions.push(
             cx.subscribe(&remote_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&server_query, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
@@ -632,6 +673,12 @@ impl LauncherApp {
             content_browser_request: 0,
             content_browser_cancel: None,
             _content_browser_task: None,
+            servers: ServersState::default(),
+            server_query,
+            server_name_input,
+            server_address_input,
+            _server_task: None,
+            _server_auto_task: None,
             create_base_input,
             create_name_input,
             create_id_input,
@@ -695,7 +742,29 @@ impl LauncherApp {
         };
         app.refresh_account_heads(window, cx);
         app.refresh_microsoft_profiles(window, cx);
+        app._server_auto_task = Some(app.spawn_server_auto_refresh(window, cx));
         app
+    }
+
+    fn spawn_server_auto_refresh(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(SERVER_REFRESH_INTERVAL)
+                    .await;
+                let keep_running = this
+                    .update_in(cx, |view, window, cx| {
+                        if view.page == Page::Servers {
+                            view.refresh_servers(window, cx);
+                        }
+                        true
+                    })
+                    .unwrap_or(false);
+                if !keep_running {
+                    break;
+                }
+            }
+        })
     }
 
     fn spawn_event_bridge(
@@ -1030,13 +1099,361 @@ impl LauncherApp {
             || self.log_state.has_running_content_task()
     }
 
+    fn cancel_server_refresh(&mut self) {
+        if let Some(cancellation) = self.servers.cancel.take() {
+            cancellation.cancel();
+        }
+        self.servers.request = self.servers.request.wrapping_add(1);
+        self.servers.refreshing = false;
+        for status in self.servers.statuses.values_mut() {
+            status.loading = false;
+        }
+    }
+
+    fn refresh_servers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.page != Page::Servers || self.servers.refreshing {
+            return;
+        }
+        let servers = self.config.servers.clone();
+        self.servers
+            .statuses
+            .retain(|id, _| servers.iter().any(|server| server.id.as_str() == id));
+        if servers.is_empty() {
+            self.servers.statuses.clear();
+            cx.notify();
+            return;
+        }
+
+        if let Some(cancellation) = self.servers.cancel.take() {
+            cancellation.cancel();
+        }
+        self.servers.request = self.servers.request.wrapping_add(1);
+        let request = self.servers.request;
+        let cancellation = CancellationToken::new();
+        self.servers.cancel = Some(cancellation.clone());
+        self.servers.refreshing = true;
+
+        let mut entries = Vec::new();
+        for server in &servers {
+            let status = self.servers.statuses.entry(server.id.clone()).or_default();
+            status.loading = true;
+            match ServerAddress::parse(&server.address) {
+                Ok(address) => entries.push((server.id.clone(), address)),
+                Err(error) => {
+                    status.loading = false;
+                    status.status = None;
+                    status.error = Some(format!("地址无效：{error}"));
+                }
+            }
+        }
+        if entries.is_empty() {
+            self.servers.refreshing = false;
+            cx.notify();
+            return;
+        }
+
+        let client = self.services.servers.clone();
+        let icons = self.services.server_icons.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let entry_ids = entries.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        self._server_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let results = runtime
+                .spawn(async move { ping_servers(client, icons, entries, cancellation).await })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.servers.request != request {
+                    return;
+                }
+                view.servers.refreshing = false;
+                match results {
+                    Ok(results) => {
+                        for (id, result) in results {
+                            if !view.config.servers.iter().any(|server| server.id == id) {
+                                continue;
+                            }
+                            let status = view.servers.statuses.entry(id).or_default();
+                            status.loading = false;
+                            match result {
+                                Ok((status_value, icon_path)) => {
+                                    status.status = Some(status_value);
+                                    if icon_path.is_some() {
+                                        status.icon_path = icon_path;
+                                    }
+                                    status.error = None;
+                                }
+                                Err(error) => {
+                                    status.status = None;
+                                    status.error = Some(error.to_string());
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        for id in entry_ids {
+                            let status = view.servers.statuses.entry(id).or_default();
+                            status.loading = false;
+                            status.status = None;
+                            status.error = Some(format!("后台任务失败：{error}"));
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn open_server_dialog(
+        &mut self,
+        server_id: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let existing = server_id
+            .as_deref()
+            .and_then(|id| self.config.servers.iter().find(|server| server.id == id))
+            .cloned();
+        let name = existing
+            .as_ref()
+            .map(|server| server.name.clone())
+            .unwrap_or_default();
+        let address = existing
+            .as_ref()
+            .map(|server| server.address.clone())
+            .unwrap_or_default();
+        self.server_name_input.update(cx, |state, cx| {
+            state.set_value(name, window, cx);
+        });
+        self.server_address_input.update(cx, |state, cx| {
+            state.set_value(address, window, cx);
+        });
+
+        let name_input = self.server_name_input.clone();
+        let address_input = self.server_address_input.clone();
+        let view = cx.entity().downgrade();
+        let editing_id = existing.map(|server| server.id);
+        let is_edit = editing_id.is_some();
+        let first_focus = Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            if first_focus.replace(false) {
+                name_input.read(cx).focus_handle(cx).focus(window, cx);
+            }
+            let save_view = view.clone();
+            let save_name = name_input.clone();
+            let save_address = address_input.clone();
+            let save_id = editing_id.clone();
+            dialog
+                .title(if is_edit { "编辑服务器" } else { "添加服务器" })
+                .width(px(480.))
+                .child(
+                    v_flex()
+                        .gap_4()
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(div().text_sm().font_medium().child("名称"))
+                                .child(div().child(Input::new(&name_input).w_full()))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("留空时使用服务器地址。"),
+                                ),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(div().text_sm().font_medium().child("地址"))
+                                .child(div().child(Input::new(&address_input).w_full()))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(
+                                            "支持 host、host:port 和 [IPv6]:port；省略端口时使用 25565。",
+                                        ),
+                                ),
+                        ),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogAction::new()
+                                .child(Button::new("save-server").primary().label("保存")),
+                        ),
+                )
+                .on_ok(move |_, window, cx| {
+                    let Some(view) = save_view.upgrade() else {
+                        return true;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.save_server(
+                            save_id.clone(),
+                            save_name.read(cx).value().to_string(),
+                            save_address.read(cx).value().to_string(),
+                            window,
+                            cx,
+                        )
+                    })
+                })
+        });
+    }
+
+    fn save_server(
+        &mut self,
+        id: Option<String>,
+        name: String,
+        address: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let address = address.trim();
+        if address.is_empty() {
+            window.push_notification(
+                Notification::error("服务器地址不能为空。").title("无法保存服务器"),
+                cx,
+            );
+            return false;
+        }
+        let parsed = match ServerAddress::parse(address) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                window.push_notification(
+                    Notification::error(error.to_string()).title("无法保存服务器"),
+                    cx,
+                );
+                return false;
+            }
+        };
+        let name = name.trim();
+        let name = if name.is_empty() {
+            parsed.to_string()
+        } else {
+            name.to_owned()
+        };
+        match id {
+            Some(id) => {
+                let Some(server) = self
+                    .config
+                    .servers
+                    .iter_mut()
+                    .find(|server| server.id == id)
+                else {
+                    window.push_notification(
+                        Notification::error("服务器不存在或已被删除。").title("无法保存服务器"),
+                        cx,
+                    );
+                    return false;
+                };
+                server.name = name;
+                server.address = address.to_owned();
+            }
+            None => self.config.servers.push(StoredServer {
+                id: Uuid::new_v4().to_string(),
+                name,
+                address: address.to_owned(),
+            }),
+        }
+        self.cancel_server_refresh();
+        self.save_config();
+        self.refresh_servers(window, cx);
+        window.push_notification(Notification::success("服务器已保存。").title("服务器"), cx);
+        true
+    }
+
+    fn confirm_delete_server(
+        &mut self,
+        server_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(server) = self
+            .config
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .cloned()
+        else {
+            return;
+        };
+        let view = cx.entity().downgrade();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            alert
+                .confirm()
+                .title(format!("删除服务器 {}？", server.name))
+                .description("只删除 RMCL 中的收藏，不会修改游戏内的 servers.dat。")
+                .ok_text("删除")
+                .ok_variant(ButtonVariant::Danger)
+                .on_ok({
+                    let server_id = server_id.clone();
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let Some(view) = view.upgrade() else {
+                            return true;
+                        };
+                        view.update(cx, |this, cx| {
+                            this.delete_server(server_id.clone(), window, cx)
+                        });
+                        true
+                    }
+                })
+        });
+    }
+
+    fn delete_server(&mut self, server_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_server_refresh();
+        self.config.servers.retain(|server| server.id != server_id);
+        self.servers.statuses.remove(&server_id);
+        self.save_config();
+        self.refresh_servers(window, cx);
+        window.push_notification(Notification::info("服务器已删除。").title("服务器"), cx);
+    }
+
+    fn join_server(&mut self, server_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(server) = self
+            .config
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .cloned()
+        else {
+            return;
+        };
+        let address = match ServerAddress::parse(&server.address) {
+            Ok(address) => address,
+            Err(error) => {
+                window.push_notification(
+                    Notification::error(error.to_string()).title("无法进入服务器"),
+                    cx,
+                );
+                return;
+            }
+        };
+        let Some(version) = self.selected_version() else {
+            window.push_notification(
+                Notification::warning("请先在主页或实例页选择一个实例。").title("无法进入服务器"),
+                cx,
+            );
+            return;
+        };
+        self.start_launch_with_server(version.id.as_str().to_owned(), Some(address), window, cx);
+    }
+
     fn navigate(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        let left_servers = self.page == Page::Servers && page != Page::Servers;
         self.page = page;
+        if left_servers {
+            self.cancel_server_refresh();
+        }
         if page == Page::Logs {
             self.logs_attention = false;
         }
         if page == Page::Downloads && self.catalog.manifest.is_none() && !self.catalog.loading {
             self.load_catalog(false, window, cx);
+        }
+        if page == Page::Servers {
+            self.refresh_servers(window, cx);
         }
         cx.notify();
     }
@@ -1159,6 +1576,16 @@ impl LauncherApp {
     }
 
     fn start_launch(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.start_launch_with_server(version_id, None, window, cx);
+    }
+
+    fn start_launch_with_server(
+        &mut self,
+        version_id: String,
+        server: Option<ServerAddress>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.launch_resolving {
             return;
         }
@@ -1182,6 +1609,7 @@ impl LauncherApp {
                 self.spawn_launch(
                     LaunchAccount::from_offline(&account),
                     version_id,
+                    server,
                     window,
                     cx,
                 );
@@ -1220,7 +1648,13 @@ impl LauncherApp {
                                         cx,
                                     );
                                 } else {
-                                    view.spawn_launch(resolved.launch, version_id, window, cx);
+                                    view.spawn_launch(
+                                        resolved.launch,
+                                        version_id,
+                                        server,
+                                        window,
+                                        cx,
+                                    );
                                 }
                             }
                             Ok(Err(error)) => {
@@ -1249,6 +1683,7 @@ impl LauncherApp {
         &mut self,
         account: LaunchAccount,
         version_id: String,
+        server: Option<ServerAddress>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1268,6 +1703,9 @@ impl LauncherApp {
         let max_memory_mb = selected.and_then(|version| version.max_memory_mb);
         let resolution =
             selected.and_then(|version| version.window_width.zip(version.window_height));
+        let minecraft_version = selected
+            .map(|version| version.minecraft_version.clone())
+            .unwrap_or_else(|| version_id.clone());
         let request = GameLaunchRequest {
             install: VanillaInstallRequest {
                 minecraft_root: self.config.minecraft_root.clone(),
@@ -1280,6 +1718,8 @@ impl LauncherApp {
             max_memory_mb,
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
+            minecraft_version,
+            server,
             resolution,
             demo: false,
         };
@@ -4619,6 +5059,7 @@ impl Render for LauncherApp {
         let page = match self.page {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
+            Page::Servers => self.render_servers(cx).into_any_element(),
             Page::Instance => self.render_instance(cx).into_any_element(),
             Page::CreateInstance => self.render_create_instance(cx).into_any_element(),
             Page::ContentBrowser => self.render_content_browser(cx).into_any_element(),
@@ -4657,6 +5098,59 @@ fn java_source_label(source: JavaRuntimeSource) -> &'static str {
         JavaRuntimeSource::System => "系统 PATH",
         JavaRuntimeSource::Custom => "自定义",
     }
+}
+
+type ServerPingResult = (
+    String,
+    Result<(ServerStatus, Option<PathBuf>), ServerPingError>,
+);
+
+async fn ping_servers(
+    client: ServerStatusClient,
+    icons: ServerIconCache,
+    entries: Vec<(String, ServerAddress)>,
+    cancellation: CancellationToken,
+) -> Vec<ServerPingResult> {
+    let mut queue = entries.into_iter();
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..SERVER_PING_CONCURRENCY {
+        spawn_server_ping(&mut tasks, &mut queue, &client, &icons, &cancellation);
+    }
+    let mut results = Vec::new();
+    while let Some(joined) = tasks.join_next().await {
+        if let Ok(result) = joined {
+            results.push(result);
+        }
+        spawn_server_ping(&mut tasks, &mut queue, &client, &icons, &cancellation);
+    }
+    results
+}
+
+fn spawn_server_ping(
+    tasks: &mut tokio::task::JoinSet<ServerPingResult>,
+    queue: &mut impl Iterator<Item = (String, ServerAddress)>,
+    client: &ServerStatusClient,
+    icons: &ServerIconCache,
+    cancellation: &CancellationToken,
+) {
+    let Some((id, address)) = queue.next() else {
+        return;
+    };
+    let client = client.clone();
+    let icons = icons.clone();
+    let cancellation = cancellation.clone();
+    tasks.spawn(async move {
+        let result = async {
+            let status = client.ping(&address, &cancellation).await?;
+            let icon_path = match status.icon_png.as_ref() {
+                Some(png) => Some(icons.ensure(png).await?),
+                None => None,
+            };
+            Ok((status, icon_path))
+        }
+        .await;
+        (id, result)
+    });
 }
 
 pub fn platform_label(platform: &Platform) -> String {

@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现；真实游戏验证范围见末节
 
-日期：2026-10-25
+日期：2026-10-26
 
 ## 边界与输入
 
@@ -28,9 +28,12 @@
 4. `mainClass`；
 5. legacy `minecraftArguments` 和/或 modern `arguments.game`；
 6. legacy 自定义分辨率参数；
-7. 用户追加游戏参数。
+7. 用户追加游戏参数；
+8. 服务器目标参数（`--quickPlayMultiplayer` 或 legacy `--server`/`--port`）。
 
 manifest 存在但 `arguments.jvm` 为空列表时保持空列表，不隐式恢复默认参数。modern 参数继续由 `rmcl-minecraft` 按 OS、架构和 features 筛选。legacy 使用独立 tokenizer，支持空白分隔、单双引号、双引号内反引号转义和空参数；未闭合引号或末尾转义会报错，不经过系统 shell。
+
+服务器目标使用 `rmcl_domain::ServerAddress`，由实例 manifest 的基础 `minecraft_version` 判断参数形式：`1.20` / `23w14a` 及以上使用 `--quickPlayMultiplayer`，更早版本使用 `--server` + `--port`。无法识别版本时启动计划返回错误，不静默猜测。加载器实例必须使用基础版本，不能用实例 ID 判断。详见 [服务器列表与一键进服](SERVERS.md)。
 
 默认 JVM 参数包含 natives、launcher brand/version 和 classpath，并保留 Windows heap dump 与 Windows 10 OS 属性兼容项。支持参数包含 client JAR、RMI/JNDI 和 log4j 安全属性；非 Windows 平台还设置游戏目录上一级的 `user.home`。
 
@@ -73,4 +76,4 @@ Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app`
 - 离线账号访问 Mojang/Realms 在线服务会产生 401 或认证错误，与本地 Vanilla 启动是否成功分开判断。
 - 2026-10-25 使用真实 Microsoft 账户和正版 access token 在 macOS ARM64 启动 Vanilla，用户确认游戏正常进入运行阶段；正版会话的刷新和启动链路已验证。
 
-Forge/NeoForge installer processors 已由实例创建流程实现，合并后的加载器参数会进入启动 profile。2026-10-25 在 macOS ARM64 使用真实 Java 启动安装后的 Forge 1.21.1 和 NeoForge 21.1.80 实例，日志进入 ModLauncher 初始化并出现对应加载器标记后主动终止；这验证了安装结果、版本继承和启动参数，但主菜单、世界加载和游戏内行为仍需逐平台验收。当前不包含 legacy Forge installer、任意实例级 JVM/游戏启动参数、专用 Quick Play 配置、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。实例级最大内存和窗口尺寸已进入启动计划。Fabric/Quilt/Forge/NeoForge 的真实游戏启动仍不能由 CI 编译和脚本进程测试替代。
+Forge/NeoForge installer processors 已由实例创建流程实现，合并后的加载器参数会进入启动 profile。2026-10-25 在 macOS ARM64 使用真实 Java 启动安装后的 Forge 1.21.1 和 NeoForge 21.1.80 实例，日志进入 ModLauncher 初始化并出现对应加载器标记后主动终止；这验证了安装结果、版本继承和启动参数，但主菜单、世界加载和游戏内行为仍需逐平台验收。当前不包含 legacy Forge installer、任意实例级 JVM/游戏启动参数、日志文件导出、崩溃分析、进程树管理或 GPUI 编排。实例级最大内存和窗口尺寸已进入启动计划；服务器目标已通过 Quick Play/legacy 参数进入启动计划。Fabric/Quilt/Forge/NeoForge 的真实游戏启动仍不能由 CI 编译和脚本进程测试替代。
