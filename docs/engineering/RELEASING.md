@@ -27,6 +27,7 @@
 ## PR 约定
 
 - PR 标题使用 Conventional Commits，例如 `feat(servers): add server browser`
+- 按 `.github/pull_request_template.md` 填写目标、验证命令、平台和 release notes 影响
 - Squash merge 后 PR 标题成为 `main` 上的 commit，所以标题必须自解释
 - 一个 PR 只做一件事；任务目标、验收标准和验证结果写在 PR 描述中
 - 合并前必须看到四个必需检查全部通过
