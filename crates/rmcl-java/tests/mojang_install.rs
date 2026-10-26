@@ -60,6 +60,7 @@ impl MockData {
 
 struct MockServer {
     base: Url,
+    #[cfg_attr(not(unix), allow(dead_code))]
     hits: Arc<AtomicUsize>,
     handle: tokio::task::JoinHandle<()>,
 }
