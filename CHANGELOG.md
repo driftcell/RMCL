@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/driftcell/RMCL/compare/v0.4.1...v0.4.2) - 2026-10-26
+
+### Added
+
+- *(servers)* add curated server discovery and direct join ([#6](https://github.com/driftcell/RMCL/pull/6))
+
+### Fixed
+
+- *(java)* run Java discovery on the core runtime ([#8](https://github.com/driftcell/RMCL/pull/8))
+
 ## [0.4.1](https://github.com/driftcell/RMCL/compare/v0.4.0...v0.4.1) - 2026-10-26
 
 ### Fixed
