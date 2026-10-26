@@ -197,6 +197,11 @@ impl LauncherApp {
         let total = self.content_browser.total_hits;
         let error = self.content_browser.search_error.clone();
         let visible = projects.len() as u64;
+        let count = if loading && projects.is_empty() {
+            "正在搜索…".to_owned()
+        } else {
+            format!("共 {total} 个结果 · 已加载 {visible}")
+        };
         v_flex()
             .gap_4()
             .child(
@@ -239,9 +244,11 @@ impl LauncherApp {
                         .child(div().flex_1())
                         .child(
                             div()
+                                .flex_shrink_0()
+                                .whitespace_nowrap()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("共 {total} 个结果 · 已加载 {visible}")),
+                                .child(count),
                         ),
                 ),
             )
@@ -275,12 +282,13 @@ impl LauncherApp {
                             .into_any_element()
                     })
                     .collect::<Vec<_>>();
+                let result_subtitle = if loading {
+                    format!("{} 个项目 · 正在搜索…", projects.len())
+                } else {
+                    format!("{} 个项目", projects.len())
+                };
                 card(cx)
-                    .child(section_title(
-                        "搜索结果",
-                        &format!("{} 个项目", projects.len()),
-                        cx,
-                    ))
+                    .child(section_title("搜索结果", &result_subtitle, cx))
                     .children(rows)
                     .when(visible < total, |this| {
                         this.child(

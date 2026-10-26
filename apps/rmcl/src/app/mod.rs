@@ -4916,10 +4916,6 @@ impl LauncherApp {
             limit: 20,
             sort: self.remote_sort,
         };
-        if reset {
-            self.content_browser.projects.clear();
-            self.content_browser.total_hits = 0;
-        }
         self.content_browser.search_loading = true;
         self.content_browser.search_error = None;
         let client = self.services.modrinth.clone();
