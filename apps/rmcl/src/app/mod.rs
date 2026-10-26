@@ -1143,8 +1143,17 @@ impl LauncherApp {
                         let logs = manager.logs(id).await;
                         if let Some(snapshot) = snapshot
                             && this
-                                .update_in(cx, |view, _, cx| {
+                                .update_in(cx, |view, window, cx| {
+                                    let was_terminal =
+                                        view.log_state.snapshot.as_ref().is_some_and(|current| {
+                                            current.id == snapshot.id
+                                                && current.status.is_terminal()
+                                        });
+                                    let terminal_snapshot = snapshot.clone();
                                     view.log_state.recover(snapshot, logs.unwrap_or_default());
+                                    if !was_terminal && terminal_snapshot.status.is_terminal() {
+                                        view.on_task_terminal(terminal_snapshot, window, cx);
+                                    }
                                     if view.log_follow {
                                         view.log_scroll.scroll_to_bottom();
                                     }
@@ -1929,6 +1938,9 @@ impl LauncherApp {
         if page != Page::CreateInstance {
             self.create_copy_source = None;
         }
+        if page == Page::Versions {
+            self.reload_versions(window, cx);
+        }
         if left_servers {
             self.cancel_server_refresh();
         }
@@ -2385,6 +2397,7 @@ impl LauncherApp {
         match snapshot.status {
             TaskStatus::Completed if snapshot.kind == TaskKind::InstanceCreate => {
                 let loader_source = self.create_copy_source.take();
+                let is_loader_instance = loader_source.is_some();
                 let (instance_id, name) = match snapshot.subject {
                     Some(TaskSubject::Instance { id, name }) => (Some(id), name),
                     _ => (None, "实例".to_owned()),
@@ -2393,11 +2406,17 @@ impl LauncherApp {
                 if let Some(instance_id) = instance_id {
                     self.config.selected_version = Some(instance_id.clone());
                     self.selected_instance = Some(instance_id);
-                    self.page = Page::Instance;
+                    self.page = if is_loader_instance {
+                        Page::Versions
+                    } else {
+                        Page::Instance
+                    };
                     self.save_config();
-                    self.load_instance_content(window, cx);
+                    if !is_loader_instance {
+                        self.load_instance_content(window, cx);
+                    }
                 }
-                if loader_source.is_some() {
+                if is_loader_instance {
                     window.push_notification(
                         Notification::success(format!(
                             "加载器实例 {name} 已创建，并复制了原实例内容。"
