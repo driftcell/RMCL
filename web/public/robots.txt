@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://driftcell.github.io/RMCL/sitemap.xml

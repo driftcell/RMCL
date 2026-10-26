@@ -8,6 +8,42 @@
       name="description"
       content="RMCL 是一款轻快、干净的 Minecraft: Java Edition 启动器。支持自动配齐 Java、实例独立隔离、Modrinth 在线模组下载与一键进服。"
     />
+    <meta name="author" content="RMCL contributors" />
+    <meta name="application-name" content="RMCL" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F8F7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#090E0B" />
+    <meta name="color-scheme" content="light dark" />
+
+    <link rel="canonical" href="https://driftcell.github.io/RMCL/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://driftcell.github.io/RMCL/" />
+    <link rel="alternate" hreflang="x-default" href="https://driftcell.github.io/RMCL/" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="./sitemap.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="RMCL" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="RMCL — 纯粹顺手的 Minecraft 启动器" />
+    <meta
+      property="og:description"
+      content="RMCL 是一款轻快、干净的 Minecraft: Java Edition 启动器。支持自动配齐 Java、实例独立隔离、Modrinth 在线模组下载与一键进服。"
+    />
+    <meta property="og:url" content="https://driftcell.github.io/RMCL/" />
+    <meta property="og:image" content="https://driftcell.github.io/RMCL/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="RMCL Minecraft 启动器界面预览" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RMCL — 纯粹顺手的 Minecraft 启动器" />
+    <meta
+      name="twitter:description"
+      content="RMCL 是一款轻快、干净的 Minecraft: Java Edition 启动器。支持自动配齐 Java、实例独立隔离、Modrinth 在线模组下载与一键进服。"
+    />
+    <meta name="twitter:image" content="https://driftcell.github.io/RMCL/og-image.png" />
+    <meta name="twitter:image:alt" content="RMCL Minecraft 启动器界面预览" />
+
     <link rel="icon" type="image/svg+xml" href="./public/rmcl.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -16,8 +52,57 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./src/styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://driftcell.github.io/RMCL/#website",
+            "url": "https://driftcell.github.io/RMCL/",
+            "name": "RMCL",
+            "description": "RMCL 是一款轻快、干净的 Minecraft: Java Edition 启动器，支持实例隔离、Modrinth 内容下载与一键进服。",
+            "inLanguage": "zh-CN"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://driftcell.github.io/RMCL/#app",
+            "name": "RMCL",
+            "applicationCategory": "GameApplication",
+            "operatingSystem": "macOS, Windows, Linux",
+            "softwareVersion": "0.4.3",
+            "description": "RMCL 是一款使用 Rust 和 GPUI Kit 构建的原生 Minecraft: Java Edition 启动器。",
+            "url": "https://driftcell.github.io/RMCL/",
+            "downloadUrl": "https://github.com/driftcell/RMCL/releases",
+            "license": "https://opensource.org/license/mit",
+            "isAccessibleForFree": true,
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "screenshot": "https://driftcell.github.io/RMCL/og-image.png",
+            "featureList": [
+              "Fabric、Quilt、Forge 和 NeoForge 实例加载器",
+              "实例隔离与本地内容管理",
+              "Modrinth Mod、资源包和光影搜索",
+              "服务器收藏与一键进服",
+              "Java 自动检测、安装和实例级选择"
+            ],
+            "author": {
+              "@type": "Organization",
+              "name": "RMCL",
+              "url": "https://github.com/driftcell/RMCL"
+            },
+            "sameAs": ["https://github.com/driftcell/RMCL"]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
+    <h1 class="sr-only">RMCL — 轻快的 Minecraft Java 启动器</h1>
+
     <!-- Fixed 3D WebGL Stage -->
     <div id="webgl-stage" class="webgl-stage" aria-hidden="true"></div>
 
@@ -32,7 +117,7 @@
       <a href="#chapter-monolith" class="brand-cluster" aria-label="RMCL 回到顶部">
         <img src="./public/rmcl.svg" alt="" class="brand-icon" width="26" height="26" />
         <span class="brand-name">RMCL</span>
-        <span class="brand-version">v0.4.2</span>
+        <span class="brand-version">v0.4.3</span>
       </a>
 
       <nav id="top-stage-nav" class="top-stage-nav" aria-label="章节导航"></nav>
@@ -113,6 +198,23 @@
 
     <!-- Scroll-Driven Narrative Track -->
     <main id="scroll-track" class="scroll-track"></main>
+
+    <noscript>
+      <section class="seo-fallback">
+        <p class="seo-fallback-kicker">RMCL</p>
+        <h2>轻快、干净的 Minecraft Java 启动器</h2>
+        <p>
+          RMCL 使用 Rust 和 GPUI Kit 构建，支持自动配齐 Java、实例隔离、Fabric / Quilt /
+          Forge / NeoForge 加载器、Modrinth Mod 与光影搜索，以及服务器收藏和一键进服。
+          支持 macOS、Windows 与 Linux，免费开源。
+        </p>
+        <p>
+          <a class="primary-action" href="https://github.com/driftcell/RMCL/releases">
+            免费下载 RMCL
+          </a>
+        </p>
+      </section>
+    </noscript>
 
     <!-- Lightbox Modal for Screenshot Inspection -->
     <div id="shot-lightbox" class="shot-lightbox" hidden>

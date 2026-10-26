@@ -7,7 +7,7 @@
     "dev": "bun --hot server.ts",
     "start": "bun server.ts",
     "serve": "bun index.html",
-    "build": "bun build ./index.html --outdir ./dist --minify",
+    "build": "bun run scripts/build.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

@@ -28,6 +28,22 @@ bun run serve    # 直接预览 index.html
 
 `web/dist/` 和 `web/node_modules/` 已被 `web/.gitignore` 忽略，不提交构建产物。生产构建使用相对资源路径，因此部署在 `/RMCL/` 项目子路径下也能正常加载。
 
+`bun run build` 调用 `web/scripts/build.ts`：清理 `dist/`、执行 Bun HTML 打包，并复制 `public/robots.txt`、`public/sitemap.xml` 和 `public/og-image.png`，保证 SEO 文件进入 Pages artifact。
+
+## SEO
+
+站点根页面固定为 `https://driftcell.github.io/RMCL/`，`web/index.html` 包含：
+
+- `canonical`、`hreflang` 和 sitemap 声明。
+- Open Graph 与 Twitter Card 元数据，分享图为 `https://driftcell.github.io/RMCL/og-image.png`（1200×630）。
+- `WebSite` 和 `SoftwareApplication` JSON-LD 结构化数据。
+- 一个静态 `h1`，动态章节标题使用 `h2`，保持标题层级。
+- `<noscript>` 简介和下载入口，方便不执行 JavaScript 的访问者。
+
+`web/public/robots.txt` 指向 sitemap；`web/public/sitemap.xml` 目前只包含根页面。OG 图片由 `web/public/screenshots/home.webp` 生成，文件名稳定，不随构建 hash 变化。
+
+发布新版本时需要同步更新 `web/index.html` 中的品牌版本号和 JSON-LD `softwareVersion`。
+
 ## CI 检查
 
 `.github/workflows/ci.yml` 的 `web` job 在以下路径变化时运行：
@@ -65,4 +81,5 @@ workflow 使用 `pages: write` 和 `id-token: write` 权限，不写入仓库内
 
 - 没有 PR 预览环境、自定义域名、缓存头或访问分析。
 - 字体仍从 Google Fonts 加载；离线或受限网络下会回退到系统字体。
-- 页面版本号和桌面应用发布版本没有自动同步，更新发布时需要同步检查 `web/index.html`。
+- 页面版本号、JSON-LD `softwareVersion` 和桌面应用发布版本没有自动同步，更新发布时需要手动同步。
+- sitemap 只有单页，不包含锚点章节；新增独立页面时需要同步补充。
