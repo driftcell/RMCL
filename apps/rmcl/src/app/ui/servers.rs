@@ -53,49 +53,23 @@ impl LauncherApp {
 
     fn render_join_target(&self, cx: &mut Context<Self>) -> impl IntoElement {
         card(cx).child(section_title("启动目标", "", cx)).child(
-            h_flex()
-                .gap_3()
+            v_flex()
+                .gap_1()
+                .max_w(px(320.))
                 .child(
-                    v_flex()
-                        .gap_1()
-                        .flex_1()
-                        .max_w(px(320.))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("实例"),
-                        )
-                        .child(
-                            Select::new(&self.version_select)
-                                .placeholder("选择实例")
-                                .accessibility_label("选择实例")
-                                .menu_width(px(280.))
-                                .menu_max_h(px(260.))
-                                .cleanable(false)
-                                .w_full(),
-                        ),
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("实例"),
                 )
                 .child(
-                    v_flex()
-                        .gap_1()
-                        .flex_1()
-                        .max_w(px(320.))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child("账户"),
-                        )
-                        .child(
-                            Select::new(&self.account_select)
-                                .placeholder("选择账户")
-                                .accessibility_label("选择账户")
-                                .menu_width(px(280.))
-                                .menu_max_h(px(260.))
-                                .cleanable(false)
-                                .w_full(),
-                        ),
+                    Select::new(&self.version_select)
+                        .placeholder("选择实例")
+                        .accessibility_label("选择实例")
+                        .menu_width(px(280.))
+                        .menu_max_h(px(260.))
+                        .cleanable(false)
+                        .w_full(),
                 ),
         )
     }
