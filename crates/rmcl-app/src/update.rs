@@ -262,7 +262,7 @@ impl UpdateClient {
                 path: temporary.clone(),
                 source,
             })?;
-            let actual = format!("{:x}", hasher.finalize());
+            let actual = hex::encode(hasher.finalize());
             if !actual.eq_ignore_ascii_case(&release.sha256) {
                 return Err(UpdateError::ChecksumMismatch {
                     expected: release.sha256.clone(),
@@ -398,7 +398,7 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<(), UpdateError> {
         }
         hasher.update(&buffer[..read]);
     }
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
     if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {
@@ -930,7 +930,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
         let bytes = b"update package".to_vec();
-        let hash = format!("{:x}", Sha256::digest(&bytes));
+        let hash = hex::encode(Sha256::digest(&bytes));
         let router = Router::new().route(
             "/asset",
             get({

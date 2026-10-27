@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -834,8 +835,13 @@ fn content_already_installed(
         return false;
     };
     let mut hasher = Sha1::new();
-    if std::io::copy(&mut input, &mut hasher).is_err() {
-        return false;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(_) => return false,
+        }
     }
     let digest: [u8; 20] = hasher.finalize().into();
     digest == *expected.as_bytes()

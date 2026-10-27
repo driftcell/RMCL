@@ -947,11 +947,18 @@ fn sha1_file(path: &Path) -> Result<rmcl_domain::Sha1Hash, AppError> {
         source,
     })?;
     let mut hasher = Sha1::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|source| AppError::Io {
-        operation: "hash processor output",
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|source| AppError::Io {
+            operation: "hash processor output",
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
     let digest = hex::encode(hasher.finalize());
     digest.parse().map_err(|source| AppError::LoaderInstaller {
         message: format!("invalid computed SHA-1: {source}"),

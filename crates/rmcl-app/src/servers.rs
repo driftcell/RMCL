@@ -221,7 +221,7 @@ impl ServerIconCache {
     }
 
     pub fn path_for(&self, png: &[u8]) -> PathBuf {
-        let hash = format!("{:x}", Sha1::digest(png));
+        let hash = hex::encode(Sha1::digest(png));
         self.directory.join(format!("{hash}.png"))
     }
 }
