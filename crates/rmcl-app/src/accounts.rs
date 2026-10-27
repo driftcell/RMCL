@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rmcl_auth::{
     AuthenticatedMicrosoft, MicrosoftAccount, MicrosoftAuth, MicrosoftAuthError,
-    MicrosoftCredentials,
+    MicrosoftCredentials, SkinVariant,
 };
 use rmcl_launch::LaunchAccount;
 use rmcl_platform::{SecretStore, SecretStoreError};
@@ -154,6 +154,135 @@ impl MicrosoftAccountService {
         Ok(authenticated.account)
     }
 
+    /// Uploads a validated PNG skin for one account.
+    pub async fn upload_skin(
+        &self,
+        account: &MicrosoftAccount,
+        variant: SkinVariant,
+        file_name: &str,
+        bytes: &[u8],
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftAccount, MicrosoftAccountServiceError> {
+        let mut credentials = self.credentials_for_skin(account, cancellation).await?;
+        match self
+            .auth
+            .upload_skin(
+                &credentials.minecraft_access_token,
+                variant,
+                file_name,
+                bytes,
+                cancellation,
+            )
+            .await
+        {
+            Ok(profile) => Ok(profile),
+            Err(MicrosoftAuthError::MinecraftTokenRejected) => {
+                credentials = self.refresh_credentials(&credentials, cancellation).await?;
+                self.auth
+                    .upload_skin(
+                        &credentials.minecraft_access_token,
+                        variant,
+                        file_name,
+                        bytes,
+                        cancellation,
+                    )
+                    .await
+                    .map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Changes the active skin using an image URL.
+    pub async fn change_skin_url(
+        &self,
+        account: &MicrosoftAccount,
+        variant: SkinVariant,
+        url: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftAccount, MicrosoftAccountServiceError> {
+        let mut credentials = self.credentials_for_skin(account, cancellation).await?;
+        match self
+            .auth
+            .change_skin_url(
+                &credentials.minecraft_access_token,
+                variant,
+                url,
+                cancellation,
+            )
+            .await
+        {
+            Ok(profile) => Ok(profile),
+            Err(MicrosoftAuthError::MinecraftTokenRejected) => {
+                credentials = self.refresh_credentials(&credentials, cancellation).await?;
+                self.auth
+                    .change_skin_url(
+                        &credentials.minecraft_access_token,
+                        variant,
+                        url,
+                        cancellation,
+                    )
+                    .await
+                    .map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Resets the active skin to the account default.
+    ///
+    /// The returned profile is `None` when the service accepts the reset
+    /// without returning profile data; callers should refresh in that case.
+    pub async fn reset_skin(
+        &self,
+        account: &MicrosoftAccount,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<MicrosoftAccount>, MicrosoftAccountServiceError> {
+        let mut credentials = self.credentials_for_skin(account, cancellation).await?;
+        match self
+            .auth
+            .reset_skin(&credentials.minecraft_access_token, cancellation)
+            .await
+        {
+            Ok(profile) => Ok(profile),
+            Err(MicrosoftAuthError::MinecraftTokenRejected) => {
+                credentials = self.refresh_credentials(&credentials, cancellation).await?;
+                self.auth
+                    .reset_skin(&credentials.minecraft_access_token, cancellation)
+                    .await
+                    .map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn credentials_for_skin(
+        &self,
+        account: &MicrosoftAccount,
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftCredentials, MicrosoftAccountServiceError> {
+        let credentials = self
+            .load_credentials(account)
+            .await?
+            .ok_or(MicrosoftAccountServiceError::CredentialsMissing)?;
+        if credentials.minecraft_token_valid() {
+            Ok(credentials)
+        } else {
+            self.refresh_credentials(&credentials, cancellation).await
+        }
+    }
+
+    async fn refresh_credentials(
+        &self,
+        credentials: &MicrosoftCredentials,
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftCredentials, MicrosoftAccountServiceError> {
+        let authenticated = self.auth.refresh_session(credentials, cancellation).await?;
+        self.save_credentials(&authenticated.account, &authenticated.credentials)
+            .await?;
+        Ok(authenticated.credentials)
+    }
+
     async fn save_credentials(
         &self,
         account: &MicrosoftAccount,
@@ -221,10 +350,21 @@ pub enum MicrosoftAccountServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+        response::{IntoResponse, Response},
+        routing::{delete, get, post},
+    };
     use rmcl_auth::MicrosoftEndpoints;
     use rmcl_platform::MemorySecretStore;
+    use serde_json::{Value, json};
     use uuid::Uuid;
 
     use super::*;
@@ -328,5 +468,292 @@ mod tests {
             error,
             MicrosoftAccountServiceError::UnsupportedCredentialsSchema { .. }
         ));
+    }
+
+    type RecordedSkinRequests = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
+    #[derive(Clone)]
+    struct SkinMockState {
+        requests: RecordedSkinRequests,
+        skin_calls: Arc<AtomicUsize>,
+        reject_first_skin: bool,
+    }
+
+    impl SkinMockState {
+        fn new(reject_first_skin: bool) -> Self {
+            Self {
+                requests: Arc::new(Mutex::new(Vec::new())),
+                skin_calls: Arc::new(AtomicUsize::new(0)),
+                reject_first_skin,
+            }
+        }
+    }
+
+    async fn spawn_skin_mock(state: SkinMockState) -> String {
+        let router = Router::new()
+            .route("/token", post(mock_token))
+            .route("/xbox", post(mock_xbox))
+            .route("/xsts", post(mock_xsts))
+            .route("/login", post(mock_login))
+            .route("/entitlements", get(mock_entitlements))
+            .route("/profile", get(mock_profile))
+            .route("/profile/skins", post(mock_skin))
+            .route("/profile/skins/active", delete(mock_reset))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        format!("http://{address}")
+    }
+
+    fn mock_service(base: &str, secrets: Arc<MemorySecretStore>) -> MicrosoftAccountService {
+        let auth = MicrosoftAuth::with_endpoints(
+            "test-client",
+            MicrosoftEndpoints {
+                device_code: format!("{base}/device"),
+                token: format!("{base}/token"),
+                xbox_authenticate: format!("{base}/xbox"),
+                xsts_authorize: format!("{base}/xsts"),
+                minecraft_login: format!("{base}/login"),
+                minecraft_entitlements: format!("{base}/entitlements"),
+                minecraft_profile: format!("{base}/profile"),
+                minecraft_profile_skins: format!("{base}/profile/skins"),
+                minecraft_profile_skins_active: format!("{base}/profile/skins/active"),
+            },
+        )
+        .unwrap();
+        MicrosoftAccountService::with_auth(auth, secrets)
+    }
+
+    fn profile_json(active_url: &str, variant: &str) -> Value {
+        json!({
+            "id": "986dec87b7ec47ff89ff033fdb95c4b5",
+            "name": "HowDoesAuthWork",
+            "skins": [{
+                "state": "ACTIVE",
+                "url": active_url,
+                "variant": variant
+            }]
+        })
+    }
+
+    fn record(state: &SkinMockState, path: &str, headers: &HeaderMap) {
+        state.requests.lock().unwrap().push((
+            path.to_owned(),
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned),
+        ));
+    }
+
+    async fn mock_token(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/token", &headers);
+        (
+            StatusCode::OK,
+            Json(json!({
+                "access_token": "new-msa",
+                "refresh_token": "new-refresh",
+                "expires_in": 3600,
+                "token_type": "Bearer"
+            })),
+        )
+            .into_response()
+    }
+
+    async fn mock_xbox(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/xbox", &headers);
+        (
+            StatusCode::OK,
+            Json(json!({
+                "Token": "xbl-token",
+                "DisplayClaims": {"xui": [{"uhs": "uhs-123"}]}
+            })),
+        )
+            .into_response()
+    }
+
+    async fn mock_xsts(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/xsts", &headers);
+        (
+            StatusCode::OK,
+            Json(json!({
+                "Token": "xsts-token",
+                "DisplayClaims": {"xui": [{"uhs": "uhs-123"}]}
+            })),
+        )
+            .into_response()
+    }
+
+    async fn mock_login(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/login", &headers);
+        (
+            StatusCode::OK,
+            Json(json!({
+                "access_token": "new-minecraft",
+                "expires_in": 86400,
+                "token_type": "Bearer"
+            })),
+        )
+            .into_response()
+    }
+
+    async fn mock_entitlements(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/entitlements", &headers);
+        (
+            StatusCode::OK,
+            Json(json!({"items": [{"name": "game_minecraft"}]})),
+        )
+            .into_response()
+    }
+
+    async fn mock_profile(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/profile", &headers);
+        (
+            StatusCode::OK,
+            Json(profile_json(
+                "http://textures.minecraft.net/texture/current",
+                "CLASSIC",
+            )),
+        )
+            .into_response()
+    }
+
+    async fn mock_skin(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/profile/skins", &headers);
+        let call = state.skin_calls.fetch_add(1, Ordering::SeqCst);
+        if state.reject_first_skin && call == 0 {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        (
+            StatusCode::OK,
+            Json(profile_json(
+                "http://textures.minecraft.net/texture/new",
+                "SLIM",
+            )),
+        )
+            .into_response()
+    }
+
+    async fn mock_reset(State(state): State<SkinMockState>, headers: HeaderMap) -> Response {
+        record(&state, "/profile/skins/active", &headers);
+        (
+            StatusCode::OK,
+            Json(profile_json(
+                "http://textures.minecraft.net/texture/default",
+                "CLASSIC",
+            )),
+        )
+            .into_response()
+    }
+
+    async fn store_valid_credentials(
+        service: &MicrosoftAccountService,
+        account: &MicrosoftAccount,
+    ) {
+        service
+            .save_credentials(
+                account,
+                &MicrosoftCredentials::new("refresh", "minecraft-token", u64::MAX),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn upload_skin_uses_cached_token() {
+        let state = SkinMockState::new(false);
+        let base = spawn_skin_mock(state.clone()).await;
+        let secrets = Arc::new(MemorySecretStore::default());
+        let service = mock_service(&base, secrets);
+        let account = account();
+        store_valid_credentials(&service, &account).await;
+
+        let profile = service
+            .upload_skin(
+                &account,
+                SkinVariant::Slim,
+                "skin.png",
+                b"png",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/new")
+        );
+        assert_eq!(state.skin_calls.load(Ordering::SeqCst), 1);
+        let requests = state.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].1.as_deref(), Some("Bearer minecraft-token"));
+    }
+
+    #[tokio::test]
+    async fn upload_skin_refreshes_once_after_token_rejection() {
+        let state = SkinMockState::new(true);
+        let base = spawn_skin_mock(state.clone()).await;
+        let secrets = Arc::new(MemorySecretStore::default());
+        let service = mock_service(&base, secrets.clone());
+        let account = account();
+        store_valid_credentials(&service, &account).await;
+
+        let profile = service
+            .upload_skin(
+                &account,
+                SkinVariant::Slim,
+                "skin.png",
+                b"png",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/new")
+        );
+        assert_eq!(state.skin_calls.load(Ordering::SeqCst), 2);
+        let requests = state.requests.lock().unwrap().clone();
+        let skin_auth = requests
+            .iter()
+            .filter(|(path, _)| path == "/profile/skins")
+            .map(|(_, auth)| auth.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            skin_auth,
+            vec![Some("Bearer minecraft-token"), Some("Bearer new-minecraft")]
+        );
+        let raw = secrets.get(&credential_key(&account)).unwrap().unwrap();
+        assert!(raw.contains("new-refresh"));
+        assert!(raw.contains("new-minecraft"));
+    }
+
+    #[tokio::test]
+    async fn reset_skin_uses_cached_token() {
+        let state = SkinMockState::new(false);
+        let base = spawn_skin_mock(state.clone()).await;
+        let secrets = Arc::new(MemorySecretStore::default());
+        let service = mock_service(&base, secrets);
+        let account = account();
+        store_valid_credentials(&service, &account).await;
+
+        let profile = service
+            .reset_skin(&account, &CancellationToken::new())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/default")
+        );
+        let requests = state.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "/profile/skins/active");
+        assert_eq!(requests[0].1.as_deref(), Some("Bearer minecraft-token"));
     }
 }

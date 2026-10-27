@@ -19,7 +19,7 @@
 | macOS / Linux | `$XDG_CONFIG_HOME/rmcl/config.toml`；未设置时使用 `~/.config/rmcl/config.toml` |
 | Windows | `%APPDATA%\rmcl\config.toml` |
 
-`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像缓存位于同目录的 `cache/skins/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
+`--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像和完整纹理缓存位于同目录的 `cache/skins/`，本地皮肤库位于 `skins/library/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
 ## Schema 4
 
@@ -62,6 +62,7 @@ accent = "emerald"
 - `selected_account_kind`：`offline` 或 `microsoft`。同名离线账户与正版账户通过该字段区分。
 - `accounts`：离线账户的玩家名和 UUID。UUID 使用离线身份规则生成并持久化；不保存访问令牌。
 - `microsoft_accounts`：正版账户的玩家名、Minecraft profile UUID 和可选的官方皮肤 URL；不保存 refresh token 或 access token。
+- 本地皮肤库不写入 `config.toml`；`skins/library/index.json` 只保存皮肤 ID、显示名、模型提示、来源 URL、导入时间和文件名，完整 PNG、合成头像与索引均通过同目录临时文件原子发布。
 - `servers`：启动器级服务器收藏，包含稳定 `id`、显示名称和原始 `host[:port]` 地址。不保存状态、延迟、图标或账号令牌；不绑定实例，进服时使用当前选中实例和账户。
 - `auto_install_java`：缺少兼容 Java 时是否允许下载 Mojang runtime。当前在启动时读取。
 - `auto_check_updates`：启动后是否自动检查 GitHub Release；默认开启。手动检查不受该字段影响。

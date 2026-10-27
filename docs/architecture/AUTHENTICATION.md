@@ -1,8 +1,8 @@
 # 正版账号、令牌与皮肤
 
-状态：Microsoft 设备代码登录、令牌刷新、账户删除和官方皮肤头像已实现
+状态：Microsoft 设备代码登录、令牌刷新、账户删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认皮肤和本地皮肤库已实现
 
-日期：2026-10-25
+日期：2026-10-27
 
 ## 边界
 
@@ -11,9 +11,9 @@
 - `rmcl-auth`：无 UI 的 Microsoft/Xbox/Minecraft 协议、设备代码流程、令牌刷新、账户身份与错误类型。
 - `rmcl-platform`：操作系统凭据存储的通用 `SecretStore` 接口和 Keychain / Credential Manager / Secret Service 适配。
 - `rmcl-store`：`config.toml` 中的账户元数据，不保存任何令牌。
-- `rmcl-app`：登录与启动所需的用例编排、凭据读写、皮肤下载与头像缓存。
+- `rmcl-app`：登录与启动所需的用例编排、凭据读写、皮肤下载与头像缓存、皮肤来源校验、本地皮肤库和 CPU 角色预览渲染。
 - `rmcl-launch`：消费已解析的 `LaunchAccount`，只负责生成启动参数和进程。
-- `apps/rmcl`：GPUI 对话框、账户列表、删除确认和头像展示。
+- `apps/rmcl`：GPUI 对话框、账户列表、删除确认、头像展示、皮肤页、共享皮肤资料缓存和预览视图。
 
 核心 crate 不依赖 GPUI；网络和钥匙串调用都通过 Tokio runtime 执行，GPUI task 只 await `JoinHandle` 并更新界面。
 
@@ -94,12 +94,50 @@ Minecraft profile 的激活皮肤 URL 保存到 `microsoft_accounts[].skin_url`�
 
 旧版本创建的正版账户可能没有 `skin_url`。应用启动时会在后台使用缓存的 Minecraft token 刷新 profile；该请求失败不会影响启动，只是继续显示首字母。用户重新登录或令牌自然刷新后会再次同步。
 
+## 皮肤页与更换
+
+侧栏“皮肤”页只对当前选中的正版账户生效；离线账户显示要求登录正版账户的空状态。页面资料按账户缓存在应用层 `SkinService` 中，离开页面再回来不会重复请求；手动刷新会保留旧资料直到新请求完成。
+
+profile 解析现在保留：
+
+- 全部 owned skins，包括 `ACTIVE` / `INACTIVE`、URL、模型和 alias；
+- 全部 owned capes 及其激活状态；
+- 当前激活皮肤的模型用于预览和模型提示。
+
+换肤使用：
+
+- `POST /minecraft/profile/skins`：multipart PNG + `variant=classic|slim`，返回更新后的 profile；
+- `POST /minecraft/profile/skins`：JSON `{variant, url}`，协议层已支持，供后续验证官方 owned skins 的 URL 激活；当前页面统一走“下载校验后 multipart 上传”；
+- `DELETE /minecraft/profile/skins/active`：恢复默认皮肤，返回更新后的 profile 或空响应。
+
+PNG 与链接共用同一条候选流程：
+
+- 官方 Java 上传只接受 64×64 或旧版 64×32 PNG；HD 皮肤只用于展示，不直接上传。
+- 本地文件先限制 1 MiB，再解码校验；超过官方 24 KiB 限制时重新编码为规范 PNG，仍超限则拒绝。
+- 图片直链只接受 HTTPS；拒绝 URL 凭据、私网/回环/链路本地地址，限制重定向次数、响应大小和超时。
+- 不解析皮肤站网页，只接受返回 `image/png` 的图片直链；防盗链或 HTML 页面会提示改为保存 PNG 后导入。
+- 链接由 RMCL 下载、校验并预览，再由 multipart 上传字节，保证“预览的就是上传的”；不依赖 Mojang 侧再次抓取第三方页面。
+- 模型可由用户选择；从右臂未使用列做经典/纤细提示，但提示不覆盖用户选择。
+
+本机皮肤库位于配置目录 `skins/library/`：
+
+- 以规范化上传字节的 SHA-256 作为 ID，重复导入不会产生重复条目；
+- 保存 PNG、合成头像和元数据索引；索引损坏或版本更高时拒绝覆盖；
+- 最近使用列表按导入时间倒序；“使用”会重新校验 PNG 后再进入候选预览。
+
+3D 预览由 `rmcl-app` 的 CPU 软光栅渲染器生成，支持现代 64×64、旧版 64×32、经典/纤细手臂和 HD 纹理缩放。渲染器不依赖 GPUI，桌面层只负责把 RGBA 帧显示在预览 Entity 中。
+
 ## 错误与界面语义
 
 - 登录代码过期 / 拒绝 / 取消：登录对话框内显示，可重试。
 - 无 Minecraft 所有权、无 profile、Xbox 家庭组或地区限制：阻止添加账户。
 - 启动时凭据缺失或 refresh token 失效：提示重新登录，不启动。
 - 钥匙串不可用：登录、启动和删除都失败并保留现有状态。
+- 换肤 401/403 且不是账号限制：提示重新登录，不静默回退离线。
+- 换肤 400：显示官方返回的拒绝原因，保留候选皮肤供用户修改或取消。
+- 换肤 429：显示冷却，不在后台自动重试；冷却期间禁用应用按钮。
+- 换肤请求超时或连接中断：提示结果未知，要求先刷新当前皮肤确认，避免盲目重传。
+- 图片直链读取失败：在链接表单内显示原因，并保留本地文件导入路径。
 - 正常登录成功和正常删除账户使用一次成功通知；后台皮肤刷新失败不打扰用户。
 
 ## 配置元数据
@@ -121,7 +159,10 @@ skin_url = "http://textures.minecraft.net/texture/…"
 
 - authlib-injector 和第三方 Yggdrasil 登录。
 - 自有 Azure 应用注册和 localhost 授权码回调。
-- 披风展示、皮肤上传、皮肤库和第三人称全身预览。
+- 皮肤站网页解析、站点专用适配和任何第三方上传。
+- 披风切换/隐藏；当前只展示激活披风名称。
+- 官方 owned skins 的按 ID 一键切换；是否有稳定的 URL 激活语义仍需真实账户验证。
+- 皮肤编辑器、皮肤市场、HD 皮肤上传。
 - 多账户批量管理、导入导出和 HMCL 账户迁移。
 - Windows 和 Linux 的真实 Keychain / Credential Manager / Secret Service 验收。
 
@@ -130,8 +171,9 @@ skin_url = "http://textures.minecraft.net/texture/…"
 ## 验证
 
 - `rmcl-auth` 的本地 mock server 测试覆盖设备代码请求、轮询、refresh 轮换、Xbox/XSTS/Minecraft 交换、所有权检查、profile/皮肤解析、Xbox 错误、取消和秘密脱敏。
-- `rmcl-app` 覆盖缓存 token 直接启动、凭据缺失、钥匙串读写/删除、schema 拒绝、官方皮肤下载、头像合成和缓存复用；另有手动 `--ignored` 测试访问真实官方皮肤纹理。
+- `rmcl-app` 覆盖缓存 token 直接启动、凭据缺失、钥匙串读写/删除、schema 拒绝、官方皮肤下载、头像合成和缓存复用；新增皮肤来源校验、图片直链下载、私网地址拒绝、本地皮肤库、CPU 预览渲染、上传/reset 用例和令牌 401 重试测试。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录，Keychain 写入成功，profile 与官方皮肤头像缓存成功生成。
+- 皮肤上传、恢复默认、429 冷却、图片直链导入和真实窗口视觉验收仍需使用真实正版账户逐平台手动验证；自动化测试不调用真实换肤接口。
 - 使用正版 Minecraft access token 的真实 Vanilla 启动已由用户在 macOS ARM64 实际验证，游戏可以正常进入运行阶段。
 - Windows 和 Linux 的凭据存储与正版启动仍需平台运行测试。
 
@@ -140,3 +182,4 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - [Microsoft identity platform device authorization grant](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)
 - [Minecraft Wiki: Microsoft authentication](https://minecraft.wiki/w/Microsoft_authentication)
 - [Minecraft Wiki: Skin](https://minecraft.wiki/w/Skin)
+- [Minecraft Wiki: Mojang API](https://minecraft.wiki/w/Mojang_API)（profile、upload/change/reset skin，2026-10-27 查阅）

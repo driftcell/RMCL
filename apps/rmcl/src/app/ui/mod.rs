@@ -8,4 +8,5 @@ pub mod instance;
 pub mod logs;
 pub mod servers;
 pub mod settings;
+pub mod skin;
 pub mod versions;

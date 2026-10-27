@@ -62,6 +62,7 @@
 - [当前未决问题](../notes/bootstrap/open_questions.md)
 - [界面重做与配置记录](../notes/development/ui_redesign.md)
 - [Microsoft 登录与正版皮肤实现记录](../notes/development/microsoft_login.md)
+- [官方皮肤页与 3D 预览实现记录](../notes/development/skin_page.md)
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)
 - [远程内容与 Modrinth 取舍](../notes/development/remote_content.md)
