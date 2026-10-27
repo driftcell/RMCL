@@ -24,7 +24,6 @@ pub const DOWNLOAD_ACTION_COLUMN: Rems = rems(6.5);
 
 /// Repeated tile and avatar sizes.
 pub const AVATAR_SMALL: Rems = rems(2.0);
-pub const AVATAR_MEDIUM: Rems = rems(2.25);
 pub const AVATAR_LARGE: Rems = rems(2.5);
 pub const TILE_LARGE: Rems = rems(2.75);
 pub const HERO_TILE: Rems = rems(5.5);
