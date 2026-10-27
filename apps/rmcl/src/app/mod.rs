@@ -67,6 +67,7 @@ use self::{
     skin_service::{SkinService, SkinServiceEvent},
     skin_viewer::SkinViewer,
     ui::{
+        common::display_path,
         layout,
         skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
     },
@@ -3747,7 +3748,7 @@ impl LauncherApp {
         let id = version.id.clone();
         let type_label = version_type_label(version.version_type.as_deref());
         let date = short_date(version.release_time.as_deref());
-        let target = self.config.minecraft_root.display().to_string();
+        let target = display_path(&self.config.minecraft_root);
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             dialog
@@ -3861,7 +3862,8 @@ impl LauncherApp {
         text.push('\n');
         match std::fs::write(&path, text) {
             Ok(()) => window.push_notification(
-                Notification::success(format!("已导出到 {}", path.display())).title("日志已导出"),
+                Notification::success(format!("已导出到 {}", display_path(&path)))
+                    .title("日志已导出"),
                 cx,
             ),
             Err(error) => window.push_notification(
@@ -4630,7 +4632,7 @@ impl LauncherApp {
                                         .truncate()
                                         .child(format!(
                                             "{source} · {}",
-                                            runtime.executable.display()
+                                            display_path(&runtime.executable)
                                         )),
                                 ),
                         )
@@ -4854,8 +4856,7 @@ impl LauncherApp {
             Ok(()) => {
                 self.java_dialog_target = None;
                 self.reload_versions(window, cx);
-                let label =
-                    java.map_or_else(|| "自动选择".to_owned(), |path| path.display().to_string());
+                let label = java.map_or_else(|| "自动选择".to_owned(), |path| display_path(&path));
                 window.push_notification(Notification::info(label).title("实例 Java 已更新"), cx);
                 true
             }
@@ -6564,14 +6565,14 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
             "{} / {} 个文件 · {}",
             progress.completed_files,
             progress.total_files,
-            progress.current.display()
+            display_path(&progress.current)
         ),
         TaskProgress::Content(progress) => {
             let current = progress
                 .current
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| progress.current.display().to_string());
+                .unwrap_or_else(|| display_path(&progress.current));
             let position = if progress.total_files > 1 {
                 format!(
                     "{}/{} · ",
@@ -6600,7 +6601,7 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
             total_archives,
         } => format!(
             "{completed_archives} / {total_archives} 个 native JAR · {}",
-            current.display()
+            display_path(current)
         ),
     }
 }

@@ -15,7 +15,7 @@ use gpui_kit::{
 use rmcl_app::InstalledVersion;
 
 use super::super::{LauncherApp, Page, ServerTab, short_date, version_tile, version_type_label};
-use super::common::{card, page_header, section_title, server_tile, type_tag};
+use super::common::{card, display_path, page_header, section_title, server_tile, type_tag};
 use super::layout;
 use super::servers::{server_players, server_status_line};
 
@@ -182,14 +182,11 @@ impl LauncherApp {
                                                     )
                                                     .child(selected.map_or_else(
                                                         || {
-                                                            self.config
-                                                                .minecraft_root
-                                                                .display()
-                                                                .to_string()
+                                                            display_path(
+                                                                &self.config.minecraft_root,
+                                                            )
                                                         },
-                                                        |version| {
-                                                            version.game_dir.display().to_string()
-                                                        },
+                                                        |version| display_path(&version.game_dir),
                                                     )),
                                             ),
                                     )
@@ -604,7 +601,7 @@ impl LauncherApp {
                             .text_xs()
                             .font_family(cx.theme().mono_font_family.clone())
                             .truncate()
-                            .child(self.config.java_store.display().to_string()),
+                            .child(display_path(&self.config.java_store)),
                     ),
             )
     }

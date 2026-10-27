@@ -1,9 +1,12 @@
+use std::path::Path;
+
 use gpui_kit::{
     assets::IconName,
     component::{ActiveTheme, Icon, Sizable, Size, StyledExt, h_flex, tag::Tag, v_flex},
     prelude::FluentBuilder,
     *,
 };
+use rmcl_store::home_directory;
 
 use super::super::Page;
 
@@ -129,6 +132,24 @@ pub fn server_tile(path: Option<&std::path::Path>, size: Rems, cx: &App) -> AnyE
         .into_any_element()
 }
 
+/// Formats a user-facing path with the home directory shortened to `~`.
+///
+/// Only paths below the user's home directory are abbreviated; user-editable
+/// path inputs keep the full path they operate on.
+pub fn display_path(path: impl AsRef<Path>) -> String {
+    abbreviate_home(path, home_directory())
+}
+
+fn abbreviate_home(path: impl AsRef<Path>, home: impl AsRef<Path>) -> String {
+    let path = path.as_ref();
+    let home = home.as_ref();
+    match path.strip_prefix(home) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Ok(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
 pub fn mono(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
         .font_family(cx.theme().mono_font_family.clone())
@@ -207,5 +228,39 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.1} KiB", bytes / KIB)
     } else {
         format!("{bytes:.0} B")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::abbreviate_home;
+
+    #[test]
+    fn display_path_shortens_the_home_directory() {
+        let home = Path::new("home").join("steve");
+        let path = home.join(".minecraft").join("versions");
+
+        assert_eq!(
+            abbreviate_home(&path, &home),
+            format!(
+                "~{}.minecraft{}versions",
+                std::path::MAIN_SEPARATOR,
+                std::path::MAIN_SEPARATOR
+            )
+        );
+        assert_eq!(abbreviate_home(&home, &home), "~");
+    }
+
+    #[test]
+    fn display_path_keeps_paths_outside_home() {
+        let home = Path::new("home").join("steve");
+        let other_user = Path::new("home").join("alex").join(".minecraft");
+
+        assert_eq!(
+            abbreviate_home(&other_user, &home),
+            other_user.display().to_string()
+        );
     }
 }

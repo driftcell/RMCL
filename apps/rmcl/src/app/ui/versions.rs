@@ -16,7 +16,7 @@ use gpui_kit::{
 use rmcl_app::InstalledVersion;
 
 use super::super::{LauncherApp, Page, VersionFilter, short_date, version_tile};
-use super::common::{card, empty_state, page_header, section_title, type_tag};
+use super::common::{card, display_path, empty_state, page_header, section_title, type_tag};
 
 impl LauncherApp {
     pub fn render_versions(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -199,7 +199,7 @@ impl LauncherApp {
     ) -> impl IntoElement {
         let id = version.id.as_str().to_owned();
         let display_name = version.display_name().to_owned();
-        let path = version.game_dir.display().to_string();
+        let path = display_path(&version.game_dir);
         let meta = if version.minecraft_version != id {
             format!(
                 "Minecraft {} · {}",

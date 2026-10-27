@@ -18,7 +18,8 @@ use rmcl_app::{ContentKind, InstalledVersion, LocalContent};
 
 use super::super::{ContentTab, LauncherApp, Page, short_date, version_tile, version_type_label};
 use super::common::{
-    card, empty_state, error_banner, format_size, mono, section_title, type_tag, warning_banner,
+    card, display_path, empty_state, error_banner, format_size, mono, section_title, type_tag,
+    warning_banner,
 };
 
 impl LauncherApp {
@@ -384,10 +385,10 @@ impl LauncherApp {
         let auto_target = java_target.clone();
         let java_custom = version.java.is_some();
         let launch_target = java_target.clone();
-        let java_label = version.java.as_ref().map_or_else(
-            || "自动选择兼容 runtime".to_owned(),
-            |path| path.display().to_string(),
-        );
+        let java_label = version
+            .java
+            .as_ref()
+            .map_or_else(|| "自动选择兼容 runtime".to_owned(), display_path);
         let memory_label = version
             .max_memory_mb
             .map_or_else(|| "自动".to_owned(), |memory| format!("{memory} MiB"));
@@ -412,7 +413,7 @@ impl LauncherApp {
                                     .text_color(cx.theme().muted_foreground)
                                     .child("游戏目录"),
                             )
-                            .child(mono(instance.game_dir().display().to_string(), cx)),
+                            .child(mono(display_path(instance.game_dir()), cx)),
                     )
                     .children(ContentTab::ALL.into_iter().map(|tab| {
                         let (total, enabled) = counts[tab.index()];
