@@ -1,7 +1,10 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::{Duration, Instant},
 };
+
+#[cfg(target_os = "macos")]
+use std::path::Path;
 
 use gpui_kit::{
     assets::IconName,
@@ -709,6 +712,7 @@ impl LauncherApp {
     }
 
     fn pick_skin_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        #[cfg(target_os = "macos")]
         let start = self
             .services
             .config_store
