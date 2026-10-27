@@ -106,6 +106,33 @@ pub fn type_tag(version_type: Option<&str>) -> Tag {
         .small()
 }
 
+pub fn server_tile(path: Option<&std::path::Path>, size: f32, cx: &App) -> AnyElement {
+    if let Some(path) = path {
+        return div()
+            .size(px(size))
+            .flex_shrink_0()
+            .rounded(cx.theme().radius)
+            .overflow_hidden()
+            .bg(cx.theme().primary.opacity(0.15))
+            .child(
+                img(path.to_path_buf())
+                    .size_full()
+                    .object_fit(ObjectFit::Cover),
+            )
+            .into_any_element();
+    }
+    div()
+        .size(px(size))
+        .flex_shrink_0()
+        .rounded(cx.theme().radius)
+        .bg(cx.theme().primary.opacity(0.12))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(Icon::new(IconName::Network).text_color(cx.theme().primary))
+        .into_any_element()
+}
+
 pub fn mono(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     div()
         .font_family(cx.theme().mono_font_family.clone())

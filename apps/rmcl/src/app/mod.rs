@@ -1850,6 +1850,7 @@ impl LauncherApp {
         self.cancel_server_refresh();
         self.save_config();
         self.refresh_servers(window, cx);
+        cx.notify();
         window.push_notification(Notification::success("服务器已保存。").title("服务器"), cx);
         true
     }
@@ -1899,6 +1900,7 @@ impl LauncherApp {
         self.servers.statuses.remove(&server_id);
         self.save_config();
         self.refresh_servers(window, cx);
+        cx.notify();
         window.push_notification(Notification::info("服务器已删除。").title("服务器"), cx);
     }
 

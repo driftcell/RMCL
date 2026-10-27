@@ -14,8 +14,8 @@ use gpui_kit::{
 };
 use rmcl_app::InstalledVersion;
 
-use super::super::{LauncherApp, Page, short_date, version_tile, version_type_label};
-use super::common::{card, page_header, section_title, type_tag};
+use super::super::{LauncherApp, Page, ServerTab, short_date, version_tile, version_type_label};
+use super::common::{card, page_header, section_title, server_tile, type_tag};
 
 impl LauncherApp {
     pub fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -66,6 +66,7 @@ impl LauncherApp {
                         can_start,
                         cx,
                     ))
+                    .child(self.render_quick_connect(cx))
                     .child(
                         h_flex()
                             .w_full()
@@ -289,6 +290,169 @@ impl LauncherApp {
                             }),
                     ),
             )
+    }
+
+    fn render_quick_connect(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let total = self.config.servers.len();
+        let servers = self
+            .config
+            .servers
+            .iter()
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>();
+        let (can_join, join_tooltip) = self.server_join_ready();
+        let selected_name = self
+            .selected_version()
+            .map(|version| version.display_name().to_owned());
+        let subtitle = match selected_name {
+            Some(name) => format!("使用「{name}」直接进入"),
+            None => "选择实例后可直接进入".to_owned(),
+        };
+        let manage_label = if total > 3 {
+            format!("查看全部 {total} 个")
+        } else {
+            "管理服务器".to_owned()
+        };
+
+        let mut tiles = Vec::new();
+        for server in &servers {
+            let icon_path = self
+                .servers
+                .statuses
+                .get(&server.id)
+                .and_then(|view| view.icon_path.as_deref());
+            let id = server.id.clone();
+            let name = server.name.clone();
+            tiles.push(
+                h_flex()
+                    .flex_basis(px(0.))
+                    .flex_grow(1.0)
+                    .min_w_0()
+                    .items_center()
+                    .gap_2()
+                    .rounded(cx.theme().radius)
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background.opacity(0.55))
+                    .p_3()
+                    .child(server_tile(icon_path, 36., cx))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(div().text_sm().font_medium().truncate().child(name.clone()))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
+                                    .child(server.address.clone()),
+                            ),
+                    )
+                    .child(
+                        Button::new(format!("home-server-join-{id}"))
+                            .outline()
+                            .small()
+                            .icon(IconName::Play)
+                            .label("进入")
+                            .disabled(!can_join)
+                            .tooltip(join_tooltip)
+                            .accessibility_label(format!("进入 {name}"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.join_server(id.clone(), window, cx)
+                            })),
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        card(cx)
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_start()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(section_title("快速连接", &subtitle, cx)),
+                    )
+                    .when(total > 0, |this| {
+                        this.child(
+                            Button::new("home-servers-manage")
+                                .ghost()
+                                .small()
+                                .label(manage_label)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.navigate(Page::Servers, window, cx)
+                                })),
+                        )
+                    }),
+            )
+            .when(servers.is_empty(), |this| {
+                this.child(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .gap_3()
+                        .rounded(cx.theme().radius)
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().background.opacity(0.55))
+                        .p_3()
+                        .child(
+                            div()
+                                .size(px(36.))
+                                .flex_shrink_0()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().primary.opacity(0.12))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(Icon::new(IconName::Network).text_color(cx.theme().primary)),
+                        )
+                        .child(
+                            v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .gap_0p5()
+                                .child(div().text_sm().font_medium().child("还没有收藏的服务器"))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("添加服务器或收藏精选条目后，可以从首页直接进入。"),
+                                ),
+                        )
+                        .child(
+                            Button::new("home-server-add")
+                                .primary()
+                                .small()
+                                .icon(IconName::Plus)
+                                .label("添加服务器")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_server_dialog(None, window, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("home-server-discover")
+                                .ghost()
+                                .small()
+                                .label("浏览精选")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.navigate(Page::Servers, window, cx);
+                                    this.select_server_tab(ServerTab::Discover, window, cx);
+                                })),
+                        ),
+                )
+            })
+            .when(!servers.is_empty(), |this| {
+                this.child(h_flex().w_full().gap_3().children(tiles))
+            })
     }
 
     fn render_recent_versions(&self, can_start: bool, cx: &mut Context<Self>) -> impl IntoElement {
