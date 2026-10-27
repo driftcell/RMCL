@@ -132,4 +132,6 @@ pub enum AppError {
     MicrosoftAuth(#[from] rmcl_auth::MicrosoftAuthError),
     #[error("system credential storage is unavailable: {0}")]
     SecretStore(#[from] rmcl_platform::SecretStoreError),
+    #[error("skin source is unavailable: {0}")]
+    SkinSource(#[from] crate::SkinSourceError),
 }

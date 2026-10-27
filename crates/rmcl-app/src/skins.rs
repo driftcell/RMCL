@@ -16,6 +16,71 @@ const OFFICIAL_SKIN_HOST: &str = "textures.minecraft.net";
 const MAX_SKIN_BYTES: usize = 1024 * 1024;
 const HEAD_SIZE: u32 = 64;
 
+/// A decoded Java skin texture.
+///
+/// The renderer and upload validation share this type so that dimension and
+/// legacy-layout rules only live in one place.
+#[derive(Debug, Clone)]
+pub struct SkinTexture {
+    image: RgbaImage,
+    scale: u32,
+    legacy: bool,
+}
+
+impl SkinTexture {
+    pub fn decode(bytes: &[u8]) -> Result<Self, SkinError> {
+        let image = image::load_from_memory_with_format(bytes, ImageFormat::Png)
+            .map_err(SkinError::Decode)?
+            .to_rgba8();
+        Self::from_rgba(image)
+    }
+
+    pub fn from_rgba(image: RgbaImage) -> Result<Self, SkinError> {
+        let (width, height) = image.dimensions();
+        if width < 64 || width % 64 != 0 || (height != width && height != width / 2) {
+            return Err(SkinError::InvalidDimensions { width, height });
+        }
+        Ok(Self {
+            scale: width / 64,
+            legacy: height == width / 2,
+            image,
+        })
+    }
+
+    pub fn image(&self) -> &RgbaImage {
+        &self.image
+    }
+
+    /// The number of image pixels per texture pixel.
+    pub fn scale(&self) -> u32 {
+        self.scale
+    }
+
+    /// Whether this uses the pre-1.8 64×32 layout.
+    pub fn is_legacy(&self) -> bool {
+        self.legacy
+    }
+
+    pub fn dimensions(&self) -> (u32, u32) {
+        self.image.dimensions()
+    }
+
+    /// Builds the composited 8×8 face + hat image.
+    pub fn head_image(&self) -> RgbaImage {
+        let scale = self.scale;
+        let face_size = 8 * scale;
+        let mut head = RgbaImage::new(face_size, face_size);
+        for y in 0..face_size {
+            for x in 0..face_size {
+                let face = *self.image.get_pixel(8 * scale + x, 8 * scale + y);
+                let hat = *self.image.get_pixel(40 * scale + x, 8 * scale + y);
+                head.put_pixel(x, y, blend(face, hat));
+            }
+        }
+        image::imageops::resize(&head, HEAD_SIZE, HEAD_SIZE, FilterType::Nearest)
+    }
+}
+
 /// Downloads official skin textures and caches a composed head image.
 #[derive(Clone)]
 pub struct SkinCache {
@@ -48,6 +113,45 @@ impl SkinCache {
             return Ok(cache_path);
         }
 
+        let bytes = self.download(&url).await?;
+
+        let cache_path_for_write = cache_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let head = compose_head(&bytes)?;
+            write_cache(&cache_path_for_write, &head)?;
+            Ok::<_, SkinError>(())
+        })
+        .await
+        .map_err(|error| SkinError::Blocking(error.to_string()))??;
+        Ok(cache_path)
+    }
+
+    /// Returns the full decoded texture, downloading and caching it if needed.
+    ///
+    /// The preview renderer needs the complete PNG rather than the composed
+    /// head, so this cache entry is separate from the avatar cache.
+    pub async fn ensure_texture(&self, skin_url: &str) -> Result<SkinTexture, SkinError> {
+        let url = self.validate_url(skin_url)?;
+        let cache_path = self
+            .cache_dir
+            .join(format!("{}.skin.png", hash_url(url.as_str())));
+        if let Ok(bytes) = tokio::fs::read(&cache_path).await
+            && let Ok(texture) = SkinTexture::decode(&bytes)
+        {
+            return Ok(texture);
+        }
+
+        let bytes = self.download(&url).await?;
+        let texture = SkinTexture::decode(&bytes)?;
+        let cache_path_for_write = cache_path.clone();
+        let bytes_for_write = bytes.clone();
+        tokio::task::spawn_blocking(move || write_cache(&cache_path_for_write, &bytes_for_write))
+            .await
+            .map_err(|error| SkinError::Blocking(error.to_string()))??;
+        Ok(texture)
+    }
+
+    async fn download(&self, url: &Url) -> Result<Vec<u8>, SkinError> {
         let response = self
             .client
             .get(url.clone())
@@ -76,16 +180,7 @@ impl SkinCache {
         if bytes.len() > MAX_SKIN_BYTES {
             return Err(SkinError::TooLarge);
         }
-
-        let cache_path_for_write = cache_path.clone();
-        tokio::task::spawn_blocking(move || {
-            let head = compose_head(&bytes)?;
-            write_cache(&cache_path_for_write, &head)?;
-            Ok::<_, SkinError>(())
-        })
-        .await
-        .map_err(|error| SkinError::Blocking(error.to_string()))??;
-        Ok(cache_path)
+        Ok(bytes.to_vec())
     }
 
     fn validate_url(&self, skin_url: &str) -> Result<Url, SkinError> {
@@ -111,29 +206,7 @@ impl SkinCache {
 
 /// Builds a 64×64 head image from a 64×32 or larger skin texture.
 fn compose_head(skin_bytes: &[u8]) -> Result<Vec<u8>, SkinError> {
-    let skin = image::load_from_memory_with_format(skin_bytes, ImageFormat::Png)
-        .map_err(SkinError::Decode)?
-        .to_rgba8();
-    let (width, height) = skin.dimensions();
-    if width < 64 || height < 32 || width % 64 != 0 {
-        return Err(SkinError::InvalidDimensions { width, height });
-    }
-    let scale = width / 64;
-    let face_size = 8 * scale;
-    let mut head = RgbaImage::new(face_size, face_size);
-    for y in 0..face_size {
-        for x in 0..face_size {
-            let face = *skin.get_pixel(8 * scale + x, 8 * scale + y);
-            let pixel = if height >= 16 * scale {
-                let hat = *skin.get_pixel(40 * scale + x, 8 * scale + y);
-                blend(face, hat)
-            } else {
-                face
-            };
-            head.put_pixel(x, y, pixel);
-        }
-    }
-    let head = image::imageops::resize(&head, HEAD_SIZE, HEAD_SIZE, FilterType::Nearest);
+    let head = SkinTexture::decode(skin_bytes)?.head_image();
     let mut encoded = Vec::new();
     image::DynamicImage::ImageRgba8(head)
         .write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
@@ -287,6 +360,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn downloads_and_caches_full_texture() {
+        let (base, requests) =
+            spawn_skin_server(skin_png([220, 40, 40, 255], Some([20, 80, 220, 128]))).await;
+        let temporary = TempDir::new().unwrap();
+        let cache = SkinCache::with_host(temporary.path().to_path_buf(), "127.0.0.1");
+
+        let texture = cache
+            .ensure_texture(&format!("{base}/texture/abc"))
+            .await
+            .unwrap();
+        assert_eq!(texture.dimensions(), (64, 64));
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+
+        let again = cache
+            .ensure_texture(&format!("{base}/texture/abc"))
+            .await
+            .unwrap();
+        assert_eq!(again.dimensions(), (64, 64));
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn rejects_non_official_hosts_before_network_access() {
         let temporary = TempDir::new().unwrap();
         let cache = SkinCache::new(temporary.path().to_path_buf());
@@ -297,6 +392,36 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, SkinError::HostNotAllowed));
+    }
+
+    #[test]
+    fn decodes_modern_legacy_and_hd_textures() {
+        let modern = SkinTexture::decode(&solid_png(64, 64, [255, 0, 0, 255])).unwrap();
+        assert_eq!(modern.dimensions(), (64, 64));
+        assert_eq!(modern.scale(), 1);
+        assert!(!modern.is_legacy());
+
+        let legacy = SkinTexture::decode(&solid_png(64, 32, [255, 0, 0, 255])).unwrap();
+        assert_eq!(legacy.dimensions(), (64, 32));
+        assert_eq!(legacy.scale(), 1);
+        assert!(legacy.is_legacy());
+
+        let hd = SkinTexture::decode(&solid_png(128, 128, [255, 0, 0, 255])).unwrap();
+        assert_eq!(hd.dimensions(), (128, 128));
+        assert_eq!(hd.scale(), 2);
+        assert!(!hd.is_legacy());
+    }
+
+    #[test]
+    fn rejects_malformed_texture_dimensions() {
+        let error = SkinTexture::decode(&solid_png(64, 48, [255, 0, 0, 255])).unwrap_err();
+        assert!(matches!(
+            error,
+            SkinError::InvalidDimensions {
+                width: 64,
+                height: 48
+            }
+        ));
     }
 
     #[tokio::test]

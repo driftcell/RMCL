@@ -7,8 +7,8 @@ use std::{
 use rmcl_app::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
     LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
-    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, TaskManager, UpdateClient,
-    VanillaInstaller, VersionCatalog,
+    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, SkinLibrary, SkinUrlClient,
+    TaskManager, UpdateClient, VanillaInstaller, VersionCatalog,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
@@ -32,6 +32,8 @@ pub struct Services {
     pub config_store: ConfigStore,
     pub microsoft_accounts: MicrosoftAccountService,
     pub skins: SkinCache,
+    pub skin_library: SkinLibrary,
+    pub skin_urls: SkinUrlClient,
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
     pub mod_metadata: ModMetadataCache,
@@ -77,6 +79,15 @@ impl Services {
             .join("cache")
             .join("skins");
         let skins = SkinCache::new(skin_cache_dir);
+        let skin_library = SkinLibrary::new(
+            config_store
+                .path()
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("skins")
+                .join("library"),
+        );
+        let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
         let server_icon_cache_dir = config_store
             .path()
             .parent()
@@ -104,6 +115,8 @@ impl Services {
             config_store,
             microsoft_accounts,
             skins,
+            skin_library,
+            skin_urls,
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
             mod_metadata,

@@ -14,6 +14,9 @@ mod java;
 mod loader;
 mod model;
 mod servers;
+mod skin_library;
+mod skin_preview;
+mod skin_source;
 mod skins;
 mod task;
 mod update;
@@ -68,7 +71,13 @@ pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
 pub use servers::{ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient};
-pub use skins::{SkinCache, SkinError};
+pub use skin_library::{SkinLibrary, SkinLibraryEntry, SkinLibraryError};
+pub use skin_preview::SkinPreviewRenderer;
+pub use skin_source::{
+    MAX_SKIN_SOURCE_BYTES, MAX_SKIN_UPLOAD_BYTES, PreparedSkin, SkinSourceError, SkinUrlClient,
+    load_skin_file, prepare_skin,
+};
+pub use skins::{SkinCache, SkinError, SkinTexture};
 pub use task::{
     TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
     TaskSubject,

@@ -1,3 +1,5 @@
+mod skin_service;
+mod skin_viewer;
 mod ui;
 
 use std::{cell::Cell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
@@ -60,6 +62,12 @@ use crate::{
     theme,
 };
 
+use self::{
+    skin_service::{SkinService, SkinServiceEvent},
+    skin_viewer::SkinViewer,
+    ui::skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
+};
+
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
 const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
 const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
@@ -70,6 +78,7 @@ const SERVER_PING_CONCURRENCY: usize = 4;
 pub enum Page {
     Home,
     Versions,
+    Skin,
     Servers,
     Instance,
     CreateInstance,
@@ -84,6 +93,7 @@ impl Page {
         match self {
             Self::Home => "主页",
             Self::Versions => "实例",
+            Self::Skin => "皮肤",
             Self::Servers => "联机",
             Self::Instance => "实例详情",
             Self::CreateInstance => "新建实例",
@@ -98,6 +108,7 @@ impl Page {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Versions => "管理已安装的游戏实例与版本。",
+            Self::Skin => "查看并更换当前正版账户的官方皮肤。",
             Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
@@ -112,6 +123,7 @@ impl Page {
         match self {
             Self::Home => IconName::House,
             Self::Versions => IconName::Boxes,
+            Self::Skin => IconName::Shirt,
             Self::Servers => IconName::Network,
             Self::Instance => IconName::Package,
             Self::CreateInstance => IconName::PackagePlus,
@@ -451,6 +463,15 @@ pub struct LauncherApp {
     accounts: Vec<Account>,
     account_heads: HashMap<Uuid, PathBuf>,
     editing_account: Option<String>,
+    skin_service: Entity<SkinService>,
+    skin_viewer: Entity<SkinViewer>,
+    skin_editor: SkinEditor,
+    skin_link: LinkImport,
+    skin_apply: ApplyState,
+    pending_skin_profile: Option<MicrosoftAccount>,
+    _skin_service_observe: Subscription,
+    _skin_service_events: Subscription,
+    _skin_link_subscription: Subscription,
     version_select: Entity<SelectState<SearchableVec<String>>>,
     theme_select: Entity<SelectState<SearchableVec<String>>>,
     accent_select: Entity<SelectState<SearchableVec<String>>>,
@@ -619,6 +640,11 @@ impl LauncherApp {
         let launch_width_input = cx.new(|cx| InputState::new(window, cx).placeholder("1280"));
         let launch_height_input = cx.new(|cx| InputState::new(window, cx).placeholder("720"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
+        let skin_link_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
+
+        let skin_service = cx.new(|cx| SkinService::new(services.clone(), cx));
+        let skin_viewer = cx.new(SkinViewer::new);
 
         let mut subscriptions = Vec::new();
         subscriptions.push(
@@ -746,6 +772,23 @@ impl LauncherApp {
             },
         ));
 
+        let skin_service_observe = cx.observe(&skin_service, |_, _, cx| cx.notify());
+        let skin_service_events =
+            cx.subscribe(&skin_service, |this, _, event: &SkinServiceEvent, cx| {
+                let SkinServiceEvent::ProfileLoaded(loaded) = event;
+                this.pending_skin_profile = Some(loaded.profile.clone());
+                cx.notify();
+            });
+        let skin_link_subscription =
+            cx.subscribe(&skin_link_input, |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    if matches!(this.skin_link.state, LinkImportState::Failed(_)) {
+                        this.skin_link.state = LinkImportState::Idle;
+                    }
+                    cx.notify();
+                }
+            });
+
         let event_task = Self::spawn_event_bridge(window, &services, cx);
         let appearance_view = cx.entity().downgrade();
         let appearance_subscription = window.observe_window_appearance(move |_window, cx| {
@@ -818,6 +861,15 @@ impl LauncherApp {
             accounts,
             account_heads: HashMap::new(),
             editing_account: None,
+            skin_service,
+            skin_viewer,
+            skin_editor: SkinEditor::default(),
+            skin_link: LinkImport::new(skin_link_input),
+            skin_apply: ApplyState::Idle,
+            pending_skin_profile: None,
+            _skin_service_observe: skin_service_observe,
+            _skin_service_events: skin_service_events,
+            _skin_link_subscription: skin_link_subscription,
             version_select,
             theme_select,
             accent_select,
@@ -1286,6 +1338,13 @@ impl LauncherApp {
         self.config.selected_account = Some(username.to_owned());
         self.config.selected_account_kind = kind;
         self.save_config();
+        if self.page == Page::Skin {
+            self.skin_editor.draft = None;
+            self.skin_apply = ApplyState::Idle;
+            self.skin_viewer
+                .update(cx, |viewer, cx| viewer.reset_view(cx));
+            self.ensure_skin_page(cx);
+        }
         cx.notify();
     }
 
@@ -2040,6 +2099,11 @@ impl LauncherApp {
         }
         if page == Page::Servers {
             self.refresh_active_servers(window, cx);
+        }
+        if page == Page::Skin {
+            self.ensure_skin_page(cx);
+            self.skin_viewer
+                .update(cx, |viewer, cx| viewer.reset_view(cx));
         }
         cx.notify();
     }
@@ -3427,6 +3491,9 @@ impl LauncherApp {
         self.config.selected_account_kind = StoredAccountKind::Microsoft;
         self.save_config();
         self.refresh_account_heads(window, cx);
+        if self.page == Page::Skin {
+            self.ensure_skin_page(cx);
+        }
         cx.notify();
     }
 
@@ -3543,6 +3610,9 @@ impl LauncherApp {
         self.accounts
             .retain(|existing| account_key(existing) != key);
         self.account_heads.remove(&account.uuid());
+        self.skin_service.update(cx, |service, cx| {
+            service.remove_account(account.uuid(), cx);
+        });
         if deleting_selected {
             self.config.selected_account = self
                 .accounts
@@ -3555,6 +3625,11 @@ impl LauncherApp {
                 .unwrap_or(StoredAccountKind::Offline);
         }
         self.save_config();
+        if self.page == Page::Skin {
+            self.skin_editor.draft = None;
+            self.skin_apply = ApplyState::Idle;
+            self.ensure_skin_page(cx);
+        }
         window.push_notification(Notification::success("账户已删除。").title("账户"), cx);
         cx.notify();
     }
@@ -6004,6 +6079,7 @@ impl Render for LauncherApp {
         let page = match self.page {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
+            Page::Skin => self.render_skin(window, cx).into_any_element(),
             Page::Servers => self.render_servers(cx).into_any_element(),
             Page::Instance => self.render_instance(cx).into_any_element(),
             Page::CreateInstance => self.render_create_instance(cx).into_any_element(),
