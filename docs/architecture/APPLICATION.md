@@ -2,7 +2,7 @@
 
 状态：`rmcl-app` 安装、安装任务、Java ensure 和游戏任务已实现
 
-日期：2026-10-26
+日期：2026-10-27
 
 ## 边界
 
@@ -30,7 +30,7 @@
 - `Existing` 使用独立的读取阶段，不伪装成写入。
 - 版本 JSON 可以提前存在，但它不是安装完成标记；后续 client、libraries 和 assets 仍按计划分别校验。
 
-暂不支持 `inheritsFrom`、`virtual: true` 或 `map_to_resources: true`，这些情况返回结构化错误，不按不完整 Vanilla 继续安装。
+支持 `virtual: true` 和 `map_to_resources: true` 的旧版 asset index：下载 content-addressed objects 后，按原始名称展开到共享 `assets/virtual/<index>`；`map_to_resources` 还会复制到实例游戏目录的 `resources/`。展开拒绝路径穿越、符号链接和非文件目标；缺少对象时返回安装不完整，要求修复。启动层为这类实例把 `--assetsDir` 指向展开目录。
 
 ## 实例解析与隔离
 
@@ -51,7 +51,7 @@
 
 1. 解析、读取或保存版本 JSON；新安装同时建立实例 manifest。
 2. 生成并下载 base 计划：client、普通 libraries、native libraries 和 asset index。
-3. 读取 asset index，生成并下载 asset objects 计划。
+3. 读取 asset index，生成并下载 asset objects 计划；legacy index 展开到 `assets/virtual/<index>`，`map_to_resources` 同时写入实例 `resources/`。
 4. 在一个 `spawn_blocking` 中按顺序调用 `merge_zip`，合并全部 native JAR。
 5. 返回带实例布局的 `InstallOutcome`。
 
@@ -61,7 +61,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 ## 进度、取消与错误
 
-`InstallPhase` 区分版本解析、读取、保存、base/assets 规划与下载、asset index 读取、native 合并和完成。
+`InstallPhase` 区分版本解析、读取、保存、base/assets 规划与下载、asset index 读取、legacy 资产展开、native 合并和完成。
 
 - `InstallEvent` 通过有界 Tokio mpsc 通道发送；接收方必须持续消费，事件接收端关闭不会使安装失败。
 - 下载事件携带阶段、当前目标、当前文件字节进度、可选总量和终态文件数。终态文件数包含完成、跳过、失败和取消，不能解释为成功数量。

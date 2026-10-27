@@ -36,12 +36,15 @@
 
 - `.github/workflows/release-plz.yml` 在 push `main` 和手动触发时运行
 - `release-plz release-pr` 根据 Conventional Commits 计算版本、更新 `CHANGELOG.md`、`Cargo.toml` 和 `Cargo.lock`，打开 `release-plz-*` PR
+- 当前 `0.x.y` 阶段启用 `features_always_increment_minor = true`：包含 `feat` 的 release PR 提升 minor（`0.4.4` → `0.5.0`），只包含 `fix`/`perf`/`refactor` 的 PR 仍提升 patch
 - `release-plz release` 只处理已合并的 release PR；`release_always = false` 确保普通提交不会直接打标签
 - 配置使用 `git_only = true`，不发布 crates.io
 - 所有 workspace crate 保持 release-enabled，release-plz 才会分析各 crate 的提交；`rmcl` 通过 `changelog_include` 把这些提交汇总到根目录 `CHANGELOG.md`
 - 只有 `rmcl` 设置 `git_tag_enable = true`；所有 package 共用 `git_tag_name = "v{{ version }}"`，从同一个应用 tag 读取上次发布版本
 - 只有 `rmcl` 设置 `changelog_update = true`；其他 crate 不写 changelog，也不创建 tag
 - release-plz 只创建 tag，不创建 GitHub Release（`git_release_enable = false`）；现有 `release.yml` 负责四平台构建、`SHA256SUMS` 和 Release
+
+`features_always_increment_minor` 是刻意偏离 Cargo 默认 0.x SemVer 规则的选择：默认 `feat` 只提升 patch，而 RMCL 在 0.x 阶段仍希望新功能获得可感知的 minor 版本。进入 1.x 后该配置与标准 SemVer 的 feature 规则一致。
 
 不能把 workspace 默认改成 `release = false` 再用 `changelog_include` 汇总：release-plz 只为 release-enabled package 计算 diff，被排除的 crate 即使写在 `changelog_include` 里也不会参与变更检测。这个约束的排查过程见 [release-plz 变更检测](../../notes/development/release_plz_change_detection.md)。
 

@@ -2,7 +2,7 @@
 
 状态：版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装、自定义实例创建和从已有实例创建加载器实例已实现
 
-日期：2026-10-26
+日期：2026-10-27
 
 ## 边界
 
@@ -122,9 +122,9 @@ processor 使用基础版本对应的 Java 要求，由 `JavaService` 选择或�
 
 实例页的“新建实例”进入创建页：
 
-- 输入 Minecraft 版本 ID。
+- 从 Mojang 官方版本列表选择 Minecraft 版本，可按版本 ID 搜索；默认当前实例的基础版本或最新正式版，列表加载失败时回退到手动输入 ID。
 - 选择 Vanilla / Fabric / Quilt / Forge / NeoForge。
-- 加载器页获取并选择加载器版本，稳定版默认优先。
+- 切换基础版本或加载器后自动获取加载器版本，稳定版默认优先。
 - 显示名称和实例 ID 可留空；ID 按基础版本和加载器自动生成，Forge/NeoForge 形如 `forge-<loader>-<base>`、`neoforge-<loader>-<base>`。
 - 创建完成后自动选中实例并进入实例详情。
 

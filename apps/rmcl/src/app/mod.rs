@@ -8,11 +8,13 @@ use gpui_kit::{
         ActiveTheme, Disableable, Icon, IndexPath, Sizable, Size, StyledExt,
         VirtualListScrollHandle, WindowExt,
         button::{Button, ButtonVariant, ButtonVariants},
+        combobox::{ComboboxEvent, ComboboxState},
         dialog::{DialogAction, DialogClose, DialogFooter},
         h_flex,
         input::{Input, InputEvent, InputState},
         notification::Notification,
         scroll::ScrollableElement,
+        searchable_list::SearchableListItem,
         select::{SearchableVec, SelectEvent, SelectState},
         spinner::Spinner,
         tag::Tag,
@@ -313,6 +315,59 @@ pub struct CatalogState {
     error: Option<String>,
 }
 
+/// One selectable base version in the create-instance version picker.
+#[derive(Clone)]
+pub struct CreateVersionChoice {
+    summary: VersionSummary,
+}
+
+impl CreateVersionChoice {
+    fn new(summary: VersionSummary) -> Self {
+        Self { summary }
+    }
+}
+
+impl SearchableListItem for CreateVersionChoice {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.summary.id.clone().into()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.summary.id
+    }
+
+    fn matches(&self, query: &str) -> bool {
+        self.summary
+            .id
+            .to_lowercase()
+            .contains(&query.to_lowercase())
+    }
+
+    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        h_flex()
+            .w_full()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .child(div().text_sm().child(self.summary.id.clone()))
+            .child(
+                h_flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .gap_2()
+                    .child(ui::common::type_tag(self.summary.version_type.as_deref()))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(short_date(self.summary.release_time.as_deref())),
+                    ),
+            )
+    }
+}
+
 enum Command {
     Install(VanillaInstallRequest),
     CreateInstance(CreateInstanceRequest),
@@ -368,6 +423,7 @@ pub struct LauncherApp {
     _update_task: Option<Task<()>>,
     _update_poll_task: Option<Task<()>>,
     create_base_input: Entity<InputState>,
+    create_version_select: Entity<ComboboxState<SearchableVec<CreateVersionChoice>>>,
     create_name_input: Entity<InputState>,
     create_id_input: Entity<InputState>,
     create_loader: Option<LoaderKind>,
@@ -542,6 +598,15 @@ impl LauncherApp {
         let server_address_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("例如 play.example.com:25565"));
         let create_base_input = cx.new(|cx| InputState::new(window, cx).placeholder("例如 1.21.1"));
+        let create_version_select = cx.new(|cx| {
+            ComboboxState::new(
+                SearchableVec::<CreateVersionChoice>::new(Vec::new()),
+                Vec::new(),
+                window,
+                cx,
+            )
+            .searchable(true)
+        });
         let create_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
         let create_id_input = cx.new(|cx| InputState::new(window, cx).placeholder("留空自动生成"));
@@ -614,6 +679,26 @@ impl LauncherApp {
                 }
             }),
         );
+        subscriptions.push(cx.subscribe_in(
+            &create_version_select,
+            window,
+            |this, _, event: &ComboboxEvent<SearchableVec<CreateVersionChoice>>, window, cx| {
+                let ComboboxEvent::Confirm(values) = event else {
+                    return;
+                };
+                let Some(base) = values.first() else {
+                    return;
+                };
+                if this.create_base_input.read(cx).value().trim() == base.as_str() {
+                    return;
+                }
+                this.create_base_input
+                    .update(cx, |state, cx| state.set_value(base.clone(), window, cx));
+                if this.create_loader.is_some() {
+                    this.fetch_loader_versions(window, cx);
+                }
+            },
+        ));
         subscriptions.push(
             cx.subscribe(&create_name_input, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
@@ -707,6 +792,7 @@ impl LauncherApp {
             _update_task: None,
             _update_poll_task: None,
             create_base_input,
+            create_version_select,
             create_name_input,
             create_id_input,
             create_loader: None,
@@ -1981,6 +2067,7 @@ impl LauncherApp {
                     Ok(Ok(manifest)) => {
                         view.catalog.manifest = Some(manifest);
                         view.catalog.error = None;
+                        view.populate_create_version_choices(window, cx);
                     }
                     Ok(Err(AppError::Cancelled)) => {}
                     Ok(Err(error)) => {
@@ -4721,6 +4808,61 @@ impl LauncherApp {
         self.fetch_loader_versions(window, cx);
     }
 
+    /// Rebuilds the create-instance version picker from the cached Mojang
+    /// manifest. When the user has not chosen a base version yet, the latest
+    /// release becomes the default.
+    fn populate_create_version_choices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(manifest) = self.catalog.manifest.clone() else {
+            return;
+        };
+        let current = self.create_base_input.read(cx).value().trim().to_owned();
+        let default = if current.is_empty()
+            && self.page == Page::CreateInstance
+            && self.create_copy_source.is_none()
+        {
+            manifest
+                .latest
+                .as_ref()
+                .and_then(|latest| latest.release.clone())
+                .or_else(|| manifest.versions.first().map(|version| version.id.clone()))
+        } else {
+            None
+        };
+        let base = default.clone().unwrap_or(current);
+        let choices = manifest
+            .versions
+            .iter()
+            .cloned()
+            .map(CreateVersionChoice::new)
+            .collect::<Vec<_>>();
+        self.create_version_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(choices), window, cx);
+            if base.is_empty() {
+                state.set_selected_values(&[], window, cx);
+            } else {
+                state.set_selected_values(std::slice::from_ref(&base), window, cx);
+            }
+        });
+        if let Some(default) = default {
+            self.create_base_input.update(cx, |state, cx| {
+                state.set_value(default, window, cx);
+            });
+        }
+    }
+
+    /// Mirrors the current base version into the picker without changing the
+    /// value stored in the form.
+    fn sync_create_version_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let base = self.create_base_input.read(cx).value().trim().to_owned();
+        self.create_version_select.update(cx, |state, cx| {
+            if base.is_empty() {
+                state.set_selected_values(&[], window, cx);
+            } else {
+                state.set_selected_values(std::slice::from_ref(&base), window, cx);
+            }
+        });
+    }
+
     fn open_create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(cancellation) = self.create_loader_cancel.take() {
             cancellation.cancel();
@@ -4740,6 +4882,10 @@ impl LauncherApp {
         self.create_base_input.update(cx, |state, cx| {
             state.set_value(base, window, cx);
         });
+        self.sync_create_version_selection(window, cx);
+        if self.catalog.manifest.is_none() && !self.catalog.loading {
+            self.load_catalog(false, window, cx);
+        }
         self.create_name_input.update(cx, |state, cx| {
             state.set_value("", window, cx);
         });
@@ -4795,7 +4941,7 @@ impl LauncherApp {
         };
         let base = self.create_base_input.read(cx).value().trim().to_owned();
         if base.is_empty() {
-            self.create_loader_error = Some("请先填写 Minecraft 版本。".to_owned());
+            self.create_loader_error = Some("请先选择 Minecraft 版本。".to_owned());
             cx.notify();
             return;
         }
@@ -4915,7 +5061,7 @@ impl LauncherApp {
         let base = self.create_base_input.read(cx).value().trim().to_owned();
         if base.is_empty() {
             window.push_notification(
-                Notification::error("请填写 Minecraft 版本。").title("无法创建实例"),
+                Notification::error("请选择 Minecraft 版本。").title("无法创建实例"),
                 cx,
             );
             return;
@@ -6275,6 +6421,7 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::ReadingAssetIndex) => "读取资源索引",
         TaskPhase::Install(InstallPhase::PlanningAssets) => "规划资源对象",
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
+        TaskPhase::Install(InstallPhase::MaterializingAssets) => "展开旧版资源",
         TaskPhase::Install(InstallPhase::DownloadingLoader) => "下载加载器文件",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",

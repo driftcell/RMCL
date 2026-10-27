@@ -7,7 +7,7 @@ use rmcl_domain::{Platform, ServerAddress};
 use rmcl_install::{InstallPlan, PlannedFileKind};
 use rmcl_instance::{InstanceLayout, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::JavaRuntime;
-use rmcl_minecraft::{FeatureMap, GameVersion};
+use rmcl_minecraft::{AssetCatalog, FeatureMap, GameVersion};
 
 use crate::{LaunchAccount, LaunchError};
 
@@ -64,6 +64,7 @@ impl LaunchOptions {
         platform: &Platform,
     ) -> Result<Self, LaunchError> {
         let repository = MinecraftLayout::new(absolute_path(instance.repository().root())?);
+        let assets_root = effective_assets_root(&repository, version);
         let instance = repository.instance(instance.id().clone(), instance.isolation());
         let jar_id = VersionId::new(version.jar.as_deref().unwrap_or(&version.id))?;
         let mut features = FeatureMap::new();
@@ -75,7 +76,7 @@ impl LaunchOptions {
             platform: platform.clone(),
             game_directory: instance.game_dir(),
             library_directory: instance.repository().libraries_dir(),
-            assets_root: instance.repository().assets_dir(),
+            assets_root,
             natives_directory: instance.natives_dir(platform),
             client_jar: instance.client_jar_path_for(Some(&jar_id)),
             libraries: Vec::new(),
@@ -134,9 +135,76 @@ impl LaunchOptions {
     }
 }
 
+/// Picks the directory supplied through `--assetsDir` for an instance.
+///
+/// Legacy `virtual` and `map_to_resources` indexes are materialized under
+/// `assets/virtual/<index>` by the installer, so the game must receive that
+/// flattened directory instead of the content-addressed `assets/` root.
+fn effective_assets_root(repository: &MinecraftLayout, version: &GameVersion) -> PathBuf {
+    let assets_root = repository.assets_dir();
+    let Some(index) = version.asset_index.as_ref() else {
+        return assets_root;
+    };
+    let Ok(index_path) = repository.asset_index_path(&index.id) else {
+        return assets_root;
+    };
+    let Ok(json) = std::fs::read_to_string(index_path) else {
+        return assets_root;
+    };
+    let Ok(catalog) = AssetCatalog::from_json(&json) else {
+        return assets_root;
+    };
+    if catalog.is_virtual == Some(true) || catalog.map_to_resources == Some(true) {
+        return repository
+            .virtual_assets_dir(&index.id)
+            .unwrap_or(assets_root);
+    }
+    assets_root
+}
+
 pub(crate) fn absolute_path(path: &Path) -> Result<PathBuf, LaunchError> {
     std::path::absolute(path).map_err(|source| LaunchError::AbsolutePath {
         path: path.display().to_string(),
         source,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn version(asset_index: &str) -> GameVersion {
+        GameVersion::from_json(&format!(
+            r#"{{"id":"test","assetIndex":{{"id":"{asset_index}","url":"https://example.invalid/index.json"}}}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn legacy_asset_index_uses_the_materialized_virtual_directory() {
+        let temporary = tempfile::tempdir().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+        let index_path = layout.asset_index_path("pre-1.6").unwrap();
+        std::fs::create_dir_all(index_path.parent().unwrap()).unwrap();
+        std::fs::write(&index_path, r#"{"map_to_resources":true,"objects":{}}"#).unwrap();
+
+        assert_eq!(
+            effective_assets_root(&layout, &version("pre-1.6")),
+            layout.virtual_assets_dir("pre-1.6").unwrap()
+        );
+    }
+
+    #[test]
+    fn modern_asset_index_uses_the_shared_asset_root() {
+        let temporary = tempfile::tempdir().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+        let index_path = layout.asset_index_path("17").unwrap();
+        std::fs::create_dir_all(index_path.parent().unwrap()).unwrap();
+        std::fs::write(&index_path, r#"{"objects":{}}"#).unwrap();
+
+        assert_eq!(
+            effective_assets_root(&layout, &version("17")),
+            layout.assets_dir()
+        );
+    }
 }
