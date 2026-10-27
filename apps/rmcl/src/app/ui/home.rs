@@ -346,23 +346,7 @@ impl LauncherApp {
                             .flex_1()
                             .min_w_0()
                             .gap_1()
-                            .child(
-                                h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_sm()
-                                            .font_medium()
-                                            .truncate()
-                                            .child(name.clone()),
-                                    )
-                                    .when_some(server_players(status, cx), |this, players| {
-                                        this.child(players)
-                                    }),
-                            )
+                            .child(div().text_sm().font_medium().truncate().child(name.clone()))
                             .child(server_status_line(loading, status, cx))
                             .child(
                                 div()
@@ -381,17 +365,38 @@ impl LauncherApp {
                             ),
                     )
                     .child(
-                        Button::new(format!("home-server-join-{id}"))
-                            .outline()
-                            .small()
-                            .icon(IconName::Play)
-                            .label("进入")
-                            .disabled(!can_join)
-                            .tooltip(join_tooltip)
-                            .accessibility_label(format!("进入 {name}"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.join_server(id.clone(), window, cx)
-                            })),
+                        v_flex()
+                            .w(rems(6.5))
+                            .flex_shrink_0()
+                            .self_stretch()
+                            .items_end()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w_full()
+                                    .min_h(px(16.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .when_some(server_players(status, cx), |this, players| {
+                                        this.child(players)
+                                    }),
+                            )
+                            .child(
+                                Button::new(format!("home-server-join-{id}"))
+                                    .outline()
+                                    .small()
+                                    .icon(IconName::Play)
+                                    .label("进入")
+                                    .w_full()
+                                    .disabled(!can_join)
+                                    .tooltip(join_tooltip)
+                                    .accessibility_label(format!("进入 {name}"))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.join_server(id.clone(), window, cx)
+                                    })),
+                            ),
                     )
                     .into_any_element(),
             );
