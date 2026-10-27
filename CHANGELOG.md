@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0](https://github.com/driftcell/RMCL/compare/v0.7.1...v0.8.0) - 2026-10-27
 
+### Highlights
+
+- 主页“快速连接”改为与联机精选一致的全宽服务器卡片，显示真实 favicon、在线人数、延迟和 MOTD；最近实例与快速操作卡片等高对齐。
+- 联机页“启动目标”收进“收藏 / 发现”标签行，日志入口移到侧栏底部。
+- 设置页修正启动器可见性：保持显示时不再隐藏窗口，游戏运行时隐藏会在 macOS 上真正隐藏应用并在游戏结束后恢复。
+- 更新检查状态直接显示在按钮内；用户目录下的只读路径统一缩写为 `~/…`。
+- 普通实例不再重复显示“隔离”徽章，仅旧共享实例显示“共享”。
+
 ### Added
 
 - *(ui)* abbreviate home paths in read-only labels ([#62](https://github.com/driftcell/RMCL/pull/62))
