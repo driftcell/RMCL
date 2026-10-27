@@ -97,9 +97,9 @@ impl LauncherApp {
             Page::CreateInstance.subtitle()
         };
         let base_section_subtitle = if copy_mode {
-            "基础版本来自现有实例；新实例会启用版本隔离。"
+            "基础版本来自现有实例。"
         } else {
-            "基础版本会自动安装或复用；新实例默认启用版本隔离。"
+            "基础版本会自动安装或复用。"
         };
 
         v_flex()
@@ -146,7 +146,7 @@ impl LauncherApp {
                         .p_3()
                         .child(
                             div().text_sm().child(format!(
-                                "正在为「{name}」添加 Mod 加载器。将创建新的隔离实例并复制当前实例的内容；原实例不会被修改。"
+                                "正在为「{name}」添加 Mod 加载器。将创建新实例并复制当前实例的内容；原实例不会被修改。"
                             )),
                         ),
                 )
@@ -451,7 +451,7 @@ impl LauncherApp {
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
                                             .child(if copy_mode {
-                                                "会创建新的隔离实例并复制当前实例内容；原实例不会被修改。"
+                                                "会创建新实例并复制当前实例内容；原实例不会被修改。"
                                             } else {
                                                 "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。"
                                             }),

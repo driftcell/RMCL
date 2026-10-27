@@ -259,10 +259,8 @@ impl LauncherApp {
                                         .small(),
                                 )
                             })
-                            .child(if isolated {
-                                Tag::secondary().child("隔离").small()
-                            } else {
-                                Tag::new().outline().child("共享").small()
+                            .when(!isolated, |this| {
+                                this.child(Tag::new().outline().child("共享").small())
                             })
                             .when(manifest_error.is_some(), |this| {
                                 this.child(Tag::danger().child("配置异常").small())

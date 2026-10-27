@@ -140,10 +140,10 @@ impl LauncherApp {
                                                     .small(),
                                             )
                                             .when_some(selected, |this, version| {
-                                                this.child(if version.is_isolated() {
-                                                    Tag::secondary().child("隔离").small()
-                                                } else {
-                                                    Tag::new().outline().child("共享").small()
+                                                this.when(!version.is_isolated(), |this| {
+                                                    this.child(
+                                                        Tag::new().outline().child("共享").small(),
+                                                    )
                                                 })
                                             }),
                                     )
@@ -560,10 +560,8 @@ impl LauncherApp {
                     ),
             )
             .child(type_tag(version.version_type.as_deref()))
-            .child(if version.is_isolated() {
-                Tag::secondary().child("隔离").small()
-            } else {
-                Tag::new().outline().child("共享").small()
+            .when(!version.is_isolated(), |this| {
+                this.child(Tag::new().outline().child("共享").small())
             })
             .child(
                 Button::new(format!("home-row-play-{id}"))
