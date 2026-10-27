@@ -3,15 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(target_os = "macos")]
-use std::path::Path;
-
 use gpui_kit::{
     assets::IconName,
     base::{Selectable, StyledExt},
     component::{
         ActiveTheme, Disableable, Icon, Sizable, Size, WindowExt,
-        button::{Button, ButtonVariant, ButtonVariants},
+        button::{Button, ButtonVariants},
         h_flex,
         input::{Input, InputState},
         notification::Notification,
@@ -107,20 +104,16 @@ impl LauncherApp {
         self.flush_pending_skin_profile(window, cx);
         self.sync_skin_viewer(cx);
 
-        let stage_width = if window.viewport_size().width
-            >= layout::rem_px(cx, layout::SKIN_STAGE_WIDE_MIN_VIEWPORT)
-        {
-            layout::rem_px(cx, layout::SKIN_STAGE_WIDE)
-        } else {
-            layout::rem_px(cx, layout::SKIN_STAGE)
-        };
-        let stage_height = (stage_width * 1.24).round();
+        let viewport_width = window.viewport_size().width;
+        let content_width = viewport_width
+            - layout::rem_px(cx, layout::SIDEBAR_WIDTH)
+            - layout::rem_px(cx, rems(3.0));
+        let stage_width = (content_width * 0.46).clamp(
+            layout::rem_px(cx, layout::SKIN_STAGE_MIN),
+            layout::rem_px(cx, layout::SKIN_STAGE_MAX),
+        );
         self.skin_viewer.update(cx, |viewer, cx| {
-            viewer.set_size(
-                stage_width.as_f32() as u32,
-                stage_height.as_f32() as u32,
-                cx,
-            )
+            viewer.set_width(stage_width.as_f32().round() as u32, cx)
         });
 
         let account = self.selected_microsoft_account().cloned();
@@ -196,62 +189,56 @@ impl LauncherApp {
                     .min_w_0()
                     .min_h_0()
                     .items_stretch()
-                    .overflow_y_scrollbar()
                     .child(
                         card(cx)
-                            .child(section_title(
-                                "当前皮肤",
-                                "这里显示的是 Minecraft 服务中的激活皮肤。",
-                                cx,
-                            ))
+                            .id("skin-settings-card")
+                            .h_full()
+                            .min_h_0()
                             .when_some(profile_error, |this, error| {
                                 this.child(error_banner("无法同步皮肤", error, cx))
                             })
                             .when_some(texture_error, |this, error| {
                                 this.child(error_banner("皮肤预览不可用", error, cx))
                             })
-                            .child(self.render_profile_summary(account.clone(), profile, cx))
+                            .child(self.render_profile_summary(
+                                account.clone(),
+                                profile,
+                                profile_loading,
+                                cx,
+                            ))
                             .child(
-                                h_flex()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("skin-reset")
-                                            .label("恢复默认…")
-                                            .outline()
-                                            .small()
-                                            .disabled(
-                                                profile.is_none()
-                                                    || matches!(
-                                                        self.skin_apply,
-                                                        ApplyState::Applying { .. }
-                                                    ),
-                                            )
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.confirm_reset_skin(window, cx);
-                                            })),
-                                    )
-                                    .when(profile_loading, |this| {
-                                        this.child(
-                                            h_flex()
-                                                .gap_2()
-                                                .child(
-                                                    Spinner::new()
-                                                        .with_size(Size::XSmall)
-                                                        .color(cx.theme().primary),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(cx.theme().muted_foreground)
-                                                        .child("正在同步官方皮肤…"),
-                                                ),
-                                        )
-                                    }),
+                                v_flex().gap_2().child(field_label("皮肤站")).child(
+                                    h_flex()
+                                        .gap_2()
+                                        .flex_wrap()
+                                        .child(skin_site_button(
+                                            "littleskin",
+                                            "LittleSkin",
+                                            "https://littleskin.cn/skinlib",
+                                        ))
+                                        .child(skin_site_button(
+                                            "namemc",
+                                            "NameMC",
+                                            "https://namemc.com/minecraft-skins",
+                                        ))
+                                        .child(skin_site_button(
+                                            "minecraftskins",
+                                            "Minecraft Skins",
+                                            "https://www.minecraftskins.com/",
+                                        )),
+                                ),
                             )
                             .child(div().h(px(1.)).bg(cx.theme().border))
                             .child(self.render_skin_editor(account.uuid(), cx))
                             .child(div().h(px(1.)).bg(cx.theme().border))
-                            .child(self.render_recent_skins(cx)),
+                            .child(
+                                v_flex()
+                                    .id("skin-recent")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scrollbar()
+                                    .child(self.render_recent_skins(cx)),
+                            ),
                     ),
             )
     }
@@ -260,6 +247,7 @@ impl LauncherApp {
         &self,
         account: MicrosoftAccount,
         profile: Option<&super::super::skin_service::LoadedProfile>,
+        loading: bool,
         cx: &App,
     ) -> impl IntoElement {
         let profile = profile.map(|loaded| &loaded.profile).unwrap_or(&account);
@@ -305,11 +293,23 @@ impl LauncherApp {
                             .min_w_0()
                             .gap_1()
                             .child(
-                                div()
-                                    .text_lg()
-                                    .font_semibold()
-                                    .truncate()
-                                    .child(profile.username().to_owned()),
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .text_lg()
+                                            .font_semibold()
+                                            .truncate()
+                                            .child(profile.username().to_owned()),
+                                    )
+                                    .when(loading, |this| {
+                                        this.child(
+                                            Spinner::new()
+                                                .with_size(Size::XSmall)
+                                                .color(cx.theme().primary),
+                                        )
+                                    }),
                             )
                             .child(
                                 div()
@@ -722,58 +722,33 @@ impl LauncherApp {
     }
 
     fn pick_skin_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(target_os = "macos")]
-        let start = self
-            .services
-            .config_store
-            .path()
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-
-        #[cfg(target_os = "macos")]
-        {
-            match pick_skin_file_macos(&start) {
-                Ok(Some(path)) => self.load_skin_path(path, window, cx),
-                Ok(None) => {}
-                Err(error) => {
-                    window.push_notification(Notification::error(error).title("选择皮肤失败"), cx);
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("选择 PNG 皮肤".into()),
+        });
+        self._prompt_task = Some(
+            cx.spawn_in(window, async move |this, cx| match prompt.await {
+                Ok(Ok(Some(mut paths))) if !paths.is_empty() => {
+                    let path = paths.remove(0);
+                    let _ = this
+                        .update_in(cx, |view, window, cx| view.load_skin_path(path, window, cx));
                 }
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let prompt = cx.prompt_for_paths(PathPromptOptions {
-                files: true,
-                directories: false,
-                multiple: false,
-                prompt: Some("选择 PNG 皮肤".into()),
-            });
-            self._prompt_task = Some(cx.spawn_in(
-                window,
-                async move |this, cx| match prompt.await {
-                    Ok(Ok(Some(mut paths))) if !paths.is_empty() => {
-                        let path = paths.remove(0);
-                        let _ = this.update_in(cx, |view, window, cx| {
-                            view.load_skin_path(path, window, cx)
-                        });
-                    }
-                    Ok(Ok(_)) => {}
-                    Ok(Err(error)) => {
-                        let _ = this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error(format!("无法打开文件选择器：{error}"))
-                                    .title("选择皮肤失败"),
-                                cx,
-                            );
-                        });
-                    }
-                    Err(_) => {}
-                },
-            ));
-            cx.notify();
-        }
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error(format!("无法打开文件选择器：{error}"))
+                                .title("选择皮肤失败"),
+                            cx,
+                        );
+                    });
+                }
+                Err(_) => {}
+            }),
+        );
+        cx.notify();
     }
 
     fn load_skin_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1010,111 +985,6 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn confirm_reset_skin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = cx.entity().downgrade();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            alert
-                .confirm()
-                .title("恢复默认皮肤？")
-                .description("当前皮肤会被移除，账户将使用默认外观。之后仍可重新上传。")
-                .ok_text("恢复默认")
-                .ok_variant(ButtonVariant::Danger)
-                .on_ok({
-                    let view = view.clone();
-                    move |_, window, cx| {
-                        let Some(view) = view.upgrade() else {
-                            return true;
-                        };
-                        view.update(cx, |view, cx| view.reset_skin(window, cx));
-                        true
-                    }
-                })
-        });
-    }
-
-    fn reset_skin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.skin_apply.is_idle() {
-            return;
-        }
-        let Some(account) = self.selected_microsoft_account().cloned() else {
-            return;
-        };
-        let account_uuid = account.uuid();
-        let accounts = self.services.microsoft_accounts.clone();
-        let runtime = self.services.runtime.handle().clone();
-        let task = cx.spawn_in(window, async move |this, cx| {
-            let reset_account = account.clone();
-            let result = runtime
-                .spawn(async move {
-                    accounts
-                        .reset_skin(&reset_account, &CancellationToken::new())
-                        .await
-                })
-                .await;
-            let _ = this.update_in(cx, move |view, window, cx| {
-                if !matches!(view.skin_apply, ApplyState::Applying { .. })
-                    || view
-                        .selected_microsoft_account()
-                        .map(MicrosoftAccount::uuid)
-                        != Some(account_uuid)
-                {
-                    view.skin_apply = ApplyState::Idle;
-                    cx.notify();
-                    return;
-                }
-                match result {
-                    Ok(Ok(Some(profile))) => {
-                        view.apply_microsoft_profile(profile.clone(), window, cx);
-                        view.skin_service.update(cx, |service, cx| {
-                            service.accept_profile(profile, None, cx);
-                        });
-                        view.skin_editor.draft = None;
-                        view.start_skin_cooldown(Duration::from_secs(2), cx);
-                        window.push_notification(
-                            Notification::success("已恢复默认皮肤，重新进入游戏后生效。")
-                                .title("皮肤已恢复"),
-                            cx,
-                        );
-                    }
-                    Ok(Ok(None)) => {
-                        view.skin_service.update(cx, |service, cx| {
-                            service.refresh_profile(account, cx);
-                        });
-                        view.start_skin_cooldown(Duration::from_secs(2), cx);
-                        window.push_notification(
-                            Notification::info("已请求恢复默认皮肤，正在同步结果。")
-                                .title("皮肤已恢复"),
-                            cx,
-                        );
-                    }
-                    Ok(Err(error)) => {
-                        let (message, cooldown) = describe_apply_error(&error);
-                        if let Some(cooldown) = cooldown {
-                            view.start_skin_cooldown(cooldown, cx);
-                        } else {
-                            view.skin_apply = ApplyState::Idle;
-                        }
-                        window.push_notification(
-                            Notification::error(message).title("恢复默认皮肤失败"),
-                            cx,
-                        );
-                    }
-                    Err(error) => {
-                        view.skin_apply = ApplyState::Idle;
-                        window.push_notification(
-                            Notification::error(format!("皮肤重置任务失败：{error}"))
-                                .title("恢复默认皮肤失败"),
-                            cx,
-                        );
-                    }
-                }
-                cx.notify();
-            });
-        });
-        self.skin_apply = ApplyState::Applying { _task: task };
-        cx.notify();
-    }
-
     fn start_skin_cooldown(&mut self, duration: Duration, cx: &mut Context<Self>) {
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(duration).await;
@@ -1142,6 +1012,16 @@ fn variant_label(variant: SkinVariant) -> &'static str {
         SkinVariant::Classic => "经典模型",
         SkinVariant::Slim => "纤细模型",
     }
+}
+
+fn skin_site_button(id: &'static str, label: &'static str, url: &'static str) -> Button {
+    Button::new(format!("skin-site-{id}"))
+        .label(label)
+        .link()
+        .small()
+        .icon(IconName::ExternalLink)
+        .tooltip("在浏览器中打开")
+        .on_click(move |_, _, cx| cx.open_url(url))
 }
 
 fn describe_apply_error(error: &MicrosoftAccountServiceError) -> (String, Option<Duration>) {
@@ -1204,29 +1084,4 @@ fn describe_skin_source_error(error: &SkinSourceError) -> String {
         SkinSourceError::Encode(_) => "无法处理这张 PNG 图片。".to_owned(),
         SkinSourceError::Io { .. } => "无法读取本地文件。".to_owned(),
     }
-}
-
-#[cfg(target_os = "macos")]
-fn pick_skin_file_macos(start: &Path) -> Result<Option<PathBuf>, String> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
-    use objc2_foundation::{NSString, NSURL};
-
-    let marker =
-        MainThreadMarker::new().ok_or_else(|| "文件选择器必须在主线程打开。".to_owned())?;
-    let panel = NSOpenPanel::openPanel(marker);
-    panel.setCanChooseDirectories(false);
-    panel.setCanChooseFiles(true);
-    panel.setAllowsMultipleSelection(false);
-    panel.setResolvesAliases(false);
-    if start.is_dir()
-        && let Some(url) = NSURL::from_directory_path(start)
-    {
-        panel.setDirectoryURL(Some(&url));
-    }
-    panel.setPrompt(Some(&NSString::from_str("选择")));
-    if panel.runModal() != NSModalResponseOK {
-        return Ok(None);
-    }
-    Ok(panel.URLs().iter().find_map(|url| url.to_file_path()))
 }

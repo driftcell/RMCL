@@ -10,12 +10,8 @@ use std::{
 
 use gpui_kit::{
     assets::IconName,
-    base::Selectable,
-    component::{
-        ActiveTheme, Icon, Sizable, Size,
-        button::{Button, ButtonVariants},
-        h_flex,
-    },
+    base::ElementExt,
+    component::{ActiveTheme, Icon, Sizable, Size},
     prelude::FluentBuilder,
     *,
 };
@@ -23,16 +19,15 @@ use image::{Frame, ImageBuffer, Rgba as ImageRgba, RgbaImage};
 use rmcl_app::{SkinPreviewRenderer, SkinTexture};
 use rmcl_auth::SkinVariant;
 
-const DEFAULT_PREVIEW_WIDTH: u32 = 520;
+const DEFAULT_PREVIEW_WIDTH: u32 = 432;
 const DEFAULT_PREVIEW_HEIGHT: u32 = 620;
 const AUTO_ROTATE_SPEED: f32 = 0.22;
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RotationMode {
-    Static,
     Auto,
-    Dragging { resume_auto: bool },
+    Dragging,
 }
 
 pub struct RenderedPreview {
@@ -40,6 +35,7 @@ pub struct RenderedPreview {
 }
 
 pub struct SkinViewer {
+    runtime: tokio::runtime::Handle,
     texture: Option<SkinTexture>,
     variant: SkinVariant,
     source_key: Option<String>,
@@ -50,14 +46,19 @@ pub struct SkinViewer {
     last_frame: Option<Instant>,
     last_render: Option<Instant>,
     dirty: bool,
+    pending_render: Option<u64>,
+    next_render: u64,
     cache: Option<RenderedPreview>,
+    layout_width: u32,
     width: u32,
     height: u32,
+    _render_task: Option<Task<()>>,
 }
 
 impl SkinViewer {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(runtime: tokio::runtime::Handle, _cx: &mut Context<Self>) -> Self {
         Self {
+            runtime,
             texture: None,
             variant: SkinVariant::Classic,
             source_key: None,
@@ -68,15 +69,31 @@ impl SkinViewer {
             last_frame: None,
             last_render: None,
             dirty: true,
+            pending_render: None,
+            next_render: 0,
             cache: None,
+            layout_width: DEFAULT_PREVIEW_WIDTH,
             width: DEFAULT_PREVIEW_WIDTH,
             height: DEFAULT_PREVIEW_HEIGHT,
+            _render_task: None,
         }
     }
 
-    /// Sets the raster size of the stage. This is a physical/raster boundary,
-    /// so it is one of the few places that intentionally uses pixels.
-    pub fn set_size(&mut self, width: u32, height: u32, cx: &mut Context<Self>) {
+    /// Sets the width of the preview column.
+    pub fn set_width(&mut self, width: u32, cx: &mut Context<Self>) {
+        let width = width.max(1);
+        if self.layout_width == width {
+            return;
+        }
+        self.layout_width = width;
+        self.dirty = true;
+        self.invalidate_render();
+        cx.notify();
+    }
+
+    /// Applies the height measured during prepaint. This is a physical/raster
+    /// boundary, so it intentionally works in pixels.
+    fn resize(&mut self, width: u32, height: u32, cx: &mut Context<Self>) {
         let width = width.max(1);
         let height = height.max(1);
         if self.width == width && self.height == height {
@@ -85,6 +102,7 @@ impl SkinViewer {
         self.width = width;
         self.height = height;
         self.dirty = true;
+        self.invalidate_render();
         cx.notify();
     }
 
@@ -111,6 +129,7 @@ impl SkinViewer {
             self.pitch = 0.10;
         }
         self.dirty = true;
+        self.invalidate_render();
         cx.notify();
     }
 
@@ -121,6 +140,7 @@ impl SkinViewer {
         self.texture = None;
         self.source_key = None;
         self.dirty = true;
+        self.invalidate_render();
         cx.notify();
     }
 
@@ -133,44 +153,16 @@ impl SkinViewer {
         cx.notify();
     }
 
-    pub fn toggle_auto_rotation(&mut self, cx: &mut Context<Self>) {
-        self.rotation = if matches!(self.rotation, RotationMode::Auto) {
-            RotationMode::Static
-        } else {
-            RotationMode::Auto
-        };
-        self.last_frame = None;
-        cx.notify();
-    }
-
-    fn set_front(&mut self, cx: &mut Context<Self>) {
-        self.yaw = 0.0;
-        self.pitch = 0.08;
-        self.rotation = RotationMode::Static;
-        self.last_frame = None;
-        self.dirty = true;
-        cx.notify();
-    }
-
-    fn set_back(&mut self, cx: &mut Context<Self>) {
-        self.yaw = std::f32::consts::PI;
-        self.pitch = 0.08;
-        self.rotation = RotationMode::Static;
-        self.last_frame = None;
-        self.dirty = true;
-        cx.notify();
-    }
-
     fn begin_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let resume_auto = matches!(self.rotation, RotationMode::Auto);
-        self.rotation = RotationMode::Dragging { resume_auto };
+        self.rotation = RotationMode::Dragging;
         self.dragging_from = Some(position);
         self.last_frame = None;
+        self.dirty = true;
         cx.notify();
     }
 
     fn drag_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        if !matches!(self.rotation, RotationMode::Dragging { .. }) {
+        if !matches!(self.rotation, RotationMode::Dragging) {
             return;
         }
         let Some(previous) = self.dragging_from.replace(position) else {
@@ -185,26 +177,30 @@ impl SkinViewer {
     }
 
     fn finish_drag(&mut self, cx: &mut Context<Self>) {
-        let RotationMode::Dragging { resume_auto } = self.rotation else {
+        if self.rotation != RotationMode::Dragging {
             return;
-        };
-        self.rotation = if resume_auto {
-            RotationMode::Auto
-        } else {
-            RotationMode::Static
-        };
+        }
+        self.rotation = RotationMode::Auto;
         self.dragging_from = None;
         self.last_frame = None;
         self.dirty = true;
         cx.notify();
     }
 
-    fn ensure_preview(&mut self, window: &mut Window) {
-        let Some(texture) = self.texture.as_ref() else {
-            self.cache = None;
+    fn invalidate_render(&mut self) {
+        self.pending_render = None;
+        self._render_task = None;
+    }
+
+    /// Starts at most one background render. While it runs, newer input only
+    /// marks the preview dirty; the finished frame is discarded in favor of the
+    /// latest pose. This keeps dragging responsive even when rasterization is
+    /// slower than the input rate.
+    fn request_preview(&mut self, cx: &mut Context<Self>) {
+        if self.texture.is_none() {
             return;
-        };
-        if !self.dirty && self.cache.is_some() {
+        }
+        if self.pending_render.is_some() || !self.dirty {
             return;
         }
         if matches!(self.rotation, RotationMode::Auto)
@@ -214,16 +210,58 @@ impl SkinViewer {
         {
             return;
         }
-        let renderer = SkinPreviewRenderer::new(self.width, self.height);
-        let image = renderer.render(texture, self.variant, self.yaw, self.pitch, 0.0);
-        if let Some(previous) = self.cache.take() {
-            let _ = window.drop_image(previous.image);
-        }
-        self.cache = Some(RenderedPreview {
-            image: render_image(image),
-        });
+        let Some(texture) = self.texture.clone() else {
+            return;
+        };
+        let fast = matches!(self.rotation, RotationMode::Auto | RotationMode::Dragging);
+        let width = self.width;
+        let height = self.height;
+        let variant = self.variant;
+        let yaw = self.yaw;
+        let pitch = self.pitch;
+
+        self.next_render = self.next_render.wrapping_add(1);
+        let request = self.next_render;
+        self.pending_render = Some(request);
         self.dirty = false;
+
+        let runtime = self.runtime.clone();
+        self._render_task = Some(cx.spawn(async move |this, cx| {
+            let image = runtime
+                .spawn(async move {
+                    let renderer = if fast {
+                        SkinPreviewRenderer::fast(width, height)
+                    } else {
+                        SkinPreviewRenderer::new(width, height)
+                    };
+                    render_image(renderer.render(&texture, variant, yaw, pitch, 0.0))
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.finish_preview(request, image.ok(), window, cx);
+            });
+        }));
+    }
+
+    fn finish_preview(
+        &mut self,
+        request: u64,
+        image: Option<Arc<RenderImage>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_render != Some(request) {
+            return;
+        }
+        self.pending_render = None;
         self.last_render = Some(Instant::now());
+        if let Some(image) = image {
+            if let Some(previous) = self.cache.take() {
+                let _ = window.drop_image(previous.image);
+            }
+            self.cache = Some(RenderedPreview { image });
+        }
+        cx.notify();
     }
 
     fn ambient_color(&self, cx: &App) -> Hsla {
@@ -277,20 +315,25 @@ impl Render for SkinViewer {
         } else {
             self.last_frame = None;
         }
-        self.ensure_preview(window);
+        self.request_preview(cx);
 
         let tint = self.ambient_color(cx);
         let theme = cx.theme();
         let has_texture = self.texture.is_some();
-        let auto_rotation = matches!(self.rotation, RotationMode::Auto);
+        let measured = cx.entity().downgrade();
 
         div()
             .relative()
-            // NOTE: The preview is a raster surface. The skin page resolves its
-            // layout size in rem and passes the result here as pixels.
-            .w(px(self.width as f32))
-            .h(px(self.height as f32))
+            // NOTE: The preview is a raster surface. The page fixes the width;
+            // the height fills the content row so both cards share an edge.
+            .w(px(self.layout_width as f32))
+            .h_full()
             .flex_shrink_0()
+            .on_prepaint(move |bounds, _, cx| {
+                let width = bounds.size.width.as_f32().round() as u32;
+                let height = bounds.size.height.as_f32().round() as u32;
+                let _ = measured.update(cx, |this, cx| this.resize(width, height, cx));
+            })
             .rounded(theme.radius_lg)
             .overflow_hidden()
             .border_1()
@@ -353,41 +396,6 @@ impl Render for SkinViewer {
                     .on_mouse_up_out(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, _, cx| this.finish_drag(cx)),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .bottom_4()
-                    .justify_center()
-                    .gap_2()
-                    .child(
-                        Button::new("skin-view-front")
-                            .label("正面")
-                            .ghost()
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| this.set_front(cx))),
-                    )
-                    .child(
-                        Button::new("skin-view-back")
-                            .label("背面")
-                            .ghost()
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| this.set_back(cx))),
-                    )
-                    .child(
-                        Button::new("skin-view-auto")
-                            .label(if auto_rotation {
-                                "自动旋转中"
-                            } else {
-                                "自动旋转"
-                            })
-                            .outline()
-                            .selected(auto_rotation)
-                            .small()
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_auto_rotation(cx))),
                     ),
             )
     }

@@ -92,7 +92,7 @@
 - Mod 和资源包的启用/禁用按钮，以及所有条目的删除确认。
 - 扫描警告和错误横幅；导入部分失败时汇总成功和失败数量。
 
-导入按钮使用原生文件选择器；macOS 使用 `NSOpenPanel`，其他平台使用 GPUI 的路径选择接口。文件操作通过应用层 Tokio runtime 的 `spawn_blocking` 执行，不阻塞 UI 线程。
+导入按钮统一使用 GPUI 的异步路径选择接口。不能从点击回调里同步调用 `NSOpenPanel::runModal`：嵌套的原生 modal 循环会在 GPUI 仍持有 `App` 可变借用时处理定时器，触发 `RefCell already borrowed` panic。文件操作通过应用层 Tokio runtime 的 `spawn_blocking` 执行，不阻塞 UI 线程。
 
 ## 当前限制
 

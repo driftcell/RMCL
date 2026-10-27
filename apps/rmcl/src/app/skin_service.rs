@@ -450,8 +450,8 @@ impl SkinService {
     fn start_recent_load(&mut self, cx: &mut Context<Self>) {
         let previous = self.recent.value().cloned();
         let previous_for_state = previous.clone();
-        let request = self.recent_request;
         self.recent_request = self.recent_request.wrapping_add(1);
+        let request = self.recent_request;
         let library = self.services.skin_library.clone();
         let runtime = self.services.runtime.handle().clone();
         let task = cx.spawn(async move |this, cx| {
