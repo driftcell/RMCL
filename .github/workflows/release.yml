@@ -213,7 +213,7 @@ jobs:
         run: security delete-keychain "${KEYCHAIN_PATH}" || true
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rmcl-${{ matrix.artifact }}
           path: dist/*
