@@ -72,7 +72,7 @@ impl LauncherApp {
                     .child(
                         h_flex()
                             .w_full()
-                            .items_start()
+                            .items_stretch()
                             .gap_4()
                             .child(
                                 v_flex()
@@ -304,13 +304,6 @@ impl LauncherApp {
             .cloned()
             .collect::<Vec<_>>();
         let (can_join, join_tooltip) = self.server_join_ready();
-        let selected_name = self
-            .selected_version()
-            .map(|version| version.display_name().to_owned());
-        let subtitle = match selected_name {
-            Some(name) => format!("使用「{name}」直接进入"),
-            None => "选择实例后可直接进入".to_owned(),
-        };
         let manage_label = if total > 3 {
             format!("查看全部 {total} 个")
         } else {
@@ -413,7 +406,7 @@ impl LauncherApp {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(section_title("快速连接", &subtitle, cx)),
+                            .child(section_title("快速连接", "", cx)),
                     )
                     .when(total > 0, |this| {
                         this.child(
@@ -498,6 +491,7 @@ impl LauncherApp {
             );
         }
         card(cx)
+            .h_full()
             .child(section_title("最近实例", "", cx))
             .when(self.installed_versions.is_empty(), |this| {
                 this.child(
@@ -580,6 +574,7 @@ impl LauncherApp {
 
     fn render_quick_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         card(cx)
+            .h_full()
             .child(section_title("快速操作", "", cx))
             .child(
                 Button::new("quick-install")
@@ -599,6 +594,7 @@ impl LauncherApp {
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| this.open_game_folder(window, cx))),
             )
+            .child(div().flex_1().min_h_0())
             .child(
                 v_flex()
                     .w_full()
@@ -618,16 +614,6 @@ impl LauncherApp {
                             .font_family(cx.theme().mono_font_family.clone())
                             .truncate()
                             .child(self.config.java_store.display().to_string()),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(if self.config.auto_install_java {
-                                "Java 自动获取已开启"
-                            } else {
-                                "Java 自动获取已关闭"
-                            }),
                     ),
             )
     }
