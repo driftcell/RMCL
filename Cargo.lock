@@ -5519,7 +5519,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "sysinfo 0.39.6",
  "tar",
  "tempfile",
