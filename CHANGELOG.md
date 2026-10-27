@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/driftcell/RMCL/compare/v0.7.0...v0.7.1) - 2026-10-27
+
+### Fixed
+
+- *(home)* align quick-connect player count and action ([#58](https://github.com/driftcell/RMCL/pull/58))
+
 ## [0.7.0](https://github.com/driftcell/RMCL/compare/v0.6.1...v0.7.0) - 2026-10-27
 
 ### Added
