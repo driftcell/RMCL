@@ -8,7 +8,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "types": ["bun"]
   },
   "include": ["src/**/*", "server.ts", "scripts/**/*"]
 }
