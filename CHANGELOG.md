@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/driftcell/RMCL/compare/v0.6.0...v0.6.1) - 2026-10-27
+
+### Fixed
+
+- *(download)* run mirror probe on the Tokio runtime ([#53](https://github.com/driftcell/RMCL/pull/53))
+
 ## [0.6.0](https://github.com/driftcell/RMCL/compare/v0.5.1...v0.6.0) - 2026-10-27
 
 ### Added
