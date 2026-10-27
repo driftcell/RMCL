@@ -16,7 +16,9 @@ use gpui_kit::{
 };
 
 use super::super::{LauncherApp, Page};
-use super::common::{card, field_label, format_size, help, mono, page_header, section_title};
+use super::common::{
+    card, display_path, field_label, format_size, help, mono, page_header, section_title,
+};
 use super::layout;
 use rmcl_store::DownloadSourcePreference;
 
@@ -83,12 +85,9 @@ impl LauncherApp {
                                                         cx.theme().mono_font_family.clone(),
                                                     )
                                                     .text_sm()
-                                                    .child(
-                                                        self.config
-                                                            .minecraft_root
-                                                            .display()
-                                                            .to_string(),
-                                                    ),
+                                                    .child(display_path(
+                                                        &self.config.minecraft_root,
+                                                    )),
                                             )
                                             .child(
                                                 Button::new("settings-browse-root")
@@ -110,7 +109,7 @@ impl LauncherApp {
                                     .w_full()
                                     .gap_2()
                                     .child(field_label("Java 目录"))
-                                    .child(mono(self.config.java_store.display().to_string(), cx))
+                                    .child(mono(display_path(&self.config.java_store), cx))
                                     .child(help("重启 RMCL 后生效。", cx)),
                             )
                             .child(
@@ -462,7 +461,7 @@ impl LauncherApp {
                                     .gap_1()
                                     .child(field_label("配置文件"))
                                     .child(mono(
-                                        self.services.config_store.path().display().to_string(),
+                                        display_path(self.services.config_store.path()),
                                         cx,
                                     )),
                             )
