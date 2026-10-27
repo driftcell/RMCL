@@ -21,7 +21,7 @@ use url::Url;
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 fn sha1(bytes: &[u8]) -> String {
-    format!("{:x}", Sha1::digest(bytes))
+    hex::encode(Sha1::digest(bytes))
 }
 
 fn write(path: &Path, bytes: &[u8]) {

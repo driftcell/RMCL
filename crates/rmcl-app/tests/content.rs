@@ -62,11 +62,11 @@ fn fabric_mod_bytes_with_depends(id: &str, version: &str, depends: serde_json::V
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {
-    format!("{:x}", Sha1::digest(bytes)).parse().unwrap()
+    hex::encode(Sha1::digest(bytes)).parse().unwrap()
 }
 
 fn sha1_text(bytes: &[u8]) -> String {
-    format!("{:x}", Sha1::digest(bytes))
+    hex::encode(Sha1::digest(bytes))
 }
 
 async fn mod_server(bytes: Vec<u8>) -> (Url, tokio::task::JoinHandle<()>) {
