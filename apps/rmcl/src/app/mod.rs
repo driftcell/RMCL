@@ -1446,6 +1446,22 @@ impl LauncherApp {
         cx.notify();
     }
 
+    fn retry_mirror_probe(&mut self, cx: &mut Context<Self>) {
+        if self.config.download_source == DownloadSourcePreference::Official {
+            return;
+        }
+        self.services
+            .mirror
+            .set_preference(mirror_preference(self.config.download_source));
+        self.mirror_status = initial_mirror_status(self.config.download_source);
+        self._mirror_probe_task = spawn_mirror_probe(
+            cx,
+            self.services.mirror.clone(),
+            self.config.download_source,
+        );
+        cx.notify();
+    }
+
     fn toggle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let theme = if cx.theme().mode.is_dark() {
             ThemePreference::Light

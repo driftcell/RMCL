@@ -49,7 +49,7 @@ RMCL 的主要用户在中国大陆，Mojang 官方下载源和 Java runtime 在
 3. 响应成功且耗时不超过 1500 ms 时，`auto` 才启用镜像；
 4. 失败或超时则 `auto` 使用官方源；`mirror` 仍保持镜像优先并依赖逐请求回退。
 
-探测结果通过 `AtomicBool`/`AtomicU64` 共享。安装器、版本目录、Java runtime、加载器元数据和 Forge/NeoForge 安装器都持有同一个 `Arc<MirrorHealth>`，因此切换设置后后续请求立即使用新状态。
+探测结果通过 `AtomicBool`/`AtomicU64` 共享。安装器、版本目录、Java runtime、加载器元数据和 Forge/NeoForge 安装器都持有同一个 `Arc<MirrorHealth>`，因此切换设置后后续请求立即使用新状态。设置页的刷新按钮可随时重新探测。
 
 ## 回退与完整性
 

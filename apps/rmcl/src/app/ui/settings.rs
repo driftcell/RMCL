@@ -19,6 +19,7 @@ use gpui_kit::{
 use super::super::{LauncherApp, Page};
 use super::common::{card, field_label, format_size, help, mono, page_header, section_title};
 use super::layout;
+use rmcl_store::DownloadSourcePreference;
 
 impl LauncherApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -181,20 +182,40 @@ impl LauncherApp {
                                         ),
                                 )
                                 .child(
-                                    div().flex_shrink_0().w(rems(11.25)).child(
-                                        Select::new(&self.download_source_select)
-                                            .accessibility_label("下载源")
-                                            .menu_width(layout::rem_px(
-                                                cx,
-                                                layout::SELECT_MENU_WIDTH,
-                                            ))
-                                            .menu_max_h(layout::rem_px(
-                                                cx,
-                                                layout::SELECT_MENU_WIDTH,
-                                            ))
-                                            .cleanable(false)
-                                            .w_full(),
-                                    ),
+                                    h_flex()
+                                        .gap_2()
+                                        .flex_shrink_0()
+                                        .child(
+                                            div().w(rems(11.25)).child(
+                                                Select::new(&self.download_source_select)
+                                                    .accessibility_label("下载源")
+                                                    .menu_width(layout::rem_px(
+                                                        cx,
+                                                        layout::SELECT_MENU_WIDTH,
+                                                    ))
+                                                    .menu_max_h(layout::rem_px(
+                                                        cx,
+                                                        layout::SELECT_MENU_WIDTH,
+                                                    ))
+                                                    .cleanable(false)
+                                                    .w_full(),
+                                            ),
+                                        )
+                                        .child(
+                                            Button::new("settings-mirror-probe")
+                                                .ghost()
+                                                .xsmall()
+                                                .icon(IconName::RefreshCw)
+                                                .tooltip("重新探测国内镜像")
+                                                .accessibility_label("重新探测国内镜像")
+                                                .disabled(
+                                                    self.config.download_source
+                                                        == DownloadSourcePreference::Official,
+                                                )
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.retry_mirror_probe(cx)
+                                                })),
+                                        ),
                                 ),
                         ),
                     )
