@@ -36,6 +36,9 @@ const XSTS_OPERATION: &str = "authorize with Xbox Live";
 const MINECRAFT_LOGIN_OPERATION: &str = "log in to Minecraft services";
 const ENTITLEMENTS_OPERATION: &str = "check Minecraft ownership";
 const PROFILE_OPERATION: &str = "fetch Minecraft profile";
+const SKIN_UPLOAD_OPERATION: &str = "upload Minecraft skin";
+const SKIN_CHANGE_OPERATION: &str = "change Minecraft skin";
+const SKIN_RESET_OPERATION: &str = "reset Minecraft skin";
 
 /// Endpoints used by [`MicrosoftAuth`].
 ///
@@ -50,6 +53,8 @@ pub struct MicrosoftEndpoints {
     pub minecraft_login: String,
     pub minecraft_entitlements: String,
     pub minecraft_profile: String,
+    pub minecraft_profile_skins: String,
+    pub minecraft_profile_skins_active: String,
 }
 
 impl Default for MicrosoftEndpoints {
@@ -64,6 +69,10 @@ impl Default for MicrosoftEndpoints {
             minecraft_entitlements: "https://api.minecraftservices.com/entitlements/mcstore"
                 .to_owned(),
             minecraft_profile: "https://api.minecraftservices.com/minecraft/profile".to_owned(),
+            minecraft_profile_skins: "https://api.minecraftservices.com/minecraft/profile/skins"
+                .to_owned(),
+            minecraft_profile_skins_active:
+                "https://api.minecraftservices.com/minecraft/profile/skins/active".to_owned(),
         }
     }
 }
@@ -357,17 +366,106 @@ impl MicrosoftAuth {
         if !status.is_success() {
             return Err(http_failure(PROFILE_OPERATION, status, &body));
         }
-        let raw: RawProfile = parse_json(PROFILE_OPERATION, &body)?;
-        let uuid = Uuid::parse_str(&raw.id)
-            .map_err(|_| MicrosoftAuthError::InvalidResponse(PROFILE_OPERATION))?;
-        let skin_url = raw
-            .skins
-            .into_iter()
-            .find(|skin| skin.state.eq_ignore_ascii_case("ACTIVE") && !skin.url.trim().is_empty())
-            .map(|skin| skin.url);
-        MicrosoftAccount::new(raw.name, uuid)
-            .map(|account| account.with_skin_url(skin_url))
-            .map_err(|_| MicrosoftAuthError::InvalidResponse(PROFILE_OPERATION))
+        parse_profile(PROFILE_OPERATION, &body)
+    }
+
+    /// Uploads a PNG skin and returns the updated profile.
+    ///
+    /// The caller is responsible for validating the image before calling this
+    /// method. The official service expects a 64×64 or legacy 64×32 PNG.
+    pub async fn upload_skin(
+        &self,
+        minecraft_access_token: &str,
+        variant: SkinVariant,
+        file_name: &str,
+        bytes: &[u8],
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftAccount, MicrosoftAuthError> {
+        check_cancelled(cancellation)?;
+        let file = reqwest::multipart::Part::bytes(bytes.to_vec())
+            .file_name(file_name.to_owned())
+            .mime_str("image/png")
+            .map_err(|error| MicrosoftAuthError::InvalidSkinRequest {
+                message: error.to_string(),
+            })?;
+        let form = reqwest::multipart::Form::new()
+            .text("variant", variant.as_str())
+            .part("file", file);
+        let request = self
+            .client
+            .post(&self.endpoints.minecraft_profile_skins)
+            .bearer_auth(minecraft_access_token)
+            .multipart(form);
+        self.execute_skin_mutation(SKIN_UPLOAD_OPERATION, request, cancellation)
+            .await
+    }
+
+    /// Changes the active skin using an image URL.
+    ///
+    /// The URL must point at a PNG. The official service downloads it on its
+    /// side, so callers that need guaranteed validation should download and
+    /// upload the bytes instead.
+    pub async fn change_skin_url(
+        &self,
+        minecraft_access_token: &str,
+        variant: SkinVariant,
+        url: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftAccount, MicrosoftAuthError> {
+        check_cancelled(cancellation)?;
+        let request = self
+            .client
+            .post(&self.endpoints.minecraft_profile_skins)
+            .bearer_auth(minecraft_access_token)
+            .json(&ChangeSkinRequest {
+                variant: variant.as_str(),
+                url,
+            });
+        self.execute_skin_mutation(SKIN_CHANGE_OPERATION, request, cancellation)
+            .await
+    }
+
+    /// Resets the active skin to the account default.
+    ///
+    /// Returns the updated profile when the service includes it. Callers
+    /// should refresh the profile when this returns `None`.
+    pub async fn reset_skin(
+        &self,
+        minecraft_access_token: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<MicrosoftAccount>, MicrosoftAuthError> {
+        check_cancelled(cancellation)?;
+        let request = self
+            .client
+            .delete(&self.endpoints.minecraft_profile_skins_active)
+            .bearer_auth(minecraft_access_token);
+        let (status, headers, body) = self
+            .execute_with_headers(SKIN_RESET_OPERATION, request)
+            .await?;
+        if !status.is_success() {
+            return Err(skin_failure(SKIN_RESET_OPERATION, status, &headers, &body));
+        }
+        if body.trim().is_empty() {
+            return Ok(None);
+        }
+        parse_profile(SKIN_RESET_OPERATION, &body).map(Some)
+    }
+
+    async fn execute_skin_mutation(
+        &self,
+        operation: &'static str,
+        request: RequestBuilder,
+        cancellation: &CancellationToken,
+    ) -> Result<MicrosoftAccount, MicrosoftAuthError> {
+        check_cancelled(cancellation)?;
+        let (status, headers, body) = self.execute_with_headers(operation, request).await?;
+        if !status.is_success() {
+            return Err(skin_failure(operation, status, &headers, &body));
+        }
+        if body.trim().is_empty() {
+            return Err(MicrosoftAuthError::InvalidResponse(operation));
+        }
+        parse_profile(operation, &body)
     }
 
     /// Completes all post-OAuth exchanges and returns a launchable account.
@@ -418,16 +516,26 @@ impl MicrosoftAuth {
         operation: &'static str,
         request: RequestBuilder,
     ) -> Result<(StatusCode, String), MicrosoftAuthError> {
+        let (status, _, body) = self.execute_with_headers(operation, request).await?;
+        Ok((status, body))
+    }
+
+    async fn execute_with_headers(
+        &self,
+        operation: &'static str,
+        request: RequestBuilder,
+    ) -> Result<(StatusCode, reqwest::header::HeaderMap, String), MicrosoftAuthError> {
         let response = request
             .send()
             .await
             .map_err(|source| MicrosoftAuthError::Http { operation, source })?;
         let status = response.status();
+        let headers = response.headers().clone();
         let body = response
             .text()
             .await
             .map_err(|source| MicrosoftAuthError::Http { operation, source })?;
-        Ok((status, body))
+        Ok((status, headers, body))
     }
 }
 
@@ -596,12 +704,98 @@ impl fmt::Debug for MinecraftToken {
     }
 }
 
+/// The arm model used by an official Java skin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkinVariant {
+    Classic,
+    Slim,
+}
+
+impl SkinVariant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Slim => "slim",
+        }
+    }
+
+    fn from_service(value: &str) -> Self {
+        if value.eq_ignore_ascii_case("SLIM") {
+            Self::Slim
+        } else {
+            Self::Classic
+        }
+    }
+}
+
+/// One skin owned by an official account.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProfileSkin {
+    id: String,
+    url: String,
+    variant: SkinVariant,
+    alias: Option<String>,
+    active: bool,
+}
+
+impl ProfileSkin {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn variant(&self) -> SkinVariant {
+        self.variant
+    }
+
+    pub fn alias(&self) -> Option<&str> {
+        self.alias.as_deref()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+}
+
+/// One cape owned by an official account.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProfileCape {
+    id: String,
+    url: String,
+    alias: Option<String>,
+    active: bool,
+}
+
+impl ProfileCape {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn alias(&self) -> Option<&str> {
+        self.alias.as_deref()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+}
+
 /// A verified Minecraft profile owned by a Microsoft account.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MicrosoftAccount {
     username: String,
     uuid: Uuid,
     skin_url: Option<String>,
+    skins: Vec<ProfileSkin>,
+    capes: Vec<ProfileCape>,
 }
 
 impl MicrosoftAccount {
@@ -614,6 +808,8 @@ impl MicrosoftAccount {
             username,
             uuid,
             skin_url: None,
+            skins: Vec::new(),
+            capes: Vec::new(),
         })
     }
 
@@ -636,6 +832,35 @@ impl MicrosoftAccount {
 
     pub fn with_skin_url(mut self, skin_url: Option<String>) -> Self {
         self.skin_url = skin_url;
+        self
+    }
+
+    /// All skins owned by this account, including inactive entries.
+    pub fn skins(&self) -> &[ProfileSkin] {
+        &self.skins
+    }
+
+    /// All capes owned by this account, including inactive entries.
+    pub fn capes(&self) -> &[ProfileCape] {
+        &self.capes
+    }
+
+    pub fn active_skin(&self) -> Option<&ProfileSkin> {
+        self.skins.iter().find(|skin| skin.is_active())
+    }
+
+    /// Replaces the owned skin list and derives the active skin URL from it.
+    pub fn with_profile_skins(mut self, skins: Vec<ProfileSkin>) -> Self {
+        self.skin_url = skins
+            .iter()
+            .find(|skin| skin.is_active())
+            .map(|skin| skin.url.clone());
+        self.skins = skins;
+        self
+    }
+
+    pub fn with_capes(mut self, capes: Vec<ProfileCape>) -> Self {
+        self.capes = capes;
         self
     }
 
@@ -802,6 +1027,14 @@ pub enum MicrosoftAuthError {
     ProfileNotFound,
     #[error("Minecraft services rejected the access token")]
     MinecraftTokenRejected,
+    #[error("Minecraft services rejected the skin: {message}")]
+    SkinRejected { message: String },
+    #[error("Minecraft services rate-limited skin changes")]
+    SkinRateLimited { retry_after: Option<u64> },
+    #[error("Minecraft services refused the skin change: {message}")]
+    SkinForbidden { message: String },
+    #[error("invalid skin upload request: {message}")]
+    InvalidSkinRequest { message: String },
     #[error("Microsoft login was cancelled")]
     Cancelled,
 }
@@ -822,6 +1055,122 @@ fn parse_json<T: for<'de> Deserialize<'de>>(
     body: &str,
 ) -> Result<T, MicrosoftAuthError> {
     serde_json::from_str(body).map_err(|_| MicrosoftAuthError::InvalidResponse(operation))
+}
+
+fn parse_profile(
+    operation: &'static str,
+    body: &str,
+) -> Result<MicrosoftAccount, MicrosoftAuthError> {
+    let raw: RawProfile = parse_json(operation, body)?;
+    let uuid =
+        Uuid::parse_str(&raw.id).map_err(|_| MicrosoftAuthError::InvalidResponse(operation))?;
+    let skins = raw
+        .skins
+        .into_iter()
+        .filter(|skin| !skin.url.trim().is_empty())
+        .map(|skin| ProfileSkin {
+            id: skin.id,
+            url: skin.url,
+            variant: SkinVariant::from_service(&skin.variant),
+            alias: skin.alias.filter(|alias| !alias.trim().is_empty()),
+            active: skin.state.eq_ignore_ascii_case("ACTIVE"),
+        })
+        .collect();
+    let capes = raw
+        .capes
+        .into_iter()
+        .filter(|cape| !cape.url.trim().is_empty())
+        .map(|cape| ProfileCape {
+            id: cape.id,
+            url: cape.url,
+            alias: cape.alias.filter(|alias| !alias.trim().is_empty()),
+            active: cape.state.eq_ignore_ascii_case("ACTIVE"),
+        })
+        .collect();
+    MicrosoftAccount::new(raw.name, uuid)
+        .map(|account| account.with_profile_skins(skins).with_capes(capes))
+        .map_err(|_| MicrosoftAuthError::InvalidResponse(operation))
+}
+
+fn skin_failure(
+    operation: &'static str,
+    status: StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+) -> MicrosoftAuthError {
+    let message = api_error_message(body);
+    if status == StatusCode::UNAUTHORIZED {
+        return MicrosoftAuthError::MinecraftTokenRejected;
+    }
+    if status == StatusCode::FORBIDDEN {
+        if is_account_suspended(body) {
+            return MicrosoftAuthError::SkinForbidden { message };
+        }
+        return MicrosoftAuthError::MinecraftTokenRejected;
+    }
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        return MicrosoftAuthError::SkinRateLimited {
+            retry_after: retry_after(headers),
+        };
+    }
+    if status == StatusCode::BAD_REQUEST || status == StatusCode::UNPROCESSABLE_ENTITY {
+        return MicrosoftAuthError::SkinRejected { message };
+    }
+    if status == StatusCode::NOT_FOUND {
+        return MicrosoftAuthError::ProfileNotFound;
+    }
+    MicrosoftAuthError::HttpStatus {
+        operation,
+        status,
+        body: body.to_owned(),
+    }
+}
+
+fn api_error_message(body: &str) -> String {
+    let parsed: Option<RawApiError> = serde_json::from_str(body).ok();
+    let message = parsed
+        .and_then(|error| {
+            if !error.error_message.trim().is_empty() {
+                Some(error.error_message)
+            } else if !error.error.trim().is_empty() {
+                Some(error.error)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| body.trim().to_owned());
+    truncate_message(message, 512)
+}
+
+fn truncate_message(mut message: String, limit: usize) -> String {
+    if message.len() > limit {
+        let mut boundary = limit;
+        while !message.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        message.truncate(boundary);
+        message.push('…');
+    }
+    message
+}
+
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse().ok())
+}
+
+fn is_account_suspended(body: &str) -> bool {
+    body.contains("ACCOUNT_SUSPENDED")
+        || serde_json::from_str::<RawApiError>(body)
+            .ok()
+            .is_some_and(|error| {
+                error
+                    .details
+                    .reason
+                    .eq_ignore_ascii_case("ACCOUNT_SUSPENDED")
+            })
 }
 
 fn parse_oauth_tokens(
@@ -1035,14 +1384,56 @@ struct RawProfile {
     name: String,
     #[serde(default)]
     skins: Vec<RawProfileSkin>,
+    #[serde(default)]
+    capes: Vec<RawProfileCape>,
 }
 
 #[derive(Deserialize)]
 struct RawProfileSkin {
     #[serde(default)]
+    id: String,
+    #[serde(default)]
     state: String,
     #[serde(default)]
     url: String,
+    #[serde(default)]
+    variant: String,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawProfileCape {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    alias: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawApiError {
+    #[serde(default)]
+    error: String,
+    #[serde(default, rename = "errorMessage")]
+    error_message: String,
+    #[serde(default)]
+    details: RawApiErrorDetails,
+}
+
+#[derive(Deserialize, Default)]
+struct RawApiErrorDetails {
+    #[serde(default)]
+    reason: String,
+}
+
+#[derive(Serialize)]
+struct ChangeSkinRequest<'a> {
+    variant: &'a str,
+    url: &'a str,
 }
 
 #[cfg(test)]
@@ -1056,9 +1447,12 @@ mod tests {
         Router,
         body::Bytes,
         extract::State,
-        http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+        http::{
+            HeaderMap, StatusCode,
+            header::{AUTHORIZATION, CONTENT_TYPE},
+        },
         response::{IntoResponse, Response},
-        routing::{get, post},
+        routing::{delete, get, post},
     };
     use serde_json::{Value, json};
 
@@ -1073,6 +1467,8 @@ mod tests {
         token_replies: Arc<Mutex<VecDeque<MockReply>>>,
         entitlements: Arc<Mutex<Value>>,
         profile: Arc<Mutex<MockReply>>,
+        skin_change: Arc<Mutex<MockReply>>,
+        skin_reset: Arc<Mutex<MockReply>>,
         xsts: Arc<Mutex<MockReply>>,
     }
 
@@ -1080,6 +1476,7 @@ mod tests {
     struct MockReply {
         status: StatusCode,
         body: Value,
+        headers: Vec<(&'static str, String)>,
     }
 
     impl MockReply {
@@ -1087,11 +1484,21 @@ mod tests {
             Self {
                 status: StatusCode::OK,
                 body,
+                headers: Vec::new(),
             }
         }
 
         fn status(status: StatusCode, body: Value) -> Self {
-            Self { status, body }
+            Self {
+                status,
+                body,
+                headers: Vec::new(),
+            }
+        }
+
+        fn with_header(mut self, name: &'static str, value: impl Into<String>) -> Self {
+            self.headers.push((name, value.into()));
+            self
         }
     }
 
@@ -1100,6 +1507,7 @@ mod tests {
         path: String,
         body: String,
         authorization: Option<String>,
+        content_type: Option<String>,
     }
 
     impl MockState {
@@ -1118,7 +1526,26 @@ mod tests {
                     "name": PROFILE_NAME,
                     "skins": [{
                         "state": "ACTIVE",
-                        "url": "http://textures.minecraft.net/texture/abc"
+                        "url": "http://textures.minecraft.net/texture/abc",
+                        "variant": "CLASSIC"
+                    }]
+                })))),
+                skin_change: Arc::new(Mutex::new(MockReply::ok(json!({
+                    "id": PROFILE_ID,
+                    "name": PROFILE_NAME,
+                    "skins": [{
+                        "state": "ACTIVE",
+                        "url": "http://textures.minecraft.net/texture/new",
+                        "variant": "SLIM"
+                    }]
+                })))),
+                skin_reset: Arc::new(Mutex::new(MockReply::ok(json!({
+                    "id": PROFILE_ID,
+                    "name": PROFILE_NAME,
+                    "skins": [{
+                        "state": "ACTIVE",
+                        "url": "http://textures.minecraft.net/texture/default",
+                        "variant": "CLASSIC"
                     }]
                 })))),
                 xsts: Arc::new(Mutex::new(MockReply::ok(xsts_success()))),
@@ -1162,6 +1589,8 @@ mod tests {
             .route("/minecraft/login", post(mock_minecraft_login))
             .route("/minecraft/entitlements", get(mock_entitlements))
             .route("/minecraft/profile", get(mock_profile))
+            .route("/minecraft/profile/skins", post(mock_skin_change))
+            .route("/minecraft/profile/skins/active", delete(mock_skin_reset))
             .with_state(state);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1180,6 +1609,8 @@ mod tests {
             minecraft_login: format!("{base}/minecraft/login"),
             minecraft_entitlements: format!("{base}/minecraft/entitlements"),
             minecraft_profile: format!("{base}/minecraft/profile"),
+            minecraft_profile_skins: format!("{base}/minecraft/profile/skins"),
+            minecraft_profile_skins_active: format!("{base}/minecraft/profile/skins/active"),
         }
     }
 
@@ -1213,13 +1644,26 @@ mod tests {
                 .get(AUTHORIZATION)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned),
+            content_type: headers
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned),
         };
         state.requests.lock().unwrap().push(request.clone());
         request
     }
 
     fn reply(reply: MockReply) -> Response {
-        (reply.status, axum::Json(reply.body)).into_response()
+        let mut response = (reply.status, axum::Json(reply.body)).into_response();
+        for (name, value) in reply.headers {
+            if let (Ok(name), Ok(value)) = (
+                axum::http::HeaderName::from_bytes(name.as_bytes()),
+                axum::http::HeaderValue::from_str(&value),
+            ) {
+                response.headers_mut().insert(name, value);
+            }
+        }
+        response
     }
 
     async fn mock_device_code(
@@ -1295,6 +1739,26 @@ mod tests {
     async fn mock_profile(State(state): State<MockState>, headers: HeaderMap) -> Response {
         record(&state, "/minecraft/profile", &headers, &Bytes::new()).await;
         reply(state.profile.lock().unwrap().clone())
+    }
+
+    async fn mock_skin_change(
+        State(state): State<MockState>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> Response {
+        record(&state, "/minecraft/profile/skins", &headers, &body).await;
+        reply(state.skin_change.lock().unwrap().clone())
+    }
+
+    async fn mock_skin_reset(State(state): State<MockState>, headers: HeaderMap) -> Response {
+        record(
+            &state,
+            "/minecraft/profile/skins/active",
+            &headers,
+            &Bytes::new(),
+        )
+        .await;
+        reply(state.skin_reset.lock().unwrap().clone())
     }
 
     fn form(request: &RecordedRequest) -> HashMap<String, String> {
@@ -1573,7 +2037,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inactive_skin_entries_are_not_exposed() {
+    async fn inactive_skin_entries_do_not_become_the_active_skin() {
         let state = MockState::new();
         *state.profile.lock().unwrap() = MockReply::ok(json!({
             "id": PROFILE_ID,
@@ -1597,6 +2061,71 @@ mod tests {
             .unwrap();
 
         assert!(authenticated.account.skin_url().is_none());
+        assert_eq!(authenticated.account.skins().len(), 1);
+        assert!(!authenticated.account.skins()[0].is_active());
+    }
+
+    #[tokio::test]
+    async fn profile_exposes_owned_skins_and_capes() {
+        let state = MockState::new();
+        *state.profile.lock().unwrap() = MockReply::ok(json!({
+            "id": PROFILE_ID,
+            "name": PROFILE_NAME,
+            "skins": [
+                {
+                    "id": "skin-active",
+                    "state": "ACTIVE",
+                    "url": "http://textures.minecraft.net/texture/new",
+                    "variant": "SLIM",
+                    "alias": "My Skin"
+                },
+                {
+                    "id": "skin-old",
+                    "state": "INACTIVE",
+                    "url": "http://textures.minecraft.net/texture/old",
+                    "variant": "CLASSIC"
+                }
+            ],
+            "capes": [
+                {
+                    "id": "cape-active",
+                    "state": "ACTIVE",
+                    "url": "http://textures.minecraft.net/texture/cape",
+                    "alias": "Migrator"
+                },
+                {
+                    "id": "cape-old",
+                    "state": "INACTIVE",
+                    "url": "http://textures.minecraft.net/texture/cape-old",
+                    "alias": "MineCon"
+                }
+            ]
+        }));
+        let base = spawn_mock(state).await;
+        let auth = auth(&base);
+
+        let profile = auth
+            .profile("minecraft-access", &CancellationToken::new())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/new")
+        );
+        assert_eq!(profile.skins().len(), 2);
+        let active = profile.active_skin().unwrap();
+        assert_eq!(active.id(), "skin-active");
+        assert_eq!(active.variant(), SkinVariant::Slim);
+        assert_eq!(active.alias(), Some("My Skin"));
+        let inactive = &profile.skins()[1];
+        assert!(!inactive.is_active());
+        assert_eq!(inactive.variant(), SkinVariant::Classic);
+
+        assert_eq!(profile.capes().len(), 2);
+        assert_eq!(profile.capes()[0].alias(), Some("Migrator"));
+        assert!(profile.capes()[0].is_active());
+        assert!(!profile.capes()[1].is_active());
     }
 
     #[tokio::test]
@@ -1621,6 +2150,193 @@ mod tests {
         assert!(matches!(
             auth.complete_login(oauth, &CancellationToken::new()).await,
             Err(MicrosoftAuthError::ProfileNotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn upload_skin_sends_multipart_and_returns_profile() {
+        let state = MockState::new();
+        let base = spawn_mock(state.clone()).await;
+        let auth = auth(&base);
+
+        let profile = auth
+            .upload_skin(
+                "minecraft-access",
+                SkinVariant::Slim,
+                "skin.png",
+                b"png-bytes",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/new")
+        );
+        assert_eq!(profile.active_skin().unwrap().variant(), SkinVariant::Slim);
+
+        let requests = state.requests();
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.path, "/minecraft/profile/skins");
+        assert_eq!(
+            request.authorization.as_deref(),
+            Some("Bearer minecraft-access")
+        );
+        assert!(
+            request
+                .content_type
+                .as_deref()
+                .is_some_and(|value| value.starts_with("multipart/form-data"))
+        );
+        assert!(request.body.contains(r#"name="variant""#));
+        assert!(request.body.contains("slim"));
+        assert!(request.body.contains(r#"name="file""#));
+        assert!(request.body.contains(r#"filename="skin.png""#));
+    }
+
+    #[tokio::test]
+    async fn change_skin_url_sends_json_and_returns_profile() {
+        let state = MockState::new();
+        let base = spawn_mock(state.clone()).await;
+        let auth = auth(&base);
+
+        auth.change_skin_url(
+            "minecraft-access",
+            SkinVariant::Classic,
+            "https://textures.minecraft.net/texture/old",
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let requests = state.requests();
+        assert_eq!(requests.len(), 1);
+        let request = &requests[0];
+        assert_eq!(request.path, "/minecraft/profile/skins");
+        assert_eq!(
+            request.authorization.as_deref(),
+            Some("Bearer minecraft-access")
+        );
+        assert_eq!(
+            json_body(request),
+            json!({
+                "variant": "classic",
+                "url": "https://textures.minecraft.net/texture/old"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_skin_sends_delete_and_returns_profile() {
+        let state = MockState::new();
+        let base = spawn_mock(state.clone()).await;
+        let auth = auth(&base);
+
+        let profile = auth
+            .reset_skin("minecraft-access", &CancellationToken::new())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            profile.skin_url(),
+            Some("http://textures.minecraft.net/texture/default")
+        );
+        let requests = state.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path, "/minecraft/profile/skins/active");
+        assert_eq!(
+            requests[0].authorization.as_deref(),
+            Some("Bearer minecraft-access")
+        );
+    }
+
+    #[tokio::test]
+    async fn skin_upload_maps_rate_limit_and_retry_after() {
+        let state = MockState::new();
+        *state.skin_change.lock().unwrap() = MockReply::status(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({"errorMessage": "Too many requests"}),
+        )
+        .with_header("retry-after", "30");
+        let base = spawn_mock(state).await;
+        let auth = auth(&base);
+
+        let error = auth
+            .upload_skin(
+                "minecraft-access",
+                SkinVariant::Classic,
+                "skin.png",
+                b"png",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            MicrosoftAuthError::SkinRateLimited {
+                retry_after: Some(30)
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn skin_upload_maps_invalid_skin_message() {
+        let state = MockState::new();
+        *state.skin_change.lock().unwrap() = MockReply::status(
+            StatusCode::BAD_REQUEST,
+            json!({"error": "IllegalArgumentException", "errorMessage": "Invalid skin"}),
+        );
+        let base = spawn_mock(state).await;
+        let auth = auth(&base);
+
+        let error = auth
+            .upload_skin(
+                "minecraft-access",
+                SkinVariant::Classic,
+                "skin.png",
+                b"png",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            MicrosoftAuthError::SkinRejected { message } if message == "Invalid skin"
+        ));
+    }
+
+    #[tokio::test]
+    async fn skin_upload_maps_suspended_account() {
+        let state = MockState::new();
+        *state.skin_change.lock().unwrap() = MockReply::status(
+            StatusCode::FORBIDDEN,
+            json!({
+                "errorMessage": "Your account has been suspended.",
+                "details": {"reason": "ACCOUNT_SUSPENDED"}
+            }),
+        );
+        let base = spawn_mock(state).await;
+        let auth = auth(&base);
+
+        let error = auth
+            .upload_skin(
+                "minecraft-access",
+                SkinVariant::Classic,
+                "skin.png",
+                b"png",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            MicrosoftAuthError::SkinForbidden { message } if message.contains("suspended")
         ));
     }
 

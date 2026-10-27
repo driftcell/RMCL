@@ -248,6 +248,9 @@ mod tests {
                 minecraft_login: "http://127.0.0.1:1/login".to_owned(),
                 minecraft_entitlements: "http://127.0.0.1:1/entitlements".to_owned(),
                 minecraft_profile: "http://127.0.0.1:1/profile".to_owned(),
+                minecraft_profile_skins: "http://127.0.0.1:1/profile/skins".to_owned(),
+                minecraft_profile_skins_active: "http://127.0.0.1:1/profile/skins/active"
+                    .to_owned(),
             },
         )
         .unwrap();
