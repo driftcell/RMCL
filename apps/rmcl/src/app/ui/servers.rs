@@ -19,7 +19,7 @@ use rmcl_app::{FeaturedServer, ServerStatus, featured_servers};
 use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
-use super::common::{card, empty_state, error_banner, page_header, section_title, server_tile};
+use super::common::{card, empty_state, error_banner, page_header, server_tile};
 use super::layout;
 
 impl LauncherApp {
@@ -31,48 +31,52 @@ impl LauncherApp {
             .gap_5()
             .child(page_header(Page::Servers, div(), cx))
             .child(
-                h_flex().gap_3().items_center().child(
-                    TabBar::new("server-tabs")
-                        .segmented()
-                        .selected_index(self.server_tab.index())
-                        .on_click(cx.listener(|this, index: &usize, window, cx| {
-                            this.select_server_tab(ServerTab::from_index(*index), window, cx)
-                        }))
-                        .children(
-                            ServerTab::ALL
-                                .into_iter()
-                                .map(|tab| Tab::new().label(tab.label())),
-                        ),
-                ),
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .items_center()
+                    .child(
+                        TabBar::new("server-tabs")
+                            .segmented()
+                            .selected_index(self.server_tab.index())
+                            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                                this.select_server_tab(ServerTab::from_index(*index), window, cx)
+                            }))
+                            .children(
+                                ServerTab::ALL
+                                    .into_iter()
+                                    .map(|tab| Tab::new().label(tab.label())),
+                            ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        h_flex()
+                            .flex_shrink_0()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("启动目标"),
+                            )
+                            .child(
+                                div().w(rems(13.5)).child(
+                                    Select::new(&self.version_select)
+                                        .placeholder("选择实例")
+                                        .accessibility_label("启动目标实例")
+                                        .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
+                                        .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
+                                        .cleanable(false)
+                                        .w_full(),
+                                ),
+                            ),
+                    ),
             )
-            .child(self.render_join_target(cx))
             .child(match self.server_tab {
                 ServerTab::Favorites => self.render_server_favorites(cx).into_any_element(),
                 ServerTab::Discover => self.render_server_discover(cx),
             })
-    }
-
-    fn render_join_target(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        card(cx).child(section_title("启动目标", "", cx)).child(
-            v_flex()
-                .gap_1()
-                .max_w_80()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("实例"),
-                )
-                .child(
-                    Select::new(&self.version_select)
-                        .placeholder("选择实例")
-                        .accessibility_label("选择实例")
-                        .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
-                        .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
-                        .cleanable(false)
-                        .w_full(),
-                ),
-        )
     }
 
     fn add_server_button(&self, cx: &mut Context<Self>) -> impl IntoElement {

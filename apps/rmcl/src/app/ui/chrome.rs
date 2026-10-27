@@ -109,32 +109,11 @@ impl LauncherApp {
                 ),
             )
             .child(
-                SidebarGroup::new("工具").child(
-                    SidebarMenu::new().child(
-                        SidebarMenuItem::new(Page::Logs.title())
-                            .icon(Page::Logs.icon())
-                            .active(self.page == Page::Logs)
-                            .when(running, |this| {
-                                this.suffix(|_, cx| {
-                                    Spinner::new()
-                                        .with_size(Size::XSmall)
-                                        .color(cx.theme().primary)
-                                })
-                            })
-                            .when(!running && self.logs_attention, |this| {
-                                this.suffix(|_, cx| {
-                                    div().size_1p5().rounded_full().bg(cx.theme().danger)
-                                })
-                            })
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.navigate(Page::Logs, window, cx)
-                            })),
-                    ),
+                SidebarGroup::new("应用").child(
+                    SidebarMenu::new()
+                        .child(self.nav_item(Page::Settings, cx))
+                        .child(self.log_nav_item(running, cx)),
                 ),
-            )
-            .child(
-                SidebarGroup::new("应用")
-                    .child(SidebarMenu::new().child(self.nav_item(Page::Settings, cx))),
             )
             .footer(
                 div().w_full().child(
@@ -228,6 +207,23 @@ impl LauncherApp {
                         )),
             )
             .on_click(cx.listener(move |this, _, window, cx| this.navigate(page, window, cx)))
+    }
+
+    fn log_nav_item(&self, running: bool, cx: &mut Context<Self>) -> SidebarMenuItem {
+        SidebarMenuItem::new(Page::Logs.title())
+            .icon(Page::Logs.icon())
+            .active(self.page == Page::Logs)
+            .when(running, |this| {
+                this.suffix(|_, cx| {
+                    Spinner::new()
+                        .with_size(Size::XSmall)
+                        .color(cx.theme().primary)
+                })
+            })
+            .when(!running && self.logs_attention, |this| {
+                this.suffix(|_, cx| div().size_1p5().rounded_full().bg(cx.theme().danger))
+            })
+            .on_click(cx.listener(|this, _, window, cx| this.navigate(Page::Logs, window, cx)))
     }
 
     pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
