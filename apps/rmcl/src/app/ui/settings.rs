@@ -4,6 +4,7 @@ use gpui_kit::{
         ActiveTheme, Disableable, Sizable, Size,
         button::{Button, ButtonVariants},
         h_flex,
+        link::Link,
         scroll::ScrollableElement,
         select::Select,
         spinner::Spinner,
@@ -16,8 +17,9 @@ use gpui_kit::{
 };
 
 use super::super::{LauncherApp, Page};
-use super::common::{card, field_label, format_size, mono, page_header, section_title};
+use super::common::{card, field_label, format_size, help, mono, page_header, section_title};
 use super::layout;
+use rmcl_store::DownloadSourcePreference;
 
 impl LauncherApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -100,7 +102,7 @@ impl LauncherApp {
                                                     )),
                                             ),
                                     )
-                                    .child(mono("更改后立即重新扫描版本，不移动现有文件。", cx)),
+                                    .child(help("更改后立即重新扫描版本，不移动现有文件。", cx)),
                             )
                             .child(
                                 v_flex()
@@ -108,7 +110,7 @@ impl LauncherApp {
                                     .gap_2()
                                     .child(field_label("Java 目录"))
                                     .child(mono(self.config.java_store.display().to_string(), cx))
-                                    .child(mono("重启 RMCL 后生效。", cx)),
+                                    .child(help("重启 RMCL 后生效。", cx)),
                             )
                             .child(
                                 h_flex()
@@ -120,7 +122,7 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label("自动获取 Java"))
-                                            .child(mono(
+                                            .child(help(
                                                 "缺少兼容 runtime 时自动下载；重启后生效。",
                                                 cx,
                                             )),
@@ -139,6 +141,86 @@ impl LauncherApp {
                     )
                     .child(
                         card(cx)
+                            .child(section_title("下载", "选择 Minecraft 文件的下载来源。", cx))
+                            .child(
+                            h_flex()
+                                .w_full()
+                                .gap_4()
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .gap_1()
+                                        .child(field_label("下载源"))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("自动会先探测国内镜像，失败时使用官方源。"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(mirror_status_color(
+                                                    &self.mirror_status,
+                                                    cx,
+                                                ))
+                                                .child(self.mirror_status.clone()),
+                                        )
+                                        .child(
+                                            h_flex()
+                                                .gap_1()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("国内镜像由")
+                                                .child(
+                                                    Link::new("bmclapi-attribution")
+                                                        .href("https://bmclapidoc.bangbang93.com/")
+                                                        .child("BMCLAPI"),
+                                                )
+                                                .child("提供。"),
+                                        ),
+                                )
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .flex_shrink_0()
+                                        .child(
+                                            div().w(rems(11.25)).child(
+                                                Select::new(&self.download_source_select)
+                                                    .accessibility_label("下载源")
+                                                    .menu_width(layout::rem_px(
+                                                        cx,
+                                                        layout::SELECT_MENU_WIDTH,
+                                                    ))
+                                                    .menu_max_h(layout::rem_px(
+                                                        cx,
+                                                        layout::SELECT_MENU_WIDTH,
+                                                    ))
+                                                    .cleanable(false)
+                                                    .w_full(),
+                                            ),
+                                        )
+                                        .child(
+                                            Button::new("settings-mirror-probe")
+                                                .ghost()
+                                                .xsmall()
+                                                .icon(IconName::RefreshCw)
+                                                .tooltip("重新探测国内镜像")
+                                                .accessibility_label("重新探测国内镜像")
+                                                .disabled(
+                                                    self.config.download_source
+                                                        == DownloadSourcePreference::Official,
+                                                )
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.retry_mirror_probe(cx)
+                                                })),
+                                        ),
+                                ),
+                        ),
+                    )
+                    .child(
+                        card(cx)
                             .child(section_title(
                                 "启动行为",
                                 "游戏运行时最小化启动器，退出或崩溃后自动恢复。",
@@ -154,7 +236,7 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label("启动器可见性"))
-                                            .child(mono("游戏退出后自动恢复。", cx)),
+                                            .child(help("游戏退出后自动恢复。", cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
@@ -187,7 +269,7 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label("主题"))
-                                            .child(mono("跟随系统、浅色或深色。", cx)),
+                                            .child(help("跟随系统、浅色或深色。", cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
@@ -216,7 +298,7 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label("强调色"))
-                                            .child(mono("主按钮和选中状态的颜色。", cx)),
+                                            .child(help("主按钮和选中状态的颜色。", cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
@@ -264,7 +346,7 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label("启动时检查更新"))
-                                            .child(mono("自动检查发现新版本后提示。", cx)),
+                                            .child(help("自动检查发现新版本后提示。", cx)),
                                     )
                                     .child(
                                         Switch::new("settings-auto-update")
@@ -334,7 +416,7 @@ impl LauncherApp {
                                                         .with_size(Size::XSmall)
                                                         .color(cx.theme().primary),
                                                 )
-                                                .child(mono("正在检查更新…", cx)),
+                                                .child(help("正在检查更新…", cx)),
                                         )
                                     }),
                             )
@@ -351,7 +433,7 @@ impl LauncherApp {
                                 this.child(mono(label, cx))
                             })
                             .when_some(self.update.status.clone(), |this, status| {
-                                this.child(mono(status, cx))
+                                this.child(help(status, cx))
                             })
                             .when_some(self.update.error.clone(), |this, error| {
                                 this.child(
@@ -429,5 +511,15 @@ impl LauncherApp {
                             ),
                     ),
             )
+    }
+}
+
+fn mirror_status_color(status: &str, cx: &App) -> Hsla {
+    if status.starts_with("国内镜像可用") || status.starts_with("国内镜像优先（") {
+        cx.theme().success
+    } else if status.contains("不可用") || status.contains("失败") {
+        cx.theme().warning
+    } else {
+        cx.theme().muted_foreground
     }
 }

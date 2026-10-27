@@ -141,6 +141,14 @@ pub fn field_label(label: &str) -> impl IntoElement {
     div().text_sm().font_medium().child(label.to_owned())
 }
 
+/// Secondary prose that explains a control. Keep `mono` for paths and data.
+pub fn help(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+    div()
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(text.into())
+}
+
 pub fn error_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
     banner(IconName::CircleAlert, cx.theme().danger, title, message, cx)
 }

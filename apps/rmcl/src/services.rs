@@ -2,6 +2,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     rc::Rc,
+    sync::Arc,
 };
 
 use rmcl_app::{
@@ -12,11 +13,12 @@ use rmcl_app::{
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::{OperatingSystem, Platform};
-use rmcl_net::DownloadConfig;
+use rmcl_net::{DownloadConfig, MirrorHealth, MirrorPreference};
 use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
-    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
-    StoredOfflineAccount, default_config_path, default_java_store, default_minecraft_root,
+    CONFIG_SCHEMA_VERSION, ConfigStore, DownloadSourcePreference, LauncherConfig,
+    StoredAccountKind, StoredMicrosoftAccount, StoredOfflineAccount, default_config_path,
+    default_java_store, default_minecraft_root,
 };
 use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
@@ -38,6 +40,7 @@ pub struct Services {
     pub server_icons: ServerIconCache,
     pub mod_metadata: ModMetadataCache,
     pub updates: UpdateClient,
+    pub mirror: Arc<MirrorHealth>,
 }
 
 impl Services {
@@ -51,16 +54,20 @@ impl Services {
                 path: PathBuf::from("<runtime>"),
                 source,
             })?;
-        let installer = VanillaInstaller::official(DownloadConfig::default())?;
+        let mirror = Arc::new(MirrorHealth::new(mirror_preference(config.download_source)));
+        let installer =
+            VanillaInstaller::official(DownloadConfig::default())?.with_mirror(mirror.clone());
         let mut java_config = JavaServiceConfig::new(config.java_store.clone());
         java_config.auto_install = config.auto_install_java;
+        java_config.mirror = Some(mirror.clone());
         let java = JavaService::new(java_config)?;
         let content = ContentInstaller::official(DownloadConfig::default())?;
-        let loaders = LoaderCatalog::official()?;
-        let forge = ForgeInstaller::new(DownloadConfig::default())?;
+        let loaders = LoaderCatalog::official()?.with_mirror(mirror.clone());
+        let forge = ForgeInstaller::new(DownloadConfig::default())?.with_mirror(mirror.clone());
         let creator = InstanceCreator::new(installer.clone(), loaders.clone())
             .with_forge(forge, java.clone());
-        let catalog = VersionCatalog::official(DownloadConfig::default())?;
+        let catalog =
+            VersionCatalog::official(DownloadConfig::default())?.with_mirror(mirror.clone());
         let modrinth = ModrinthClient::official()?;
         let tasks = TaskManager::with_full_and_modrinth(
             installer,
@@ -121,6 +128,7 @@ impl Services {
             server_icons: ServerIconCache::new(server_icon_cache_dir),
             mod_metadata,
             updates,
+            mirror,
         }))
     }
 }
@@ -332,6 +340,14 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     let program = "xdg-open";
 
     Command::new(program).arg(path).spawn().map(|_| ())
+}
+
+fn mirror_preference(value: DownloadSourcePreference) -> MirrorPreference {
+    match value {
+        DownloadSourcePreference::Auto => MirrorPreference::Auto,
+        DownloadSourcePreference::Official => MirrorPreference::Official,
+        DownloadSourcePreference::Mirror => MirrorPreference::Mirror,
+    }
 }
 
 fn current_platform() -> Platform {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rmcl_domain::DownloadRequest;
 use rmcl_minecraft::VersionManifest;
-use rmcl_net::{DownloadConfig, DownloadError, DownloadExecutor};
+use rmcl_net::{DownloadConfig, DownloadError, DownloadExecutor, MirrorHealth};
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -13,6 +13,7 @@ use crate::{AppError, InstallPhase, VanillaSources};
 pub struct VersionCatalog {
     sources: VanillaSources,
     downloader: DownloadExecutor,
+    mirror: Option<Arc<MirrorHealth>>,
     cached: Arc<RwLock<Option<Arc<VersionManifest>>>>,
     fetch_lock: Arc<Mutex<()>>,
 }
@@ -26,9 +27,15 @@ impl VersionCatalog {
         Ok(Self {
             sources,
             downloader: DownloadExecutor::new(config)?,
+            mirror: None,
             cached: Arc::new(RwLock::new(None)),
             fetch_lock: Arc::new(Mutex::new(())),
         })
+    }
+
+    pub fn with_mirror(mut self, mirror: Arc<MirrorHealth>) -> Self {
+        self.mirror = Some(mirror);
+        self
     }
 
     pub async fn cached(&self) -> Option<Arc<VersionManifest>> {
@@ -57,12 +64,15 @@ impl VersionCatalog {
             source,
         })?;
         let destination = temporary.path().join("version_manifest_v2.json");
-        let request = DownloadRequest {
+        let mut request = DownloadRequest {
             sources: vec![self.sources.manifest_url.clone()],
             destination: destination.clone(),
             sha1: None,
             size: None,
         };
+        if let Some(mirror) = &self.mirror {
+            mirror.add_candidates(&mut request.sources);
+        }
         self.downloader
             .download_file(&request, cancellation.clone(), None)
             .await

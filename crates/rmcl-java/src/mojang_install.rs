@@ -1,12 +1,13 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rmcl_domain::{DownloadRequest, Sha1Hash};
 use rmcl_instance::RepositoryPath;
-use rmcl_net::{DownloadConfig, DownloadError, DownloadExecutor};
+use rmcl_net::{DownloadConfig, DownloadError, DownloadExecutor, MirrorHealth};
 use serde::de::DeserializeOwned;
 use sha1::{Digest, Sha1};
 use tempfile::Builder;
@@ -37,6 +38,7 @@ pub struct MojangRuntimeInstaller {
     http: reqwest::Client,
     index_url: String,
     url_policy: UrlPolicy,
+    mirror: Option<Arc<MirrorHealth>>,
 }
 
 impl MojangRuntimeInstaller {
@@ -57,6 +59,7 @@ impl MojangRuntimeInstaller {
             http,
             index_url: MOJANG_RUNTIME_INDEX_URL.to_owned(),
             url_policy: UrlPolicy::OfficialOnly,
+            mirror: None,
         })
     }
 
@@ -68,6 +71,18 @@ impl MojangRuntimeInstaller {
     pub fn with_url_policy(mut self, policy: UrlPolicy) -> Self {
         self.url_policy = policy;
         self
+    }
+
+    pub fn with_mirror(mut self, mirror: Arc<MirrorHealth>) -> Self {
+        self.mirror = Some(mirror);
+        self
+    }
+
+    fn sources_for(&self, official: &Url) -> Vec<Url> {
+        self.mirror
+            .as_ref()
+            .map(|mirror| mirror.sources_for(official))
+            .unwrap_or_else(|| vec![official.clone()])
     }
 
     pub async fn install(
@@ -376,7 +391,7 @@ impl MojangRuntimeInstaller {
             .size
             .ok_or_else(|| JavaError::MissingIntegrity(path.to_string()))?;
         Ok(DownloadRequest {
-            sources: vec![url],
+            sources: self.sources_for(&url),
             destination: path.to_path(staging_root),
             sha1: Some(sha1),
             size: Some(size),
@@ -411,7 +426,30 @@ impl MojangRuntimeInstaller {
         expected_sha1: Option<Sha1Hash>,
         expected_size: Option<u64>,
     ) -> Result<T, JavaError> {
-        let url = self.validate_url(url)?;
+        let official = self.validate_url(url)?;
+        let sources = self.sources_for(&official);
+        let mut last_error = None;
+        for source in sources {
+            match self
+                .fetch_json_from(&source, expected_sha1, expected_size)
+                .await
+            {
+                Ok(value) => return Ok(value),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| JavaError::HttpStatus {
+            url: official.to_string(),
+            status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        }))
+    }
+
+    async fn fetch_json_from<T: DeserializeOwned>(
+        &self,
+        url: &Url,
+        expected_sha1: Option<Sha1Hash>,
+        expected_size: Option<u64>,
+    ) -> Result<T, JavaError> {
         let response =
             self.http
                 .get(url.clone())
@@ -666,6 +704,7 @@ fn io_error(path: &Path, source: std::io::Error) -> JavaError {
 mod tests {
     use super::*;
     use rmcl_domain::OperatingSystem;
+    use rmcl_net::MirrorPreference;
 
     #[tokio::test]
     async fn finds_windows_java_executable() {
@@ -681,5 +720,20 @@ mod tests {
             .unwrap();
 
         assert_eq!(executable.as_str(), "bin/java.exe");
+    }
+
+    #[test]
+    fn mirror_adds_a_candidate_before_official_runtime_files() {
+        let temporary = tempfile::tempdir().unwrap();
+        let installer = MojangRuntimeInstaller::new(temporary.path())
+            .unwrap()
+            .with_mirror(Arc::new(MirrorHealth::new(MirrorPreference::Mirror)));
+        let official = Url::parse("https://piston-data.mojang.com/v1/objects/abc/file").unwrap();
+
+        let sources = installer.sources_for(&official);
+
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].host_str(), Some("bmclapi2.bangbang93.com"));
+        assert_eq!(sources[1], official);
     }
 }

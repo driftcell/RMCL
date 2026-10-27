@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use rmcl_java::{
     JavaDetector, JavaRequirement, JavaRuntime, MojangRuntimeInstaller, UrlPolicy, select_java,
 };
+use rmcl_net::MirrorHealth;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -18,6 +19,7 @@ pub struct JavaServiceConfig {
     pub auto_install: bool,
     pub runtime_index_url: Option<Url>,
     pub url_policy: UrlPolicy,
+    pub mirror: Option<Arc<MirrorHealth>>,
 }
 
 impl JavaServiceConfig {
@@ -30,6 +32,7 @@ impl JavaServiceConfig {
             auto_install: true,
             runtime_index_url: None,
             url_policy: UrlPolicy::OfficialOnly,
+            mirror: None,
         }
     }
 }
@@ -81,6 +84,9 @@ impl JavaService {
             installer = installer.with_index_url(url.to_string());
         }
         installer = installer.with_url_policy(config.url_policy);
+        if let Some(mirror) = config.mirror {
+            installer = installer.with_mirror(mirror);
+        }
         Ok(Self {
             detector,
             installer: Arc::new(installer),

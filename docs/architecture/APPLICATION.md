@@ -117,7 +117,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 ## 当前不包含
 
-- authlib-injector、legacy Forge installer、特殊资产名称重建和镜像策略
+- authlib-injector、legacy Forge installer、特殊资产名称重建和自定义镜像源
 - 实例复制、导入导出和任意 JVM/游戏启动参数；实例级 Java、内存和窗口设置已实现
 - CurseForge、可选依赖与冲突求解、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传

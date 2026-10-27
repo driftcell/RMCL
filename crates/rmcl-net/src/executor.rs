@@ -168,7 +168,7 @@ impl DownloadExecutor {
             .map_err(|error| io_error(parent, error))?;
 
         let mut failures = Vec::new();
-        for source in &request.sources {
+        for (source_index, source) in request.sources.iter().enumerate() {
             let source_label = redacted_url(source);
             if !matches!(source.scheme(), "http" | "https") {
                 failures.push(SourceFailure {
@@ -178,7 +178,15 @@ impl DownloadExecutor {
                 continue;
             }
 
-            for attempt in 1..=self.config.max_attempts_per_source {
+            // Earlier candidates are preferred mirrors. Try them once so a
+            // dead mirror cannot delay the official fallback; the last source
+            // keeps the configured retry budget.
+            let max_attempts = if source_index + 1 == request.sources.len() {
+                self.config.max_attempts_per_source
+            } else {
+                1
+            };
+            for attempt in 1..=max_attempts {
                 if cancellation.is_cancelled() {
                     return Err(DownloadError::Cancelled);
                 }
@@ -210,7 +218,7 @@ impl DownloadExecutor {
                     Err(AttemptError::Fatal(error)) => return Err(error),
                     Err(AttemptError::Source { failure, retryable }) => {
                         failures.push(failure);
-                        if retryable && attempt < self.config.max_attempts_per_source {
+                        if retryable && attempt < max_attempts {
                             let delay = self.retry_delay(attempt);
                             tokio::select! {
                                 biased;

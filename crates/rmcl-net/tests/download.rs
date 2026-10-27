@@ -261,6 +261,39 @@ async fn retries_server_errors_before_success() {
 }
 
 #[tokio::test]
+async fn falls_back_after_one_failed_mirror_attempt() {
+    let mirror_hits = Arc::new(AtomicUsize::new(0));
+    let observed = mirror_hits.clone();
+    let mirror = serve(Router::new().route(
+        "/file",
+        get(move || {
+            let observed = observed.clone();
+            async move {
+                observed.fetch_add(1, Ordering::SeqCst);
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        }),
+    ))
+    .await;
+    let official = serve(Router::new().route("/file", get(|| async { "good" }))).await;
+    let temporary = TempDir::new().unwrap();
+    let request = DownloadRequest {
+        sources: vec![mirror.url("/file"), official.url("/file")],
+        destination: temporary.path().join("file.txt"),
+        sha1: Some(sha1(b"good")),
+        size: Some(4),
+    };
+
+    let status = executor()
+        .download_file(&request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert_eq!(status, DownloadStatus::Downloaded { bytes: 4 });
+    assert_eq!(mirror_hits.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn does_not_retry_not_found() {
     let hits = Arc::new(AtomicUsize::new(0));
     let observed = hits.clone();
