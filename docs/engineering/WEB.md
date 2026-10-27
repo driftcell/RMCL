@@ -42,7 +42,12 @@ bun run serve    # 直接预览 index.html
 
 `web/public/robots.txt` 指向 sitemap；`web/public/sitemap.xml` 目前只包含根页面。OG 图片由 `web/public/screenshots/home.webp` 生成，文件名稳定，不随构建 hash 变化。
 
-发布新版本时需要同步更新 `web/index.html` 中的品牌版本号和 JSON-LD `softwareVersion`。
+## 版本号
+
+- `web/src/ui/release-version.ts` 在页面加载时请求 GitHub REST API `GET /repos/driftcell/RMCL/releases/latest`，读取 `tag_name`，同时更新品牌栏的 `[data-release-version]` 和 JSON-LD `SoftwareApplication.softwareVersion`。
+- 站点保持静态，桌面应用发布新版本后不需要重新部署 Web；Pages 仍只在 `web/**` 或 Pages workflow 变化时构建。
+- GitHub API 允许跨域访问，未认证限流为每 IP 每小时 60 次。成功结果按浏览器 tab 缓存 1 小时，请求超时为 8 秒；缓存过期后会先显示旧版本再后台刷新，刷新失败时保留旧缓存。
+- 没有缓存且请求失败时不显示版本号，也不影响页面其余内容。JSON-LD 的 `softwareVersion` 由客户端补充，不执行 JavaScript 的爬虫可能看不到该字段。
 
 ## CI 检查
 
@@ -81,5 +86,5 @@ workflow 使用 `pages: write` 和 `id-token: write` 权限，不写入仓库内
 
 - 没有 PR 预览环境、自定义域名、缓存头或访问分析。
 - 字体仍从 Google Fonts 加载；离线或受限网络下会回退到系统字体。
-- 页面版本号、JSON-LD `softwareVersion` 和桌面应用发布版本没有自动同步，更新发布时需要手动同步。
+- 版本号依赖 GitHub API；未认证限流、网络不可用或浏览器拦截请求时，首次访问可能不显示版本号，已有缓存仍会显示。版本只在页面加载时刷新，不做后台轮询。
 - sitemap 只有单页，不包含锚点章节；新增独立页面时需要同步补充。
