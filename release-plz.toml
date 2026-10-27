@@ -3,6 +3,9 @@
 git_only = true
 release_always = false
 release_commits = "^(feat|fix|perf|refactor)"
+# Keep feature releases meaningful during 0.x: 0.4.4 + feat -> 0.5.0,
+# not 0.4.5. Fix-only releases still bump the patch version.
+features_always_increment_minor = true
 changelog_path = "CHANGELOG.md"
 # NOTE: every workspace package stays release-enabled so release-plz analyzes
 # commits in the library crates. `changelog_include` alone does not add changes

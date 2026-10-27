@@ -74,6 +74,16 @@ impl MinecraftLayout {
         Ok(self.asset_indexes_dir().join(format!("{id}.json")))
     }
 
+    /// Directory containing legacy assets under their original names for one
+    /// asset index.
+    pub fn virtual_assets_dir(&self, id: &str) -> Result<PathBuf, LayoutError> {
+        validate_segment(id).map_err(|reason| LayoutError::UnsafePath {
+            path: id.to_owned(),
+            reason,
+        })?;
+        Ok(self.assets_dir().join("virtual").join(id))
+    }
+
     pub fn asset_objects_dir(&self) -> PathBuf {
         self.assets_dir().join("objects")
     }
@@ -110,6 +120,11 @@ mod tests {
             layout.asset_index_path("17").unwrap(),
             Path::new(".minecraft/assets/indexes/17.json")
         );
+        assert_eq!(
+            layout.virtual_assets_dir("pre-1.6").unwrap(),
+            Path::new(".minecraft/assets/virtual/pre-1.6")
+        );
+        assert!(layout.virtual_assets_dir("../escape").is_err());
     }
 
     #[test]

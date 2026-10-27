@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现；真实游戏验证范围见末节
 
-日期：2026-10-26
+日期：2026-10-27
 
 ## 边界与输入
 
@@ -12,6 +12,7 @@
 - `from_install_plan` 接受 `InstanceLayout`，只把 `PlannedFileKind::Library` 加入 classpath；`NativeLibrary` 只用于提取，client JAR 和 asset 文件不进入 libraries。
 - client JAR 固定位于 classpath 最后。现代显式 native classifier 若已被安装计划归类为普通 `Library`，仍按元数据进入 classpath。
 - 生成启动计划时，游戏目录、共享 libraries、assets、natives 和 client JAR 统一转为绝对路径，避免切换工作目录后重复解析相对仓库前缀。
+- 旧版 `virtual` / `map_to_resources` index 使用安装阶段展开的 `assets/virtual/<index>` 作为 `--assetsDir`；普通 index 继续使用共享 `assets/`。
 - `${game_directory}` 来自实例游戏目录；`${library_directory}` 和 `${libraries_directory}` 来自仓库的共享 `libraries/`，不能从游戏目录推导。
 - 启动层消费 `resolve_version` 之后的独立 profile；Fabric/Quilt/Forge/NeoForge 的 mainClass、arguments 和 libraries 已合并，client JAR 按 `jar` 指向的基础版本读取。参见 [版本继承、加载器安装与实例创建](LOADERS.md)。
 - Java 的最低/最高 major、OS 和架构必须满足 `JavaRequirement`，否则在 spawn 前返回 `IncompatibleJava`。
