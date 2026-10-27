@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/driftcell/RMCL/compare/v0.7.1...v0.8.0) - 2026-10-27
+
+### Added
+
+- *(ui)* abbreviate home paths in read-only labels ([#62](https://github.com/driftcell/RMCL/pull/62))
+- *(servers)* compact launch target and move logs to sidebar bottom ([#60](https://github.com/driftcell/RMCL/pull/60))
+- *(home)* align quick-connect cards and tidy dashboard ([#61](https://github.com/driftcell/RMCL/pull/61))
+
+### Fixed
+
+- *(settings)* show update check state in the action button ([#65](https://github.com/driftcell/RMCL/pull/65))
+- *(ui)* stop labeling every instance as isolated ([#64](https://github.com/driftcell/RMCL/pull/64))
+- *(settings)* honor launcher visibility and trim copy ([#63](https://github.com/driftcell/RMCL/pull/63))
+
 ## [0.7.1](https://github.com/driftcell/RMCL/compare/v0.7.0...v0.7.1) - 2026-10-27
 
 ### Fixed
