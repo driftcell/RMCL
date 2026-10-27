@@ -310,7 +310,7 @@ impl LauncherApp {
             "管理服务器".to_owned()
         };
 
-        let mut tiles = Vec::new();
+        let mut server_cards = Vec::new();
         for server in &servers {
             let view = self.servers.statuses.get(&server.id);
             let loading = view.is_none_or(|view| view.loading);
@@ -321,68 +321,63 @@ impl LauncherApp {
                 .filter(|motd| !motd.is_empty());
             let id = server.id.clone();
             let name = server.name.clone();
-            tiles.push(
-                h_flex()
-                    .flex_basis(rems(0.))
-                    .flex_grow(1.0)
-                    .min_w_0()
-                    .items_center()
-                    .gap_2()
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background.opacity(0.55))
-                    .p_3()
-                    .child(server_tile(icon_path, layout::AVATAR_MEDIUM, cx))
+            server_cards.push(
+                card(cx)
+                    .gap_3()
                     .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_1()
-                            .child(div().text_sm().font_medium().truncate().child(name.clone()))
-                            .child(server_status_line(loading, status, cx))
+                        h_flex()
+                            .w_full()
+                            .items_start()
+                            .gap_3()
+                            .child(server_tile(icon_path, layout::TILE_LARGE, cx))
                             .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .truncate()
-                                    .child(server.address.clone()),
-                            )
-                            .child(
-                                div()
-                                    .min_h(px(16.))
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .truncate()
-                                    .child(motd.unwrap_or_default()),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .w(rems(6.5))
-                            .flex_shrink_0()
-                            .self_stretch()
-                            .items_end()
-                            .justify_between()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .min_h(px(16.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_end()
-                                    .when_some(server_players(status, cx), |this, players| {
-                                        this.child(players)
-                                    }),
+                                v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap_1()
+                                    .child(
+                                        h_flex()
+                                            .w_full()
+                                            .gap_2()
+                                            .items_center()
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .text_base()
+                                                    .font_semibold()
+                                                    .truncate()
+                                                    .child(name.clone()),
+                                            )
+                                            .when_some(
+                                                server_players(status, cx),
+                                                |this, players| this.child(players),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .truncate()
+                                            .child(server.address.clone()),
+                                    )
+                                    .when_some(motd, |this, motd| {
+                                        this.child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().foreground)
+                                                .truncate()
+                                                .child(motd),
+                                        )
+                                    })
+                                    .child(server_status_line(loading, status, cx)),
                             )
                             .child(
                                 Button::new(format!("home-server-join-{id}"))
-                                    .outline()
-                                    .small()
+                                    .primary()
                                     .icon(IconName::Play)
                                     .label("进入")
-                                    .w_full()
+                                    .flex_shrink_0()
                                     .disabled(!can_join)
                                     .tooltip(join_tooltip)
                                     .accessibility_label(format!("进入 {name}"))
@@ -395,19 +390,16 @@ impl LauncherApp {
             );
         }
 
-        card(cx)
+        v_flex()
+            .w_full()
+            .gap_3()
             .child(
                 h_flex()
                     .w_full()
-                    .items_start()
+                    .items_center()
                     .justify_between()
                     .gap_4()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(section_title("快速连接", "", cx)),
-                    )
+                    .child(section_title("快速连接", "", cx))
                     .when(total > 0, |this| {
                         this.child(
                             Button::new("home-servers-manage")
@@ -422,64 +414,65 @@ impl LauncherApp {
             )
             .when(servers.is_empty(), |this| {
                 this.child(
-                    h_flex()
-                        .w_full()
-                        .items_center()
-                        .gap_3()
-                        .rounded(cx.theme().radius)
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .bg(cx.theme().background.opacity(0.55))
-                        .p_3()
-                        .child(
-                            div()
-                                .size_9()
-                                .flex_shrink_0()
-                                .rounded(cx.theme().radius)
-                                .bg(cx.theme().primary.opacity(0.12))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Icon::new(IconName::Network).text_color(cx.theme().primary)),
-                        )
-                        .child(
-                            v_flex()
-                                .flex_1()
-                                .min_w_0()
-                                .gap_0p5()
-                                .child(div().text_sm().font_medium().child("还没有收藏的服务器"))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child("添加服务器或收藏精选条目后，可以从首页直接进入。"),
-                                ),
-                        )
-                        .child(
-                            Button::new("home-server-add")
-                                .primary()
-                                .small()
-                                .icon(IconName::Plus)
-                                .label("添加服务器")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_server_dialog(None, window, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("home-server-discover")
-                                .ghost()
-                                .small()
-                                .label("浏览精选")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.navigate(Page::Servers, window, cx);
-                                    this.select_server_tab(ServerTab::Discover, window, cx);
-                                })),
-                        ),
+                    card(cx).child(
+                        h_flex()
+                            .w_full()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .size_9()
+                                    .flex_shrink_0()
+                                    .rounded(cx.theme().radius)
+                                    .bg(cx.theme().primary.opacity(0.12))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        Icon::new(IconName::Network).text_color(cx.theme().primary),
+                                    ),
+                            )
+                            .child(
+                                v_flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .gap_0p5()
+                                    .child(
+                                        div().text_sm().font_medium().child("还没有收藏的服务器"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(
+                                                "添加服务器或收藏精选条目后，可以从首页直接进入。",
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                Button::new("home-server-add")
+                                    .primary()
+                                    .small()
+                                    .icon(IconName::Plus)
+                                    .label("添加服务器")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_server_dialog(None, window, cx)
+                                    })),
+                            )
+                            .child(
+                                Button::new("home-server-discover")
+                                    .ghost()
+                                    .small()
+                                    .label("浏览精选")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.navigate(Page::Servers, window, cx);
+                                        this.select_server_tab(ServerTab::Discover, window, cx);
+                                    })),
+                            ),
+                    ),
                 )
             })
-            .when(!servers.is_empty(), |this| {
-                this.child(h_flex().w_full().items_stretch().gap_3().children(tiles))
-            })
+            .children(server_cards)
     }
 
     fn render_recent_versions(&self, can_start: bool, cx: &mut Context<Self>) -> impl IntoElement {
