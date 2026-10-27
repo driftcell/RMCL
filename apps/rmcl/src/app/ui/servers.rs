@@ -19,7 +19,7 @@ use rmcl_app::{FeaturedServer, ServerStatus, featured_servers};
 use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
-use super::common::{card, empty_state, error_banner, page_header, section_title};
+use super::common::{card, empty_state, error_banner, page_header, section_title, server_tile};
 
 impl LauncherApp {
     pub fn render_servers(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -306,7 +306,7 @@ impl LauncherApp {
                 h_flex()
                     .items_start()
                     .gap_3()
-                    .child(server_icon(icon_path, cx))
+                    .child(server_tile(icon_path, 44., cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -408,7 +408,7 @@ impl LauncherApp {
                 h_flex()
                     .items_start()
                     .gap_3()
-                    .child(server_icon(icon_path, cx))
+                    .child(server_tile(icon_path, 44., cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -584,32 +584,5 @@ fn server_status_line(loading: bool, status: Option<&ServerStatus>, cx: &App) ->
                 .text_color(cx.theme().muted_foreground)
                 .child(detail),
         )
-        .into_any_element()
-}
-
-fn server_icon(path: Option<&std::path::Path>, cx: &App) -> AnyElement {
-    if let Some(path) = path {
-        return div()
-            .size(px(44.))
-            .flex_shrink_0()
-            .rounded(cx.theme().radius)
-            .overflow_hidden()
-            .bg(cx.theme().primary.opacity(0.15))
-            .child(
-                img(path.to_path_buf())
-                    .size_full()
-                    .object_fit(ObjectFit::Cover),
-            )
-            .into_any_element();
-    }
-    div()
-        .size(px(44.))
-        .flex_shrink_0()
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().primary.opacity(0.12))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(Icon::new(IconName::Network).text_color(cx.theme().primary))
         .into_any_element()
 }
