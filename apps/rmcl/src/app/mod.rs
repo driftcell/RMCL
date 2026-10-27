@@ -622,8 +622,12 @@ impl LauncherApp {
             )
         });
         let mirror_status = initial_mirror_status(config.download_source);
-        let mirror_probe_task =
-            spawn_mirror_probe(cx, services.mirror.clone(), config.download_source);
+        let mirror_probe_task = spawn_mirror_probe(
+            cx,
+            services.runtime.handle().clone(),
+            services.mirror.clone(),
+            config.download_source,
+        );
 
         let downloads_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
@@ -1441,7 +1445,12 @@ impl LauncherApp {
             .mirror
             .set_preference(mirror_preference(source));
         self.mirror_status = initial_mirror_status(source);
-        self._mirror_probe_task = spawn_mirror_probe(cx, self.services.mirror.clone(), source);
+        self._mirror_probe_task = spawn_mirror_probe(
+            cx,
+            self.services.runtime.handle().clone(),
+            self.services.mirror.clone(),
+            source,
+        );
         self.save_config();
         cx.notify();
     }
@@ -1456,6 +1465,7 @@ impl LauncherApp {
         self.mirror_status = initial_mirror_status(self.config.download_source);
         self._mirror_probe_task = spawn_mirror_probe(
             cx,
+            self.services.runtime.handle().clone(),
             self.services.mirror.clone(),
             self.config.download_source,
         );
@@ -6466,6 +6476,7 @@ fn mirror_probe_status(source: DownloadSourcePreference, probe: &MirrorProbe) ->
 
 fn spawn_mirror_probe(
     cx: &mut Context<LauncherApp>,
+    runtime: tokio::runtime::Handle,
     mirror: Arc<MirrorHealth>,
     source: DownloadSourcePreference,
 ) -> Option<Task<()>> {
@@ -6473,7 +6484,16 @@ fn spawn_mirror_probe(
         return None;
     }
     Some(cx.spawn(async move |this, cx| {
-        let probe = mirror.probe_default(Duration::from_secs(2)).await;
+        // reqwest and `tokio::time::timeout` need the core runtime; the GPUI
+        // executor does not provide a Tokio reactor.
+        let probe = runtime
+            .spawn(async move { mirror.probe_default(Duration::from_secs(2)).await })
+            .await
+            .unwrap_or_else(|error| MirrorProbe {
+                ok: false,
+                latency: None,
+                error: Some(format!("mirror probe task failed: {error}")),
+            });
         let status = mirror_probe_status(source, &probe);
         let _ = this.update(cx, |this, cx| {
             if this.config.download_source == source {
