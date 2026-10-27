@@ -133,7 +133,7 @@
 按卡片分组，不采用 HMCL 的八标签设置树：
 
 - **游戏**：Minecraft 目录使用原生目录选择器，Java 目录、自动获取 Java。目录修改后立即重新扫描版本，不移动现有文件；Java 目录和自动获取设置重启后生效。
-- **启动行为**：启动器可见性。默认保持显示；选择“游戏运行时隐藏”后，游戏进入 `RunningGame` 阶段时最小化启动器，任务退出、失败或取消时恢复。
+- **启动行为**：启动器可见性。默认保持显示；选择“游戏运行时隐藏”后，游戏进入 `RunningGame` 阶段时隐藏启动器（macOS 隐藏应用，Windows/Linux 最小化窗口），任务退出、失败或取消时恢复。
 - **外观**：跟随系统 / 浅色 / 深色，以及翡翠、海蓝、紫罗兰、琥珀、玫瑰五种强调色。修改立即应用并保存。
 - **更新**：当前版本、启动时检查、手动检查、发布说明、下载进度和错误。默认从 GitHub Release 检查，下载后校验 SHA-256，退出并重启完成替换。
 - **关于**：版本、配置路径、运行平台和 GPUI Kit 文档链接。
@@ -210,4 +210,4 @@ authlib-injector、OptiFine 等加载器、legacy Forge installer、原地升级
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
 - GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。
-- 游戏运行时最小化、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。
+- 游戏运行时隐藏、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。

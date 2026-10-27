@@ -68,7 +68,7 @@ accent = "emerald"
 - `auto_install_java`：缺少兼容 Java 时是否允许下载 Mojang runtime。当前在启动时读取。
 - `auto_check_updates`：启动后是否自动检查 GitHub Release；默认开启。手动检查不受该字段影响。
 - `download_source`：`auto`、`official` 或 `mirror`。`auto` 探测国内镜像，失败或超时使用官方源；`official` 完全不使用镜像；`mirror` 优先国内镜像并逐请求回退官方源。修改后立即生效，无需重启。见 [下载源与国内镜像](DOWNLOAD_SOURCES.md)。
-- `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时最小化启动器，任务终态恢复。
+- `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时隐藏启动器（macOS 隐藏应用，其他平台最小化窗口），任务终态恢复。
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
