@@ -4,6 +4,7 @@ use std::{
     io::Read,
     path::{Component, Path, PathBuf},
     process::Stdio,
+    sync::Arc,
     time::Duration,
 };
 
@@ -14,8 +15,8 @@ use rmcl_instance::{MinecraftLayout, VersionId};
 use rmcl_java::JavaRuntime;
 use rmcl_minecraft::{DownloadInfo, GameVersion, Library, Platform};
 use rmcl_net::{
-    DownloadConfig, DownloadError, DownloadExecutor, DownloadReport, DownloadStatus, ProgressStage,
-    progress_channel,
+    DownloadConfig, DownloadError, DownloadExecutor, DownloadReport, DownloadStatus, MirrorHealth,
+    ProgressStage, progress_channel,
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
@@ -53,6 +54,7 @@ pub struct ForgeInstaller {
     downloader: DownloadExecutor,
     extractor: ArchiveExtractor,
     metadata: reqwest::Client,
+    mirror: Option<Arc<MirrorHealth>>,
 }
 
 impl ForgeInstaller {
@@ -72,7 +74,20 @@ impl ForgeInstaller {
             downloader: DownloadExecutor::new(config)?,
             extractor: ArchiveExtractor::default(),
             metadata,
+            mirror: None,
         })
+    }
+
+    pub fn with_mirror(mut self, mirror: Arc<MirrorHealth>) -> Self {
+        self.mirror = Some(mirror);
+        self
+    }
+
+    fn with_mirror_candidates(&self, mut request: DownloadRequest) -> DownloadRequest {
+        if let Some(mirror) = &self.mirror {
+            mirror.add_candidates(&mut request.sources);
+        }
+        request
     }
 
     pub async fn install(
@@ -348,6 +363,41 @@ impl ForgeInstaller {
             Url::parse(&format!("{url}.sha1")).map_err(|source| AppError::LoaderInstaller {
                 message: format!("invalid installer SHA-1 URL: {source}"),
             })?;
+        let sources = self
+            .mirror
+            .as_ref()
+            .map(|mirror| mirror.sources_for(&sha_url))
+            .unwrap_or_else(|| vec![sha_url]);
+        let mut last_error = None;
+        let mut last_was_not_found = false;
+        for source in sources {
+            match self.fetch_installer_sha1(source, cancellation).await {
+                Ok(Some(sha1)) => return Ok(Some(sha1)),
+                Ok(None) => {
+                    last_was_not_found = true;
+                    last_error = None;
+                }
+                Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                Err(error) => {
+                    last_was_not_found = false;
+                    last_error = Some(error);
+                }
+            }
+        }
+        if last_was_not_found {
+            Ok(None)
+        } else {
+            Err(last_error.unwrap_or_else(|| AppError::LoaderInstaller {
+                message: "no installer SHA-1 source was available".to_owned(),
+            }))
+        }
+    }
+
+    async fn fetch_installer_sha1(
+        &self,
+        sha_url: Url,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<Sha1Hash>, AppError> {
         let response = tokio::select! {
             _ = cancellation.cancelled() => return Err(AppError::Cancelled),
             response = self.metadata.get(sha_url).send() => response.map_err(|source| {
@@ -394,6 +444,7 @@ impl ForgeInstaller {
         cancellation: &CancellationToken,
         events: &Option<InstanceCreateEventSender>,
     ) -> Result<DownloadStatus, AppError> {
+        let request = self.with_mirror_candidates(request);
         let (progress, mut receiver) = progress_channel(128);
         let download =
             self.downloader
@@ -438,7 +489,7 @@ impl ForgeInstaller {
             .files
             .iter()
             .filter(|file| !file.sources.is_empty())
-            .map(DownloadRequest::from)
+            .map(|file| self.with_mirror_candidates(DownloadRequest::from(file)))
             .collect::<Vec<_>>();
         if requests.is_empty() {
             return Ok(());

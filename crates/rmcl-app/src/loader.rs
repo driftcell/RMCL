@@ -1,7 +1,8 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
 use rmcl_instance::LoaderKind;
+use rmcl_net::MirrorHealth;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -64,6 +65,7 @@ pub struct LoaderCatalog {
     forge_maven_base: Url,
     neoforge_api_base: Url,
     neoforge_maven_base: Url,
+    mirror: Option<Arc<MirrorHealth>>,
 }
 
 impl LoaderCatalog {
@@ -83,7 +85,13 @@ impl LoaderCatalog {
             forge_maven_base: config.forge_maven_base,
             neoforge_api_base: config.neoforge_api_base,
             neoforge_maven_base: config.neoforge_maven_base,
+            mirror: None,
         })
+    }
+
+    pub fn with_mirror(mut self, mirror: Arc<MirrorHealth>) -> Self {
+        self.mirror = Some(mirror);
+        self
     }
 
     pub fn official() -> Result<Self, AppError> {
@@ -332,6 +340,29 @@ impl LoaderCatalog {
     }
 
     async fn get_bytes(
+        &self,
+        url: Url,
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<u8>, AppError> {
+        let sources = self
+            .mirror
+            .as_ref()
+            .map(|mirror| mirror.sources_for(&url))
+            .unwrap_or_else(|| vec![url]);
+        let mut last_error = None;
+        for source in sources {
+            match self.get_bytes_from(source, cancellation).await {
+                Ok(bytes) => return Ok(bytes),
+                Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| AppError::LoaderMetadata {
+            message: "no loader metadata source was available".to_owned(),
+        }))
+    }
+
+    async fn get_bytes_from(
         &self,
         url: Url,
         cancellation: &CancellationToken,

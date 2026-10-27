@@ -25,6 +25,7 @@
 - [版本继承、加载器安装与实例创建](architecture/LOADERS.md)：继承合并、jar 重定向、加载器 profile、Forge/NeoForge installer processors、实例创建事务与 UI。
 - [Vanilla 安装计划](architecture/INSTALL_PLAN.md)：纯文件计划、native 选择、完整性与冲突语义。
 - [下载执行器](architecture/DOWNLOAD_EXECUTOR.md)：并发、重试、取消、完整性与原子发布。
+- [下载源与国内镜像](architecture/DOWNLOAD_SOURCES.md)：BMCLAPI 映射、启动探测、逐请求回退与覆盖范围。
 - [ZIP 安全解压](architecture/ARCHIVE_EXTRACTION.md)：staging、条目校验、路径安全与取消。
 - [Java 检测、探测与选择](architecture/JAVA_DISCOVERY.md)：真实 runtime 探测与兼容选择。
 - [Mojang runtime 元数据与安装](architecture/MOJANG_RUNTIME.md)：组件选择、raw 安装、链接、marker 与复用。

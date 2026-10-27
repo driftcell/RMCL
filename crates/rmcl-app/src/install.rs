@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io::Write, path::Path};
+use std::{collections::HashSet, io::Write, path::Path, sync::Arc};
 
 use rmcl_archive::{ArchiveExtractor, ExtractionError, ExtractionReport};
 use rmcl_domain::{DownloadRequest, Sha1Hash};
@@ -9,7 +9,9 @@ use rmcl_instance::{
     InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, RepositoryPath, VersionId,
 };
 use rmcl_minecraft::{AssetCatalog, GameVersion, VersionManifest, VersionSummary};
-use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadReport, ProgressStage, progress_channel};
+use rmcl_net::{
+    DownloadConfig, DownloadExecutor, DownloadReport, MirrorHealth, ProgressStage, progress_channel,
+};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
@@ -24,6 +26,7 @@ pub struct VanillaInstaller {
     sources: VanillaSources,
     downloader: DownloadExecutor,
     extractor: ArchiveExtractor,
+    mirror: Option<Arc<MirrorHealth>>,
 }
 
 impl VanillaInstaller {
@@ -36,7 +39,22 @@ impl VanillaInstaller {
             sources,
             downloader: DownloadExecutor::new(config)?,
             extractor: ArchiveExtractor::default(),
+            mirror: None,
         })
+    }
+
+    /// Prefers the configured mirror for every generated request, falling back
+    /// to the official URL through the download executor.
+    pub fn with_mirror(mut self, mirror: Arc<MirrorHealth>) -> Self {
+        self.mirror = Some(mirror);
+        self
+    }
+
+    fn with_mirror_candidates(&self, mut request: DownloadRequest) -> DownloadRequest {
+        if let Some(mirror) = &self.mirror {
+            mirror.add_candidates(&mut request.sources);
+        }
+        request
     }
 
     /// Installs one standalone Vanilla version and returns all data needed for a later launch.
@@ -290,6 +308,7 @@ impl VanillaInstaller {
                     sha1: summary.sha1.as_deref().map(str::parse).transpose()?,
                     size: None,
                 };
+                let request = self.with_mirror_candidates(request);
                 self.downloader
                     .download_file(&request, cancellation.clone(), None)
                     .await
@@ -338,6 +357,7 @@ impl VanillaInstaller {
             sha1: None,
             size: None,
         };
+        let request = self.with_mirror_candidates(request);
         self.downloader
             .download_file(&request, cancellation.clone(), None)
             .await
@@ -366,7 +386,7 @@ impl VanillaInstaller {
             .files
             .iter()
             .filter(|file| !file.sources.is_empty())
-            .map(DownloadRequest::from)
+            .map(|file| self.with_mirror_candidates(DownloadRequest::from(file)))
             .collect::<Vec<_>>();
         let total_files = requests.len();
         let (progress, mut receiver) = progress_channel(128);

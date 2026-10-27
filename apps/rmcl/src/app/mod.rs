@@ -44,9 +44,10 @@ use rmcl_app::{
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_launch::{GameLog, LaunchAccount, LogStream};
+use rmcl_net::{MirrorHealth, MirrorPreference, MirrorProbe};
 use rmcl_store::{
-    AccentColor, CONFIG_SCHEMA_VERSION, LauncherConfig, LauncherVisibility, StoredAccountKind,
-    StoredServer, ThemePreference,
+    AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LauncherConfig,
+    LauncherVisibility, StoredAccountKind, StoredServer, ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
@@ -74,6 +75,7 @@ use self::{
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
 const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
 const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
+const DOWNLOAD_SOURCE_ITEMS: [&str; 3] = ["自动", "官方源", "国内镜像"];
 const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SERVER_PING_CONCURRENCY: usize = 4;
 
@@ -479,6 +481,9 @@ pub struct LauncherApp {
     theme_select: Entity<SelectState<SearchableVec<String>>>,
     accent_select: Entity<SelectState<SearchableVec<String>>>,
     visibility_select: Entity<SelectState<SearchableVec<String>>>,
+    download_source_select: Entity<SelectState<SearchableVec<String>>>,
+    mirror_status: String,
+    _mirror_probe_task: Option<Task<()>>,
     log_state: LauncherState,
     log_scroll: ScrollHandle,
     log_follow: bool,
@@ -608,6 +613,17 @@ impl LauncherApp {
                 cx,
             )
         });
+        let download_source_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(DOWNLOAD_SOURCE_ITEMS.map(str::to_owned).to_vec()),
+                Some(IndexPath::default().row(download_source_index(config.download_source))),
+                window,
+                cx,
+            )
+        });
+        let mirror_status = initial_mirror_status(config.download_source);
+        let mirror_probe_task =
+            spawn_mirror_probe(cx, services.mirror.clone(), config.download_source);
 
         let downloads_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
@@ -774,6 +790,14 @@ impl LauncherApp {
                 }
             },
         ));
+        subscriptions.push(cx.subscribe(
+            &download_source_select,
+            |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    this.set_download_source(value.clone(), cx);
+                }
+            },
+        ));
 
         let skin_service_observe = cx.observe(&skin_service, |_, _, cx| cx.notify());
         let skin_service_events =
@@ -877,6 +901,9 @@ impl LauncherApp {
             theme_select,
             accent_select,
             visibility_select,
+            download_source_select,
+            mirror_status,
+            _mirror_probe_task: mirror_probe_task,
             log_state: LauncherState::new(),
             log_scroll: ScrollHandle::new(),
             log_follow: true,
@@ -1395,6 +1422,26 @@ impl LauncherApp {
             return;
         }
         self.config.launcher_visibility = visibility;
+        self.save_config();
+        cx.notify();
+    }
+
+    fn set_download_source(&mut self, value: String, cx: &mut Context<Self>) {
+        let source = match value.as_str() {
+            "自动" => DownloadSourcePreference::Auto,
+            "官方源" => DownloadSourcePreference::Official,
+            "国内镜像" => DownloadSourcePreference::Mirror,
+            _ => return,
+        };
+        if self.config.download_source == source {
+            return;
+        }
+        self.config.download_source = source;
+        self.services
+            .mirror
+            .set_preference(mirror_preference(source));
+        self.mirror_status = initial_mirror_status(source);
+        self._mirror_probe_task = spawn_mirror_probe(cx, self.services.mirror.clone(), source);
         self.save_config();
         cx.notify();
     }
@@ -6357,6 +6404,68 @@ fn theme_index(theme: ThemePreference) -> usize {
         ThemePreference::Light => 1,
         ThemePreference::Dark => 2,
     }
+}
+
+fn download_source_index(source: DownloadSourcePreference) -> usize {
+    match source {
+        DownloadSourcePreference::Auto => 0,
+        DownloadSourcePreference::Official => 1,
+        DownloadSourcePreference::Mirror => 2,
+    }
+}
+
+fn mirror_preference(source: DownloadSourcePreference) -> MirrorPreference {
+    match source {
+        DownloadSourcePreference::Auto => MirrorPreference::Auto,
+        DownloadSourcePreference::Official => MirrorPreference::Official,
+        DownloadSourcePreference::Mirror => MirrorPreference::Mirror,
+    }
+}
+
+fn initial_mirror_status(source: DownloadSourcePreference) -> String {
+    match source {
+        DownloadSourcePreference::Auto => "正在探测国内镜像…".to_owned(),
+        DownloadSourcePreference::Official => "仅使用官方源".to_owned(),
+        DownloadSourcePreference::Mirror => "国内镜像优先，正在探测…".to_owned(),
+    }
+}
+
+fn mirror_probe_status(source: DownloadSourcePreference, probe: &MirrorProbe) -> String {
+    match source {
+        DownloadSourcePreference::Official => "仅使用官方源".to_owned(),
+        DownloadSourcePreference::Auto => match (probe.ok, probe.latency) {
+            (true, Some(latency)) => {
+                format!("国内镜像可用（{} ms）", latency.as_millis())
+            }
+            _ => "国内镜像不可用，使用官方源".to_owned(),
+        },
+        DownloadSourcePreference::Mirror => match (probe.ok, probe.latency) {
+            (true, Some(latency)) => {
+                format!("国内镜像优先（{} ms）", latency.as_millis())
+            }
+            _ => "国内镜像优先；当前探测失败，将回退官方源".to_owned(),
+        },
+    }
+}
+
+fn spawn_mirror_probe(
+    cx: &mut Context<LauncherApp>,
+    mirror: Arc<MirrorHealth>,
+    source: DownloadSourcePreference,
+) -> Option<Task<()>> {
+    if source == DownloadSourcePreference::Official {
+        return None;
+    }
+    Some(cx.spawn(async move |this, cx| {
+        let probe = mirror.probe_default(Duration::from_secs(2)).await;
+        let status = mirror_probe_status(source, &probe);
+        let _ = this.update(cx, |this, cx| {
+            if this.config.download_source == source {
+                this.mirror_status = status;
+                cx.notify();
+            }
+        });
+    }))
 }
 
 fn visibility_index(visibility: LauncherVisibility) -> usize {
