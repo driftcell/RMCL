@@ -15,14 +15,19 @@ updates:
     labels:
       - "dependencies"
     groups:
-      # Minor and patch updates arrive together; major versions stay separate
-      # so an API-breaking change is never hidden inside a routine bump.
+      # Group by update type so each ecosystem produces at most two PRs per
+      # week. Major updates stay in their own PR, never inside a routine bump.
       rust-minor-patch:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
+      rust-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
 
   - package-ecosystem: "bun"
     directory: "/web"
@@ -44,6 +49,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      web-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -65,3 +75,8 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
