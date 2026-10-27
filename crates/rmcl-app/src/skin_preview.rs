@@ -24,14 +24,26 @@ const FILL_LIGHT: Vec3 = Vec3::new(0.5, -0.15, -0.45);
 pub struct SkinPreviewRenderer {
     width: u32,
     height: u32,
+    supersample: u32,
 }
 
 impl SkinPreviewRenderer {
     /// Creates a renderer for the given output size in physical pixels.
     pub fn new(width: u32, height: u32) -> Self {
+        Self::with_supersample(width, height, SUPERSAMPLE)
+    }
+
+    /// Creates a renderer that trades anti-aliasing for speed. Use it for
+    /// interactive frames and [`Self::new`] for the settled view.
+    pub fn fast(width: u32, height: u32) -> Self {
+        Self::with_supersample(width, height, 1)
+    }
+
+    fn with_supersample(width: u32, height: u32, supersample: u32) -> Self {
         Self {
             width: width.clamp(1, MAX_PREVIEW_DIMENSION),
             height: height.clamp(1, MAX_PREVIEW_DIMENSION),
+            supersample: supersample.clamp(1, SUPERSAMPLE),
         }
     }
 
@@ -55,8 +67,8 @@ impl SkinPreviewRenderer {
         pitch: f32,
         time: f32,
     ) -> RgbaImage {
-        let width = self.width.saturating_mul(SUPERSAMPLE);
-        let height = self.height.saturating_mul(SUPERSAMPLE);
+        let width = self.width.saturating_mul(self.supersample);
+        let height = self.height.saturating_mul(self.supersample);
         let focal = (height as f32 * FOCAL_SCALE).min(width as f32 * WIDTH_FOCAL_SCALE);
         let yaw = if yaw.is_finite() { yaw } else { 0.0 };
         let pitch = if pitch.is_finite() {
@@ -97,7 +109,7 @@ impl SkinPreviewRenderer {
             canvas.raster_face(face, texture, false, false);
         }
 
-        downsample(&canvas, self.width, self.height)
+        downsample(&mut canvas, self.width, self.height, self.supersample)
     }
 }
 
@@ -811,7 +823,15 @@ impl Canvas {
                 if write_depth {
                     self.depth[index] = depth;
                 }
-                self.blend(x as usize, y as usize, color, alpha);
+                if alpha >= 1.0 {
+                    let index = index * 4;
+                    self.pixels[index] = color[0].round() as u8;
+                    self.pixels[index + 1] = color[1].round() as u8;
+                    self.pixels[index + 2] = color[2].round() as u8;
+                    self.pixels[index + 3] = 255;
+                } else {
+                    self.blend(x as usize, y as usize, color, alpha);
+                }
             }
         }
     }
@@ -825,6 +845,13 @@ impl Canvas {
         let destination_alpha = self.pixels[index + 3] as f32 / 255.0;
         let output_alpha = alpha + destination_alpha * (1.0 - alpha);
         if output_alpha <= 0.0 {
+            return;
+        }
+        if destination_alpha <= 0.0 {
+            self.pixels[index] = color[0].round().clamp(0.0, 255.0) as u8;
+            self.pixels[index + 1] = color[1].round().clamp(0.0, 255.0) as u8;
+            self.pixels[index + 2] = color[2].round().clamp(0.0, 255.0) as u8;
+            self.pixels[index + 3] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
             return;
         }
         for (channel, source) in color.iter().enumerate() {
@@ -841,19 +868,24 @@ fn edge(a: Vec2, b: Vec2, point: Vec2) -> f32 {
     (point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x)
 }
 
-fn downsample(canvas: &Canvas, width: u32, height: u32) -> RgbaImage {
+fn downsample(canvas: &mut Canvas, width: u32, height: u32, supersample: u32) -> RgbaImage {
+    if supersample == 1 {
+        // Canvas pixels already use the output resolution and straight alpha.
+        return RgbaImage::from_raw(width, height, std::mem::take(&mut canvas.pixels))
+            .expect("canvas dimensions match its pixel buffer");
+    }
     let mut output = RgbaImage::new(width, height);
-    let sample_count = (SUPERSAMPLE * SUPERSAMPLE) as f32;
+    let sample_count = (supersample * supersample) as f32;
     for y in 0..height {
         for x in 0..width {
             let mut red = 0.0;
             let mut green = 0.0;
             let mut blue = 0.0;
             let mut alpha = 0.0;
-            for sample_y in 0..SUPERSAMPLE {
-                for sample_x in 0..SUPERSAMPLE {
-                    let source_x = x * SUPERSAMPLE + sample_x;
-                    let source_y = y * SUPERSAMPLE + sample_y;
+            for sample_y in 0..supersample {
+                for sample_x in 0..supersample {
+                    let source_x = x * supersample + sample_x;
+                    let source_y = y * supersample + sample_y;
                     let index = (source_y as usize * canvas.width as usize + source_x as usize) * 4;
                     let sample_alpha = canvas.pixels[index + 3] as f32 / 255.0;
                     red += canvas.pixels[index] as f32 * sample_alpha;

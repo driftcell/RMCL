@@ -34,10 +34,10 @@ pub const MENU_WIDTH: Rems = rems(17.5);
 pub const MENU_MAX_HEIGHT: Rems = rems(16.25);
 pub const SELECT_MENU_WIDTH: Rems = rems(12.5);
 
-/// Skin stage dimensions and the viewport width that switches to the wide stage.
-pub const SKIN_STAGE: Rems = rems(25.0);
-pub const SKIN_STAGE_WIDE: Rems = rems(31.25);
-pub const SKIN_STAGE_WIDE_MIN_VIEWPORT: Rems = rems(71.25);
+/// Bounds for the skin preview column. Its height fills the page content area
+/// so it stays aligned with the settings card.
+pub const SKIN_STAGE_MIN: Rems = rems(20.0);
+pub const SKIN_STAGE_MAX: Rems = rems(27.0);
 
 /// Resolves a rem length for component APIs that require `Pixels`.
 pub fn rem_px(cx: &App, length: Rems) -> Pixels {

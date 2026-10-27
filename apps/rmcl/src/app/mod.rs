@@ -667,7 +667,7 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
 
         let skin_service = cx.new(|cx| SkinService::new(services.clone(), cx));
-        let skin_viewer = cx.new(SkinViewer::new);
+        let skin_viewer = cx.new(|cx| SkinViewer::new(services.runtime.handle().clone(), cx));
 
         let mut subscriptions = Vec::new();
         subscriptions.push(
@@ -2734,58 +2734,43 @@ impl LauncherApp {
     }
 
     fn browse_minecraft_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(target_os = "macos")]
-        {
-            match pick_directory_macos(&self.config.minecraft_root) {
-                Ok(Some(path)) => self.set_minecraft_root(path, window, cx),
-                Ok(None) => {}
-                Err(error) => {
-                    window.push_notification(Notification::error(error).title("选择目录失败"), cx)
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("选择 Minecraft 目录".into()),
+        });
+        self._prompt_task = Some(
+            cx.spawn_in(window, async move |this, cx| match prompt.await {
+                Ok(Ok(Some(paths))) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        let _ = this.update_in(cx, |view, window, cx| {
+                            view.set_minecraft_root(path, window, cx)
+                        });
+                    }
                 }
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let prompt = cx.prompt_for_paths(PathPromptOptions {
-                files: false,
-                directories: true,
-                multiple: false,
-                prompt: Some("选择 Minecraft 目录".into()),
-            });
-            self._prompt_task = Some(cx.spawn_in(
-                window,
-                async move |this, cx| match prompt.await {
-                    Ok(Ok(Some(paths))) => {
-                        if let Some(path) = paths.into_iter().next() {
-                            let _ = this.update_in(cx, |view, window, cx| {
-                                view.set_minecraft_root(path, window, cx)
-                            });
-                        }
-                    }
-                    Ok(Ok(None)) => {}
-                    Ok(Err(error)) => {
-                        let _ = this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error(format!("无法打开目录选择器: {error}"))
-                                    .title("选择目录失败"),
-                                cx,
-                            );
-                        });
-                    }
-                    Err(_) => {
-                        let _ = this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error("目录选择器已取消或窗口已关闭。")
-                                    .title("选择目录失败"),
-                                cx,
-                            );
-                        });
-                    }
-                },
-            ));
-            cx.notify();
-        }
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error(format!("无法打开目录选择器: {error}"))
+                                .title("选择目录失败"),
+                            cx,
+                        );
+                    });
+                }
+                Err(_) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error("目录选择器已取消或窗口已关闭。")
+                                .title("选择目录失败"),
+                            cx,
+                        );
+                    });
+                }
+            }),
+        );
+        cx.notify();
     }
 
     fn set_minecraft_root(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -5769,58 +5754,41 @@ impl LauncherApp {
             kind.directory(&version.instance_layout(self.config.minecraft_root.clone()));
         let _ = std::fs::create_dir_all(&directory);
 
-        #[cfg(target_os = "macos")]
-        {
-            match pick_content_files_macos(&directory) {
-                Ok(Some(paths)) if !paths.is_empty() => {
-                    self.import_content_files(kind, paths, window, cx)
+        let prompt = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some(format!("选择 {} 文件", kind.label()).into()),
+        });
+        self._prompt_task = Some(
+            cx.spawn_in(window, async move |this, cx| match prompt.await {
+                Ok(Ok(Some(paths))) if !paths.is_empty() => {
+                    let _ = this.update_in(cx, |view, window, cx| {
+                        view.import_content_files(kind, paths, window, cx)
+                    });
                 }
-                Ok(Some(_)) | Ok(None) => {}
-                Err(error) => {
-                    window.push_notification(Notification::error(error).title("选择文件失败"), cx);
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error(format!("无法打开文件选择器: {error}"))
+                                .title("选择文件失败"),
+                            cx,
+                        );
+                    });
                 }
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let prompt = cx.prompt_for_paths(PathPromptOptions {
-                files: true,
-                directories: false,
-                multiple: true,
-                prompt: Some(format!("选择 {} 文件", kind.label()).into()),
-            });
-            self._prompt_task = Some(cx.spawn_in(
-                window,
-                async move |this, cx| match prompt.await {
-                    Ok(Ok(Some(paths))) if !paths.is_empty() => {
-                        let _ = this.update_in(cx, |view, window, cx| {
-                            view.import_content_files(kind, paths, window, cx)
-                        });
-                    }
-                    Ok(Ok(_)) => {}
-                    Ok(Err(error)) => {
-                        let _ = this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error(format!("无法打开文件选择器: {error}"))
-                                    .title("选择文件失败"),
-                                cx,
-                            );
-                        });
-                    }
-                    Err(_) => {
-                        let _ = this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error("文件选择器已取消或窗口已关闭。")
-                                    .title("选择文件失败"),
-                                cx,
-                            );
-                        });
-                    }
-                },
-            ));
-            cx.notify();
-        }
+                Err(_) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::error("文件选择器已取消或窗口已关闭。")
+                                .title("选择文件失败"),
+                            cx,
+                        );
+                    });
+                }
+            }),
+        );
+        cx.notify();
     }
 
     fn import_content_files(
@@ -6735,68 +6703,4 @@ fn deminiaturize_windows() {
             window.deminiaturize(None);
         }
     }
-}
-
-#[cfg(target_os = "macos")]
-fn pick_directory_macos(start: &std::path::Path) -> Result<Option<PathBuf>, String> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
-    use objc2_foundation::{NSString, NSURL};
-
-    let marker =
-        MainThreadMarker::new().ok_or_else(|| "目录选择器必须在主线程打开。".to_owned())?;
-    let panel = NSOpenPanel::openPanel(marker);
-    panel.setCanChooseDirectories(true);
-    panel.setCanChooseFiles(false);
-    panel.setAllowsMultipleSelection(false);
-    panel.setCanCreateDirectories(true);
-    panel.setResolvesAliases(false);
-
-    let initial = if start.is_dir() {
-        Some(start)
-    } else {
-        start.parent().filter(|parent| parent.is_dir())
-    };
-    if let Some(initial) = initial
-        && let Some(url) = NSURL::from_directory_path(initial)
-    {
-        panel.setDirectoryURL(Some(&url));
-    }
-    panel.setPrompt(Some(&NSString::from_str("选择")));
-    if panel.runModal() != NSModalResponseOK {
-        return Ok(None);
-    }
-    Ok(panel.URLs().iter().find_map(|url| url.to_file_path()))
-}
-
-#[cfg(target_os = "macos")]
-fn pick_content_files_macos(start: &std::path::Path) -> Result<Option<Vec<PathBuf>>, String> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
-    use objc2_foundation::{NSString, NSURL};
-
-    let marker =
-        MainThreadMarker::new().ok_or_else(|| "文件选择器必须在主线程打开。".to_owned())?;
-    let panel = NSOpenPanel::openPanel(marker);
-    panel.setCanChooseDirectories(false);
-    panel.setCanChooseFiles(true);
-    panel.setAllowsMultipleSelection(true);
-    panel.setResolvesAliases(false);
-
-    if start.is_dir()
-        && let Some(url) = NSURL::from_directory_path(start)
-    {
-        panel.setDirectoryURL(Some(&url));
-    }
-    panel.setPrompt(Some(&NSString::from_str("导入")));
-    if panel.runModal() != NSModalResponseOK {
-        return Ok(None);
-    }
-    Ok(Some(
-        panel
-            .URLs()
-            .iter()
-            .filter_map(|url| url.to_file_path())
-            .collect(),
-    ))
 }

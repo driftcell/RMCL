@@ -23,6 +23,12 @@ version = "0.6.1"
 edition = "2024"
 license = "MIT"
 
+# The skin preview rasterizes on a background thread, but debug builds make
+# each frame slow enough to lag behind the animation. Optimize the app crate in
+# development without slowing down the rest of the workspace.
+[profile.dev.package.rmcl-app]
+opt-level = 2
+
 [workspace.dependencies]
 axum = "0.8"
 base64 = "0.23"
