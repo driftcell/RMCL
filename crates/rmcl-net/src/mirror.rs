@@ -137,6 +137,10 @@ impl MirrorHealth {
             if !status.is_success() {
                 return Err(format!("HTTP {}", status.as_u16()));
             }
+            let body = response.bytes().await.map_err(|error| error.to_string())?;
+            if body.is_empty() {
+                return Err("empty probe response".to_owned());
+            }
             Ok(())
         })
         .await;
@@ -185,6 +189,7 @@ impl MirrorHealth {
     /// depend on `reqwest`.
     pub async fn probe_default(&self, timeout: Duration) -> MirrorProbe {
         let client = match Client::builder()
+            .user_agent(concat!("RMCL/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(5))
             .timeout(timeout + Duration::from_secs(1))
             .build()

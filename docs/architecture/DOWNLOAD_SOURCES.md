@@ -44,7 +44,7 @@ RMCL 的主要用户在中国大陆，Mojang 官方下载源和 Java runtime 在
 
 `rmcl-net::MirrorHealth` 在启动时和切换下载源时调用 `probe_default`：
 
-1. 请求镜像的 `mc/game/version_manifest_v2.json`；
+1. 请求并读取镜像的 `mc/game/version_manifest_v2.json`；
 2. 总超时 2 秒，客户端请求超时 3 秒；
 3. 响应成功且耗时不超过 1500 ms 时，`auto` 才启用镜像；
 4. 失败或超时则 `auto` 使用官方源；`mirror` 仍保持镜像优先并依赖逐请求回退。
