@@ -3,9 +3,12 @@ import { VoxelPicker } from "./render/picking";
 import { RmclSceneStage } from "./render/scene";
 import { DomController } from "./ui/dom-controller";
 import { HudProjectionOverlay } from "./ui/hud-projection";
+import { syncReleaseVersion } from "./ui/release-version";
 import { ScrollDriver } from "./ui/scroll-driver";
 
 function bootstrap(): void {
+  syncReleaseVersion();
+
   const stageContainer = document.getElementById("webgl-stage");
   const hudSvg = document.getElementById("hud-svg") as SVGSVGElement | null;
   const hudLabels = document.getElementById("hud-labels");
