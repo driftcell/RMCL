@@ -1,6 +1,6 @@
 # RMCL 开发约定
 
-RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和行为为参考，采用不同的架构与实现路线，目标界面使用 GPUI Kit。
+RMCL 是一个独立的 Rust Minecraft 启动器，采用自己的架构与实现路线，目标界面使用 GPUI Kit。
 
 ## 开始工作前
 
@@ -8,12 +8,10 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 2. 区分当前已实现行为、已接受的未来设计和探索中的想法；不要把目标架构描述成现状。
 3. 检查工作区已有修改，保留用户和其他贡献者的工作。
 
-## 探索与实现分工
+## 实现与验证
 
-- 需要检索、探索或梳理代码库时，将相应 subagent 任务交给 `opencode-go/deepseek-v4.1-flash`。
 - 主 agent 亲自负责代码实现、针对性修改、文档定稿和最终验证。
 - 为修改已知文件而读取其上下文，以及修改后的验证，不需要另行委派。
-- `../HMCL` 是只读参考源码。除非用户明确要求，不得修改、格式化或在其中生成文件。
 
 ## 开发路线
 
@@ -22,9 +20,18 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 - 核心逻辑不得依赖 GPUI；桌面 UI 只负责交互和展示。
 - 长生命周期任务由应用层持有，不能由某个 View 或页面临时持有。
 - 多 crate 结构按真实模块边界逐步拆分，不预先创建空壳 crate。
-- 优先复用现有 `.minecraft`，RMCL 自有配置与 HMCL 配置分离。
+- 优先复用现有 `.minecraft`，RMCL 自有配置独立存放。
 
 详细决策见 `docs/product/`、`docs/architecture/` 和 `docs/compatibility/`。
+
+## GPUI
+
+GPUI 的使用参考 <https://gpui-kit.com/llms.txt>。
+
+涉及 GPUI 部分的开发必看：
+
+- <https://gpui-kit.com/docs/design-guides.md>
+- <https://gpui-kit.com/docs/coding-guides.md>
 
 ## 文档纪律
 
@@ -53,8 +60,6 @@ RMCL 是一个独立的 Rust Minecraft 启动器。项目以 HMCL 的功能和�
 ## 独立实现与许可
 
 - RMCL 原创代码按 MIT 路线准备。
-- HMCL 仅作为行为、兼容性和测试对照参考；不得直接复制、贴身翻译其源码、注释或资源。
-- 需要复用任何 HMCL 代码、测试数据或素材时，先停止合并并重新评估许可，不能以项目名为 RMCL 或许可字段为 MIT 代替评估。
 - 第三方元数据、测试样本和依赖也要记录来源及各自许可。
 
 见 `docs/engineering/LICENSING.md`。
