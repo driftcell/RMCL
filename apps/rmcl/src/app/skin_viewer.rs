@@ -286,6 +286,8 @@ impl Render for SkinViewer {
 
         div()
             .relative()
+            // NOTE: The preview is a raster surface. The skin page resolves its
+            // layout size in rem and passes the result here as pixels.
             .w(px(self.width as f32))
             .h(px(self.height as f32))
             .flex_shrink_0()

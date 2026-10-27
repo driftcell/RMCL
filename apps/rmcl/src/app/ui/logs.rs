@@ -21,6 +21,7 @@ use super::super::{
     task_status_label,
 };
 use super::common::{card, empty_state, page_header};
+use super::layout;
 
 impl LauncherApp {
     pub fn render_logs(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -154,7 +155,7 @@ impl LauncherApp {
                     .overflow_hidden()
                     .child(
                         h_flex()
-                            .h(px(38.))
+                            .h(layout::TABLE_HEADER_HEIGHT)
                             .px_4()
                             .justify_between()
                             .border_b_1()
@@ -199,47 +200,50 @@ impl LauncherApp {
                             })
                             .track_scroll(&self.log_scroll)
                             .overflow_y_scrollbar()
-                            .p_3()
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_size(cx.theme().mono_font_size)
-                            .children(logs.iter().enumerate().map(|(index, log)| {
-                                let stream = match log.stream {
-                                    LogStream::Stdout => "out",
-                                    LogStream::Stderr => "err",
-                                };
-                                let color = match log.stream {
-                                    LogStream::Stdout => cx.theme().muted_foreground,
-                                    LogStream::Stderr => cx.theme().warning,
-                                };
-                                h_flex()
-                                    .w_full()
-                                    .items_start()
-                                    .gap_2()
-                                    .py_0p5()
-                                    .child(
-                                        div()
-                                            .w(px(34.))
-                                            .flex_shrink_0()
-                                            .text_right()
-                                            .text_color(cx.theme().muted_foreground.opacity(0.45))
-                                            .child(format!("{:>4}", index + 1)),
-                                    )
-                                    .child(
-                                        div()
-                                            .w(px(28.))
-                                            .flex_shrink_0()
-                                            .text_color(color.opacity(0.75))
-                                            .child(stream),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .whitespace_normal()
-                                            .text_color(color)
-                                            .child(log.text.clone()),
-                                    )
-                            }))
+                            .child(v_flex().p_3().children(logs.iter().enumerate().map(
+                                |(index, log)| {
+                                    let stream = match log.stream {
+                                        LogStream::Stdout => "out",
+                                        LogStream::Stderr => "err",
+                                    };
+                                    let color = match log.stream {
+                                        LogStream::Stdout => cx.theme().muted_foreground,
+                                        LogStream::Stderr => cx.theme().warning,
+                                    };
+                                    h_flex()
+                                        .w_full()
+                                        .items_start()
+                                        .gap_2()
+                                        .py_0p5()
+                                        .child(
+                                            div()
+                                                .w_8()
+                                                .flex_shrink_0()
+                                                .text_right()
+                                                .text_color(
+                                                    cx.theme().muted_foreground.opacity(0.45),
+                                                )
+                                                .child(format!("{:>4}", index + 1)),
+                                        )
+                                        .child(
+                                            div()
+                                                .w_7()
+                                                .flex_shrink_0()
+                                                .text_color(color.opacity(0.75))
+                                                .child(stream),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .whitespace_normal()
+                                                .text_color(color)
+                                                .child(log.text.clone()),
+                                        )
+                                },
+                            )))
                             .into_any_element()
                     }),
             )

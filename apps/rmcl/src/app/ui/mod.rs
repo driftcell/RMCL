@@ -5,6 +5,7 @@ pub mod create_instance;
 pub mod downloads;
 pub mod home;
 pub mod instance;
+pub mod layout;
 pub mod logs;
 pub mod servers;
 pub mod settings;

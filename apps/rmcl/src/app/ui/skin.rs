@@ -34,6 +34,7 @@ use super::super::{LauncherApp, Page};
 use super::common::{
     card, empty_state, error_banner, field_label, page_header, section_title, warning_banner,
 };
+use super::layout;
 
 /// The draft skin currently being previewed.
 pub struct SkinEditor {
@@ -106,11 +107,20 @@ impl LauncherApp {
         self.flush_pending_skin_profile(window, cx);
         self.sync_skin_viewer(cx);
 
-        let content_width = (window.viewport_size().width - px(232.) - px(48.)).max(px(560.));
-        let stage_width = if content_width < px(860.) { 400 } else { 500 };
-        let stage_height = (stage_width as f32 * 1.24).round() as u32;
+        let stage_width = if window.viewport_size().width
+            >= layout::rem_px(cx, layout::SKIN_STAGE_WIDE_MIN_VIEWPORT)
+        {
+            layout::rem_px(cx, layout::SKIN_STAGE_WIDE)
+        } else {
+            layout::rem_px(cx, layout::SKIN_STAGE)
+        };
+        let stage_height = (stage_width * 1.24).round();
         self.skin_viewer.update(cx, |viewer, cx| {
-            viewer.set_size(stage_width, stage_height, cx)
+            viewer.set_size(
+                stage_width.as_f32() as u32,
+                stage_height.as_f32() as u32,
+                cx,
+            )
         });
 
         let account = self.selected_microsoft_account().cloned();
@@ -138,7 +148,7 @@ impl LauncherApp {
                 this.child(error_banner("配置读取失败", &warning, cx))
             })
             .when_some(account, |this, account| {
-                this.child(self.render_skin_content(account, content_width, cx))
+                this.child(self.render_skin_content(account, cx))
             })
             .when(!has_account, |this| {
                 let open_accounts = cx.entity().downgrade();
@@ -163,7 +173,6 @@ impl LauncherApp {
     fn render_skin_content(
         &self,
         account: MicrosoftAccount,
-        _content_width: Pixels,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let service = self.skin_service.read(cx);
@@ -287,7 +296,7 @@ impl LauncherApp {
                     .child(super::super::account_avatar(
                         Some(&avatar_account),
                         head,
-                        40.,
+                        layout::AVATAR_LARGE,
                         cx,
                     ))
                     .child(
@@ -354,7 +363,8 @@ impl LauncherApp {
                                         .child(draft.file_name().to_owned()),
                                 )
                                 .child(
-                                    Tag::info()
+                                    Tag::new()
+                                        .outline()
                                         .small()
                                         .child(variant_label(self.skin_editor.variant)),
                                 ),

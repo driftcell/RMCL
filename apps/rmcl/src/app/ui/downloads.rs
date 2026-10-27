@@ -19,6 +19,7 @@ use rmcl_app::VersionSummary;
 
 use super::super::{LauncherApp, Page, VersionFilter, short_date, version_tile};
 use super::common::{card, empty_state, page_header, type_tag};
+use super::layout;
 
 impl LauncherApp {
     pub fn render_downloads(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -67,7 +68,7 @@ impl LauncherApp {
                                 Input::new(&self.downloads_query)
                                     .prefix(Icon::new(IconName::Search).small())
                                     .cleanable(true)
-                                    .w(px(320.)),
+                                    .w_80(),
                             )
                             .child(
                                 TabBar::new("downloads-filter")
@@ -190,7 +191,8 @@ impl LauncherApp {
         }
 
         let count = versions.len();
-        let sizes = Rc::new(vec![size(px(0.), px(64.)); count]);
+        let row_height = layout::rem_px(cx, layout::TABLE_ROW_HEIGHT);
+        let sizes = Rc::new(vec![size(px(0.), row_height); count]);
         let entity = cx.entity();
         let list = v_virtual_list(entity, "downloads-list", sizes, {
             let versions = versions.clone();
@@ -215,7 +217,7 @@ impl LauncherApp {
             .overflow_hidden()
             .child(
                 h_flex()
-                    .h(px(38.))
+                    .h(layout::TABLE_HEADER_HEIGHT)
                     .px_4()
                     .gap_3()
                     .border_b_1()
@@ -224,9 +226,9 @@ impl LauncherApp {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(div().flex_1().child("版本"))
-                    .child(div().w(px(112.)).child("发布时间"))
-                    .child(div().w(px(86.)).child("状态"))
-                    .child(div().w(px(104.)).child("操作")),
+                    .child(div().w(layout::DOWNLOAD_DATE_COLUMN).child("发布时间"))
+                    .child(div().w(layout::DOWNLOAD_STATUS_COLUMN).child("状态"))
+                    .child(div().w(layout::DOWNLOAD_ACTION_COLUMN).child("操作")),
             )
             .child(list.flex_1().min_h_0())
             .into_any_element()
@@ -246,13 +248,12 @@ impl LauncherApp {
         let can_start = self.log_state.can_start();
         h_flex()
             .w_full()
-            .h(px(64.))
+            .h(layout::TABLE_ROW_HEIGHT)
             .px_4()
             .gap_3()
             .border_b_1()
             .border_color(cx.theme().border)
-            .hover(|style| style.bg(cx.theme().list_hover))
-            .child(version_tile(icon, cx.theme().primary))
+            .child(version_tile(icon, cx.theme().primary, cx))
             .child(
                 h_flex()
                     .flex_1()
@@ -266,14 +267,14 @@ impl LauncherApp {
             )
             .child(
                 div()
-                    .w(px(112.))
+                    .w(layout::DOWNLOAD_DATE_COLUMN)
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(date),
             )
             .child(
                 div()
-                    .w(px(86.))
+                    .w(layout::DOWNLOAD_STATUS_COLUMN)
                     .flex()
                     .items_center()
                     .justify_center()
@@ -286,7 +287,7 @@ impl LauncherApp {
                     }),
             )
             .child(
-                div().w(px(104.)).child(
+                div().w(layout::DOWNLOAD_ACTION_COLUMN).child(
                     Button::new(format!("downloads-install-{id}"))
                         .outline()
                         .small()

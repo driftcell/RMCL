@@ -96,7 +96,7 @@ impl LauncherApp {
                                 this.back_to_instance_detail(window, cx)
                             })),
                     )
-                    .child(version_tile(IconName::Globe, cx.theme().primary))
+                    .child(version_tile(IconName::Globe, cx.theme().primary, cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -107,7 +107,8 @@ impl LauncherApp {
                                     .gap_2()
                                     .child(div().text_2xl().font_semibold().truncate().child(title))
                                     .child(
-                                        Tag::info()
+                                        Tag::new()
+                                            .outline()
                                             .child(ContentSource::Modrinth.label())
                                             .small(),
                                     ),
@@ -218,7 +219,7 @@ impl LauncherApp {
                                     Input::new(&self.remote_query)
                                         .prefix(Icon::new(IconName::Search).small())
                                         .cleanable(true)
-                                        .w(px(300.))
+                                        .w(rems(18.75))
                                         .flex_shrink_0(),
                                 )
                                 .child(
@@ -339,8 +340,7 @@ impl LauncherApp {
             .border_color(cx.theme().border)
             .bg(cx.theme().background.opacity(0.35))
             .p_3()
-            .hover(|style| style.bg(cx.theme().list_hover))
-            .child(version_tile(content_icon(kind), cx.theme().primary))
+            .child(version_tile(content_icon(kind), cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -377,7 +377,8 @@ impl LauncherApp {
                             .gap_1()
                             .flex_wrap()
                             .child(
-                                Tag::info()
+                                Tag::new()
+                                    .outline()
                                     .child(format!("{} 次下载", format_count(project.downloads)))
                                     .small(),
                             )
@@ -442,7 +443,8 @@ impl LauncherApp {
                                     )
                                 })
                                 .child(
-                                    Tag::info()
+                                    Tag::new()
+                                        .outline()
                                         .child(format!(
                                             "{} 次下载",
                                             format_count(project.downloads)
@@ -552,7 +554,7 @@ impl LauncherApp {
             .border_color(cx.theme().border)
             .bg(cx.theme().background.opacity(0.35))
             .p_3()
-            .child(version_tile(content_icon(kind), cx.theme().primary))
+            .child(version_tile(content_icon(kind), cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -640,19 +642,13 @@ fn is_loader(value: &str) -> bool {
 }
 
 fn version_type_tag(version_type: &str) -> Tag {
-    let tag = match version_type {
-        "release" => Tag::success(),
-        "beta" => Tag::warning(),
-        "alpha" => Tag::danger(),
-        _ => Tag::new().outline(),
-    };
     let label = match version_type {
         "release" => "正式版",
         "beta" => "Beta",
         "alpha" => "Alpha",
         other => other,
     };
-    tag.child(label.to_owned()).small()
+    Tag::new().outline().child(label.to_owned()).small()
 }
 
 fn format_count(value: u64) -> String {

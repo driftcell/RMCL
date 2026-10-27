@@ -16,6 +16,7 @@ use rmcl_app::InstalledVersion;
 
 use super::super::{LauncherApp, Page, ServerTab, short_date, version_tile, version_type_label};
 use super::common::{card, page_header, section_title, server_tile, type_tag};
+use super::layout;
 
 impl LauncherApp {
     pub fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -74,14 +75,14 @@ impl LauncherApp {
                             .gap_4()
                             .child(
                                 v_flex()
-                                    .flex_basis(px(0.))
+                                    .flex_basis(rems(0.))
                                     .flex_grow(2.0)
                                     .min_w_0()
                                     .child(self.render_recent_versions(can_start, cx)),
                             )
                             .child(
                                 v_flex()
-                                    .flex_basis(px(0.))
+                                    .flex_basis(rems(0.))
                                     .flex_grow(1.0)
                                     .min_w_0()
                                     .child(self.render_quick_actions(cx)),
@@ -139,7 +140,7 @@ impl LauncherApp {
                                             )
                                             .when_some(selected, |this, version| {
                                                 this.child(if version.is_isolated() {
-                                                    Tag::success().child("隔离").small()
+                                                    Tag::secondary().child("隔离").small()
                                                 } else {
                                                     Tag::new().outline().child("共享").small()
                                                 })
@@ -169,7 +170,7 @@ impl LauncherApp {
                                             )
                                             .child(
                                                 div()
-                                                    .max_w(px(380.))
+                                                    .max_w(rems(23.75))
                                                     .truncate()
                                                     .text_xs()
                                                     .font_family(
@@ -203,7 +204,7 @@ impl LauncherApp {
                     )
                     .child(
                         v_flex()
-                            .w(px(280.))
+                            .w(rems(17.5))
                             .flex_shrink_0()
                             .gap_2()
                             .rounded(cx.theme().radius)
@@ -231,8 +232,8 @@ impl LauncherApp {
                                         Select::new(&self.version_select)
                                             .placeholder("选择实例")
                                             .accessibility_label("选择实例")
-                                            .menu_width(px(280.))
-                                            .menu_max_h(px(260.))
+                                            .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
+                                            .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
                                             .cleanable(false)
                                             .w_full(),
                                     ),
@@ -326,7 +327,7 @@ impl LauncherApp {
             let name = server.name.clone();
             tiles.push(
                 h_flex()
-                    .flex_basis(px(0.))
+                    .flex_basis(rems(0.))
                     .flex_grow(1.0)
                     .min_w_0()
                     .items_center()
@@ -336,7 +337,7 @@ impl LauncherApp {
                     .border_color(cx.theme().border)
                     .bg(cx.theme().background.opacity(0.55))
                     .p_3()
-                    .child(server_tile(icon_path, 36., cx))
+                    .child(server_tile(icon_path, layout::AVATAR_MEDIUM, cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -406,7 +407,7 @@ impl LauncherApp {
                         .p_3()
                         .child(
                             div()
-                                .size(px(36.))
+                                .size_9()
                                 .flex_shrink_0()
                                 .rounded(cx.theme().radius)
                                 .bg(cx.theme().primary.opacity(0.12))
@@ -511,8 +512,7 @@ impl LauncherApp {
             .rounded(cx.theme().radius)
             .px_2()
             .py_2()
-            .hover(|style| style.bg(cx.theme().list_hover))
-            .child(version_tile(IconName::Box, cx.theme().primary))
+            .child(version_tile(IconName::Box, cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -528,7 +528,7 @@ impl LauncherApp {
             )
             .child(type_tag(version.version_type.as_deref()))
             .child(if version.is_isolated() {
-                Tag::success().child("隔离").small()
+                Tag::secondary().child("隔离").small()
             } else {
                 Tag::new().outline().child("共享").small()
             })
@@ -607,9 +607,9 @@ fn hero_tile(has_version: bool, cx: &App) -> impl IntoElement {
         IconName::Download
     };
     div()
-        .size(px(88.))
+        .size(layout::HERO_TILE)
         .flex_shrink_0()
-        .rounded(px(22.))
+        .rounded(cx.theme().radius_4xl())
         .bg(cx.theme().primary.opacity(0.14))
         .border_1()
         .border_color(cx.theme().primary.opacity(0.18))
