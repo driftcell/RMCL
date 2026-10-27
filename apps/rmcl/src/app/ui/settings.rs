@@ -1,13 +1,12 @@
 use gpui_kit::{
     assets::IconName,
     component::{
-        ActiveTheme, Disableable, Sizable, Size,
+        ActiveTheme, Disableable, Sizable,
         button::{Button, ButtonVariants},
         h_flex,
         link::Link,
         scroll::ScrollableElement,
         select::Select,
-        spinner::Spinner,
         switch::Switch,
         tag::Tag,
         v_flex,
@@ -25,6 +24,8 @@ impl LauncherApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let auto_java_view = cx.entity().downgrade();
         let auto_update_view = cx.entity().downgrade();
+        let update_checking = self.update.checking;
+        let update_up_to_date = self.update.up_to_date && !update_checking;
         v_flex()
             .w_full()
             .items_stretch()
@@ -370,11 +371,25 @@ impl LauncherApp {
                                     .child(
                                         Button::new("settings-check-update")
                                             .outline()
-                                            .icon(IconName::RefreshCw)
-                                            .label("检查更新")
-                                            .disabled(
-                                                self.update.checking || self.update.downloading,
-                                            )
+                                            .icon(if update_up_to_date {
+                                                IconName::CircleCheck
+                                            } else {
+                                                IconName::RefreshCw
+                                            })
+                                            .label(if update_checking {
+                                                "正在检查"
+                                            } else if update_up_to_date {
+                                                "已是最新版本"
+                                            } else {
+                                                "检查更新"
+                                            })
+                                            .loading(update_checking)
+                                            .disabled(self.update.downloading)
+                                            .tooltip(if update_up_to_date {
+                                                "重新检查更新"
+                                            } else {
+                                                "检查更新"
+                                            })
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.check_for_updates(true, window, cx)
                                             })),
@@ -406,18 +421,6 @@ impl LauncherApp {
                                                     move |_, _, cx| cx.open_url(&url)
                                                 }),
                                         )
-                                    })
-                                    .when(self.update.checking, |this| {
-                                        this.child(
-                                            h_flex()
-                                                .gap_2()
-                                                .child(
-                                                    Spinner::new()
-                                                        .with_size(Size::XSmall)
-                                                        .color(cx.theme().primary),
-                                                )
-                                                .child(help("正在检查更新…", cx)),
-                                        )
                                     }),
                             )
                             .when_some(self.update.progress, |this, progress| {
@@ -431,9 +434,6 @@ impl LauncherApp {
                                     _ => format!("下载中 · {}", format_size(progress.downloaded)),
                                 };
                                 this.child(mono(label, cx))
-                            })
-                            .when_some(self.update.status.clone(), |this, status| {
-                                this.child(help(status, cx))
                             })
                             .when_some(self.update.error.clone(), |this, error| {
                                 this.child(

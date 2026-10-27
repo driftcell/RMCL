@@ -227,8 +227,8 @@ struct UpdateState {
     downloading: bool,
     available: Option<UpdateRelease>,
     progress: Option<UpdateProgress>,
-    status: Option<String>,
     error: Option<String>,
+    up_to_date: bool,
 }
 
 impl ContentTab {
@@ -997,10 +997,8 @@ impl LauncherApp {
             return;
         }
         self.update.checking = true;
+        self.update.up_to_date = false;
         self.update.error = None;
-        if manual {
-            self.update.status = Some("正在检查更新…".to_owned());
-        }
         cx.notify();
 
         let client = self.services.updates.clone();
@@ -1016,7 +1014,7 @@ impl LauncherApp {
                     Ok(Ok(Some(release))) => {
                         let version = release.version.clone();
                         view.update.available = Some(release);
-                        view.update.status = Some(format!("发现新版本 v{version}"));
+                        view.update.up_to_date = false;
                         if !manual {
                             window.push_notification(
                                 Notification::info(format!(
@@ -1029,20 +1027,16 @@ impl LauncherApp {
                     }
                     Ok(Ok(None)) => {
                         view.update.available = None;
-                        if manual {
-                            view.update.status = Some("已是最新版本。".to_owned());
-                        }
+                        view.update.up_to_date = true;
                     }
                     Ok(Err(error)) => {
                         if manual {
                             view.update.error = Some(error.to_string());
-                            view.update.status = None;
                         }
                     }
                     Err(error) => {
                         if manual {
                             view.update.error = Some(format!("后台任务失败: {error}"));
-                            view.update.status = None;
                         }
                     }
                 }
@@ -1183,7 +1177,6 @@ impl LauncherApp {
             downloaded: 0,
             total: release.asset.size,
         });
-        self.update.status = Some("正在下载更新…".to_owned());
         self.update.error = None;
         cx.notify();
 
@@ -1223,8 +1216,6 @@ impl LauncherApp {
                                     match UpdatePlan::prepare(&release, &archive, &log_dir) {
                                         Ok(plan) => match spawn_apply_helper(&plan) {
                                             Ok(()) => {
-                                                view.update.status =
-                                                    Some("更新已就绪，正在重启…".to_owned());
                                                 window.push_notification(
                                                     Notification::info("RMCL 将退出并完成更新。")
                                                         .title("正在更新"),
@@ -1234,18 +1225,15 @@ impl LauncherApp {
                                             }
                                             Err(error) => {
                                                 view.update.error = Some(error.to_string());
-                                                view.update.status = None;
                                             }
                                         },
                                         Err(error) => {
                                             view.update.error = Some(error.to_string());
-                                            view.update.status = None;
                                         }
                                     }
                                 }
                                 Err(error) => {
                                     view.update.error = Some(error.to_string());
-                                    view.update.status = None;
                                 }
                             }
                             cx.notify();
