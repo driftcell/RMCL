@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现
 
-日期：2026-10-25
+日期：2026-10-27
 
 ## 模型与依赖方向
 
@@ -19,11 +19,11 @@
 
 当前按以下顺序发现并去重：
 
-1. 显式 managed roots：根目录的 `bin/java`、子目录的 `bin/java` 和 `Contents/Home/bin/java`；同时识别 Mojang store 的 `<platform>/<component>/bin/java` 与 `<platform>/<component>/jre.bundle/Contents/Home/bin/java`。
-2. `JAVA_HOME/bin/java`。
+1. 显式 managed roots：根目录的 `bin/java`（Windows 为 `bin/java.exe`）、子目录的 `bin/java` 和 `Contents/Home/bin/java`；同时识别 Mojang store 的 `<platform>/<component>/bin/java` 与 `<platform>/<component>/jre.bundle/Contents/Home/bin/java`。
+2. `JAVA_HOME/bin/java`（Windows 为 `bin/java.exe`）。
 3. PATH 中的 `java`，通过 `which` 解析。
 
-可执行文件必须是实际文件，允许解析符号链接。Windows 使用 `java.exe`，其他平台使用 `java`。
+可执行文件必须是实际文件，允许解析符号链接。Windows 使用 `java.exe`，其他平台使用 `java`。Mojang runtime 安装后的可执行文件路径因此是 Windows `bin/java.exe`、macOS `jre.bundle/Contents/Home/bin/java`、Linux `bin/java`。
 
 Windows 注册表、更多厂商安装目录和系统包管理器发现尚未实现。
 

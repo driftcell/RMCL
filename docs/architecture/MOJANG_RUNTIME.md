@@ -2,7 +2,7 @@
 
 状态：index、组件选择、raw 安装与复用已实现
 
-日期：2026-10-25
+日期：2026-10-27
 
 ## 官方索引
 
@@ -77,7 +77,7 @@ Linux ARM64 不映射到 x86_64 的 `linux`；其他未知架构直接报 `Unsup
 - link 目标允许 `..`，但必须以 link 父目录为基准规范化后仍位于 runtime 根内。
 - 目标必须存在且为普通文件或目录；Windows 无符号链接权限时返回明确错误，不复制目标文件代替。
 - Unix 文件按 manifest `executable` 设置 `0o755` 或 `0o644`，目录为 `0o755`；Windows 不应用 POSIX 执行位。
-- macOS 使用 `jre.bundle/Contents/Home/bin/java`，其他平台使用 `bin/java`。
+- macOS 使用 `jre.bundle/Contents/Home/bin/java`，Windows 使用 `bin/java.exe`，其他平台使用 `bin/java`。Windows manifest 的可执行文件带 `.exe` 后缀，不能只检查 `bin/java`。
 
 ## Marker 与复用
 

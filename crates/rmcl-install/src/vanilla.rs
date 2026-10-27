@@ -104,12 +104,6 @@ pub fn plan_asset_objects_with_base(
     catalog: &AssetCatalog,
     base: &Url,
 ) -> Result<InstallPlan, InstallPlanError> {
-    if catalog.is_virtual == Some(true) {
-        return Err(InstallPlanError::UnsupportedVirtualAssets);
-    }
-    if catalog.map_to_resources == Some(true) {
-        return Err(InstallPlanError::UnsupportedMappedAssets);
-    }
     if !matches!(base.scheme(), "http" | "https") {
         return Err(InstallPlanError::UnsupportedUrlScheme {
             artifact: "asset object base".to_owned(),
