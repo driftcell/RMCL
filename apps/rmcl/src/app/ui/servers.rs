@@ -498,7 +498,7 @@ impl LauncherApp {
     }
 }
 
-fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement> {
+pub(super) fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement> {
     let status = status?;
     let players = match (status.online_players, status.max_players) {
         (Some(online), Some(max)) => format!("{online}/{max} 人"),
@@ -525,7 +525,11 @@ fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement>
     )
 }
 
-fn server_status_line(loading: bool, status: Option<&ServerStatus>, cx: &App) -> AnyElement {
+pub(super) fn server_status_line(
+    loading: bool,
+    status: Option<&ServerStatus>,
+    cx: &App,
+) -> AnyElement {
     if loading && status.is_none() {
         return h_flex()
             .gap_1()
