@@ -3799,9 +3799,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(
-                                    "新实例默认启用版本隔离，mods、资源包、光影和存档互不影响。",
-                                ),
+                                .child("各实例的 mods、资源包、光影和存档互不影响。"),
                         ),
                 )
                 .footer(

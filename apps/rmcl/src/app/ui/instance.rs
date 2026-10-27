@@ -257,10 +257,8 @@ impl LauncherApp {
                                     .truncate()
                                     .child(version.display_name().to_owned()),
                             )
-                            .child(if version.is_isolated() {
-                                Tag::secondary().child("隔离").small()
-                            } else {
-                                Tag::new().outline().child("共享").small()
+                            .when(!version.is_isolated(), |this| {
+                                this.child(Tag::new().outline().child("共享").small())
                             })
                             .when_some(loader, |this, loader| {
                                 this.child(
