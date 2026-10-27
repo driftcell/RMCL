@@ -71,7 +71,7 @@ pub fn empty_state(
         .py_12()
         .child(
             div()
-                .size(px(56.))
+                .size(rems(3.5))
                 .rounded_full()
                 .bg(cx.theme().primary.opacity(0.12))
                 .flex()
@@ -96,20 +96,16 @@ pub fn empty_state(
 }
 
 pub fn type_tag(version_type: Option<&str>) -> Tag {
-    let tag = match version_type {
-        Some("release") => Tag::success(),
-        Some("snapshot") => Tag::info(),
-        Some("old_beta") | Some("old_alpha") => Tag::secondary(),
-        _ => Tag::new().outline(),
-    };
-    tag.child(super::super::version_type_label(version_type))
+    Tag::new()
+        .outline()
+        .child(super::super::version_type_label(version_type))
         .small()
 }
 
-pub fn server_tile(path: Option<&std::path::Path>, size: f32, cx: &App) -> AnyElement {
+pub fn server_tile(path: Option<&std::path::Path>, size: Rems, cx: &App) -> AnyElement {
     if let Some(path) = path {
         return div()
-            .size(px(size))
+            .size(size)
             .flex_shrink_0()
             .rounded(cx.theme().radius)
             .overflow_hidden()
@@ -122,7 +118,7 @@ pub fn server_tile(path: Option<&std::path::Path>, size: f32, cx: &App) -> AnyEl
             .into_any_element();
     }
     div()
-        .size(px(size))
+        .size(size)
         .flex_shrink_0()
         .rounded(cx.theme().radius)
         .bg(cx.theme().primary.opacity(0.12))

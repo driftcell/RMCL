@@ -65,7 +65,10 @@ use crate::{
 use self::{
     skin_service::{SkinService, SkinServiceEvent},
     skin_viewer::SkinViewer,
-    ui::skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
+    ui::{
+        layout,
+        skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
+    },
 };
 
 const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
@@ -1047,7 +1050,7 @@ impl LauncherApp {
             let save_release = dialog_release.clone();
             dialog
                 .title(format!("更新到 RMCL {}", dialog_release.version))
-                .width(px(620.))
+                .width(layout::rem_px(cx, layout::DIALOG_XLARGE))
                 .child(
                     v_flex()
                         .gap_3()
@@ -1074,7 +1077,7 @@ impl LauncherApp {
                         )
                         .child(
                             div()
-                                .max_h(px(240.))
+                                .max_h(rems(15.))
                                 .overflow_y_scrollbar()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
@@ -1881,7 +1884,7 @@ impl LauncherApp {
             let save_id = editing_id.clone();
             dialog
                 .title(if is_edit { "编辑服务器" } else { "添加服务器" })
-                .width(px(480.))
+                .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(
                     v_flex()
                         .gap_4()
@@ -2758,12 +2761,9 @@ impl LauncherApp {
                 })
                 .unwrap_or_default();
 
-            let mut list = v_flex()
-                .w_full()
-                .gap_1()
-                .max_h(px(320.))
-                .overflow_y_scrollbar();
-            for (index, account) in accounts.iter().enumerate() {
+            let mut list = v_flex().w_full().gap_1().max_h_80().overflow_y_scrollbar();
+            for account in accounts.iter() {
+                let account_id = account.uuid();
                 let username = account.username().to_owned();
                 let kind = stored_account_kind(account);
                 let is_selected =
@@ -2780,7 +2780,7 @@ impl LauncherApp {
                 let delete_account = account.clone();
                 list = list.child(
                     h_flex()
-                        .id(format!("account-row-{index}"))
+                        .id(format!("account-row-{account_id}"))
                         .w_full()
                         .p_2()
                         .gap_3()
@@ -2798,7 +2798,12 @@ impl LauncherApp {
                                 });
                             }
                         })
-                        .child(account_avatar(Some(account), head, 32., cx))
+                        .child(account_avatar(
+                            Some(account),
+                            head,
+                            layout::AVATAR_SMALL,
+                            cx,
+                        ))
                         .child(
                             v_flex()
                                 .flex_1()
@@ -2813,7 +2818,7 @@ impl LauncherApp {
                                 ),
                         )
                         .child(
-                            Button::new(format!("account-delete-{index}"))
+                            Button::new(format!("account-delete-{account_id}"))
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::Trash)
@@ -2855,41 +2860,45 @@ impl LauncherApp {
 
             let login_view = view.clone();
             let offline_view = view.clone();
-            dialog.title("账户").width(px(468.)).child(list).footer(
-                DialogFooter::new()
-                    .child(
-                        Button::new("accounts-close")
-                            .ghost()
-                            .label("关闭")
-                            .on_click(|_, window, cx| window.close_dialog(cx)),
-                    )
-                    .child(
-                        Button::new("offline-add")
-                            .outline()
-                            .label("添加离线账户")
-                            .on_click(move |_, window, cx| {
-                                window.close_dialog(cx);
-                                if let Some(view) = offline_view.upgrade() {
-                                    view.update(cx, |this, cx| {
-                                        this.open_offline_account_dialog(false, window, cx)
-                                    });
-                                }
-                            }),
-                    )
-                    .child(
-                        Button::new("microsoft-login")
-                            .primary()
-                            .label("正版登录")
-                            .on_click(move |_, window, cx| {
-                                window.close_dialog(cx);
-                                if let Some(view) = login_view.upgrade() {
-                                    view.update(cx, |this, cx| {
-                                        this.begin_microsoft_login(window, cx)
-                                    });
-                                }
-                            }),
-                    ),
-            )
+            dialog
+                .title("账户")
+                .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
+                .child(list)
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            Button::new("accounts-close")
+                                .ghost()
+                                .label("关闭")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("offline-add")
+                                .outline()
+                                .label("添加离线账户")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    if let Some(view) = offline_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.open_offline_account_dialog(false, window, cx)
+                                        });
+                                    }
+                                }),
+                        )
+                        .child(
+                            Button::new("microsoft-login")
+                                .primary()
+                                .label("正版登录")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    if let Some(view) = login_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.begin_microsoft_login(window, cx)
+                                        });
+                                    }
+                                }),
+                        ),
+                )
         });
     }
 
@@ -3314,7 +3323,7 @@ impl LauncherApp {
 
             dialog
                 .title("正版登录")
-                .width(px(468.))
+                .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(content)
                 .footer(footer)
                 .on_close(move |_, _, cx| {
@@ -3511,7 +3520,7 @@ impl LauncherApp {
             let confirm_view = view.clone();
             dialog
                 .title("删除账户")
-                .width(px(420.))
+                .width(layout::rem_px(cx, layout::DIALOG_SMALL))
                 .child(
                     v_flex()
                         .gap_2()
@@ -3692,7 +3701,7 @@ impl LauncherApp {
                         .child(
                             h_flex()
                                 .gap_3()
-                                .child(version_tile(IconName::Download, cx.theme().primary))
+                                .child(version_tile(IconName::Download, cx.theme().primary, cx))
                                 .child(
                                     v_flex()
                                         .gap_1()
@@ -4135,7 +4144,7 @@ impl LauncherApp {
             let save_id = version_id.clone();
             dialog
                 .title("重命名实例")
-                .width(px(420.))
+                .width(layout::rem_px(cx, layout::DIALOG_SMALL))
                 .child(
                     v_flex().gap_3().child(
                         v_flex()
@@ -4270,7 +4279,7 @@ impl LauncherApp {
             let save_id = version_id.clone();
             dialog
                 .title("启动设置")
-                .width(px(460.))
+                .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(
                     v_flex()
                         .gap_4()
@@ -4473,7 +4482,7 @@ impl LauncherApp {
                     })
                     .child(
                         div()
-                            .size(px(32.))
+                            .size_8()
                             .rounded(cx.theme().radius)
                             .bg(cx.theme().primary.opacity(0.12))
                             .flex()
@@ -4507,15 +4516,16 @@ impl LauncherApp {
                     }),
             );
 
-            for (index, runtime) in runtimes.into_iter().enumerate() {
+            for runtime in runtimes.into_iter() {
                 let selected = current.as_ref() == Some(&runtime.executable);
                 let executable = runtime.executable.clone();
+                let runtime_key = runtime.executable.display().to_string();
                 let row_view = view.downgrade();
                 let row_target = target.clone();
                 let source = java_source_label(runtime.source);
                 list = list.child(
                     h_flex()
-                        .id(format!("java-runtime-{index}"))
+                        .id(format!("java-runtime-{runtime_key}"))
                         .w_full()
                         .p_2()
                         .gap_3()
@@ -4537,7 +4547,7 @@ impl LauncherApp {
                         })
                         .child(
                             div()
-                                .size(px(32.))
+                                .size_8()
                                 .rounded(cx.theme().radius)
                                 .bg(cx.theme().primary.opacity(0.12))
                                 .flex()
@@ -4662,7 +4672,7 @@ impl LauncherApp {
             let retry_view = view.downgrade();
             dialog
                 .title("选择 Java")
-                .width(px(520.))
+                .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(body)
                 .footer(
                     DialogFooter::new()
@@ -5554,7 +5564,7 @@ impl LauncherApp {
             let save_name = display_name.clone();
             dialog
                 .title(format!("安装 {display_name}"))
-                .width(px(580.))
+                .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(
                     v_flex()
                         .gap_3()
@@ -6086,7 +6096,7 @@ impl Render for LauncherApp {
             Page::ContentBrowser => self.render_content_browser(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
-            Page::Settings => self.render_settings(window, cx).into_any_element(),
+            Page::Settings => self.render_settings(cx).into_any_element(),
         };
 
         v_flex()
@@ -6098,6 +6108,7 @@ impl Render for LauncherApp {
                 h_flex()
                     .flex_1()
                     .min_h_0()
+                    .items_stretch()
                     .child(self.render_sidebar(cx))
                     .child(
                         v_flex()
@@ -6253,12 +6264,12 @@ fn account_key(account: &Account) -> String {
 fn account_avatar(
     account: Option<&Account>,
     head: Option<&PathBuf>,
-    size: f32,
+    size: Rems,
     cx: &App,
 ) -> AnyElement {
     if let Some(head) = head {
         return div()
-            .size(px(size))
+            .size(size)
             .flex_shrink_0()
             .rounded_full()
             .overflow_hidden()
@@ -6271,7 +6282,7 @@ fn account_avatar(
         .map(|character| character.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_owned());
     div()
-        .size(px(size))
+        .size(size)
         .flex_shrink_0()
         .rounded_full()
         .bg(cx.theme().primary.opacity(0.15))
@@ -6553,11 +6564,11 @@ pub fn task_kind_label(kind: TaskKind) -> &'static str {
     }
 }
 
-pub fn version_tile(icon: IconName, color: Hsla) -> impl IntoElement {
+pub fn version_tile(icon: IconName, color: Hsla, cx: &App) -> impl IntoElement {
     div()
-        .size(px(44.))
+        .size_11()
         .flex_shrink_0()
-        .rounded(px(12.))
+        .rounded(cx.theme().radius_tokens().xl)
         .bg(color.opacity(0.12))
         .flex()
         .items_center()

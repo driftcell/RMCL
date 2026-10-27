@@ -81,7 +81,7 @@ impl LauncherApp {
                                 Input::new(&self.versions_query)
                                     .prefix(Icon::new(IconName::Search).small())
                                     .cleanable(true)
-                                    .w(px(300.)),
+                                    .w(rems(18.75)),
                             )
                             .child(
                                 TabBar::new("versions-filter")
@@ -227,8 +227,7 @@ impl LauncherApp {
             .border_color(cx.theme().border)
             .bg(cx.theme().background.opacity(0.35))
             .p_3()
-            .hover(|style| style.bg(cx.theme().list_hover))
-            .child(version_tile(IconName::Box, cx.theme().primary))
+            .child(version_tile(IconName::Box, cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -250,7 +249,8 @@ impl LauncherApp {
                             .child(type_tag(version.version_type.as_deref()))
                             .when_some(loader, |this, loader| {
                                 this.child(
-                                    Tag::info()
+                                    Tag::new()
+                                        .outline()
                                         .child(format!(
                                             "{} {}",
                                             loader.kind.label(),
@@ -260,7 +260,7 @@ impl LauncherApp {
                                 )
                             })
                             .child(if isolated {
-                                Tag::success().child("隔离").small()
+                                Tag::secondary().child("隔离").small()
                             } else {
                                 Tag::new().outline().child("共享").small()
                             })

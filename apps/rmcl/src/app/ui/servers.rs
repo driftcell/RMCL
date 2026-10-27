@@ -20,6 +20,7 @@ use rmcl_store::StoredServer;
 
 use super::super::{LauncherApp, Page, ServerTab};
 use super::common::{card, empty_state, error_banner, page_header, section_title, server_tile};
+use super::layout;
 
 impl LauncherApp {
     pub fn render_servers(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -55,7 +56,7 @@ impl LauncherApp {
         card(cx).child(section_title("启动目标", "", cx)).child(
             v_flex()
                 .gap_1()
-                .max_w(px(320.))
+                .max_w_80()
                 .child(
                     div()
                         .text_xs()
@@ -66,8 +67,8 @@ impl LauncherApp {
                     Select::new(&self.version_select)
                         .placeholder("选择实例")
                         .accessibility_label("选择实例")
-                        .menu_width(px(280.))
-                        .menu_max_h(px(260.))
+                        .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
+                        .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
                         .cleanable(false)
                         .w_full(),
                 ),
@@ -118,7 +119,7 @@ impl LauncherApp {
                         .px_1()
                         .child(
                             div()
-                                .w(px(360.))
+                                .w(rems(22.5))
                                 .flex_shrink_0()
                                 .child(Input::new(&self.server_query).w_full()),
                         )
@@ -206,7 +207,7 @@ impl LauncherApp {
                     .px_1()
                     .child(
                         div()
-                            .w(px(360.))
+                            .w(rems(22.5))
                             .flex_shrink_0()
                             .child(Input::new(&self.discover_query).w_full()),
                     )
@@ -306,7 +307,7 @@ impl LauncherApp {
                 h_flex()
                     .items_start()
                     .gap_3()
-                    .child(server_tile(icon_path, 44., cx))
+                    .child(server_tile(icon_path, layout::TILE_LARGE, cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -352,7 +353,7 @@ impl LauncherApp {
                     )
                     .child(
                         v_flex()
-                            .w(px(190.))
+                            .w_48()
                             .flex_shrink_0()
                             .gap_1()
                             .items_end()
@@ -408,7 +409,7 @@ impl LauncherApp {
                 h_flex()
                     .items_start()
                     .gap_3()
-                    .child(server_tile(icon_path, 44., cx))
+                    .child(server_tile(icon_path, layout::TILE_LARGE, cx))
                     .child(
                         v_flex()
                             .flex_1()

@@ -21,6 +21,7 @@ use super::super::{
     LauncherApp, Page, account_avatar, task_current_item, task_phase_label, task_progress,
     task_status_label,
 };
+use super::layout;
 
 impl LauncherApp {
     pub fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -37,7 +38,7 @@ impl LauncherApp {
                 .w_full()
                 .gap_3()
                 .pr_2()
-                .child(brand_mark())
+                .child(brand_mark(cx))
                 .child(div().text_sm().font_semibold().child("RMCL"))
                 .child(
                     Tag::new()
@@ -96,7 +97,7 @@ impl LauncherApp {
 
         Sidebar::new("main-sidebar")
             .collapsible(false)
-            .w(px(232.))
+            .w(layout::SIDEBAR_WIDTH)
             .child(
                 SidebarGroup::new("游戏").child(
                     SidebarMenu::new()
@@ -122,7 +123,7 @@ impl LauncherApp {
                             })
                             .when(!running && self.logs_attention, |this| {
                                 this.suffix(|_, cx| {
-                                    div().size(px(6.)).rounded_full().bg(cx.theme().danger)
+                                    div().size_1p5().rounded_full().bg(cx.theme().danger)
                                 })
                             })
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -137,67 +138,79 @@ impl LauncherApp {
             )
             .footer(
                 div().w_full().child(
-                    div()
-                        .id("account-chip")
+                    h_flex()
                         .w_full()
+                        .gap_1()
                         .rounded(cx.theme().radius)
                         .border_1()
                         .border_color(cx.theme().sidebar_border)
                         .bg(cx.theme().sidebar_accent.opacity(0.45))
-                        .p_2()
-                        .hover(|style| style.bg(cx.theme().sidebar_accent))
-                        .on_click(
-                            cx.listener(|this, _, window, cx| {
-                                this.open_accounts_dialog(window, cx)
-                            }),
+                        .p_1()
+                        .child(
+                            Button::new("account-chip")
+                                .ghost()
+                                .flex_1()
+                                .min_w_0()
+                                .h_12()
+                                .justify_start()
+                                .px_1()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.open_accounts_dialog(window, cx)
+                                }))
+                                .child(
+                                    h_flex()
+                                        .w_full()
+                                        .gap_2()
+                                        .child(account_avatar(
+                                            account,
+                                            account_head,
+                                            layout::AVATAR_SMALL,
+                                            cx,
+                                        ))
+                                        .child(
+                                            v_flex()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .gap_0p5()
+                                                .child(
+                                                    div()
+                                                        .text_sm()
+                                                        .font_medium()
+                                                        .truncate()
+                                                        .child(account_name),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(cx.theme().muted_foreground)
+                                                        .child(account_subtitle),
+                                                ),
+                                        ),
+                                ),
                         )
                         .child(
-                            h_flex()
-                                .gap_2()
-                                .child(account_avatar(account, account_head, 32., cx))
-                                .child(
-                                    v_flex()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .gap_0p5()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_medium()
-                                                .truncate()
-                                                .child(account_name),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(cx.theme().muted_foreground)
-                                                .child(account_subtitle),
-                                        ),
-                                )
-                                .child(
-                                    Button::new("account-edit")
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Pencil)
-                                        .tooltip(if selected_is_offline {
-                                            "编辑离线账户"
-                                        } else {
-                                            "账户"
-                                        })
-                                        .accessibility_label(if selected_is_offline {
-                                            "编辑离线账户"
-                                        } else {
-                                            "账户"
-                                        })
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            cx.stop_propagation();
-                                            if selected_is_offline {
-                                                this.open_offline_account_dialog(true, window, cx);
-                                            } else {
-                                                this.open_accounts_dialog(window, cx);
-                                            }
-                                        })),
-                                ),
+                            Button::new("account-edit")
+                                .ghost()
+                                .xsmall()
+                                .flex_shrink_0()
+                                .icon(IconName::Pencil)
+                                .tooltip(if selected_is_offline {
+                                    "编辑离线账户"
+                                } else {
+                                    "账户"
+                                })
+                                .accessibility_label(if selected_is_offline {
+                                    "编辑离线账户"
+                                } else {
+                                    "账户"
+                                })
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    if selected_is_offline {
+                                        this.open_offline_account_dialog(true, window, cx);
+                                    } else {
+                                        this.open_accounts_dialog(window, cx);
+                                    }
+                                })),
                         ),
                 ),
             )
@@ -280,7 +293,7 @@ impl LauncherApp {
                                 .value(value)
                                 .loading(loading)
                                 .flex_1()
-                                .min_w(px(120.)),
+                                .min_w(rems(7.5)),
                         )
                         .child(div().flex_shrink_0().child(percentage))
                     })
@@ -307,7 +320,7 @@ impl LauncherApp {
                     .when(!running && show_logs, |this| {
                         this.child(
                             Button::new("status-open-logs")
-                                .danger()
+                                .outline()
                                 .xsmall()
                                 .label("查看日志")
                                 .on_click(cx.listener(|this, _, window, cx| {
@@ -340,7 +353,7 @@ impl LauncherApp {
     }
 }
 
-fn brand_mark() -> impl IntoElement {
+fn brand_mark(cx: &App) -> impl IntoElement {
     static ICON: OnceLock<Arc<Image>> = OnceLock::new();
     let icon = ICON
         .get_or_init(|| {
@@ -354,6 +367,6 @@ fn brand_mark() -> impl IntoElement {
         .size_5()
         .flex_shrink_0()
         .overflow_hidden()
-        .rounded(px(6.))
+        .rounded(cx.theme().radius)
         .child(img(icon).size_full().object_fit(ObjectFit::Cover))
 }

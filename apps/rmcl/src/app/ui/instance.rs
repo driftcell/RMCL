@@ -122,7 +122,7 @@ impl LauncherApp {
                                 Input::new(&self.content_query)
                                     .prefix(Icon::new(IconName::Search).small())
                                     .cleanable(true)
-                                    .w(px(220.)),
+                                    .w(rems(13.75)),
                             )
                             .child(
                                 Button::new("instance-content-import")
@@ -241,7 +241,7 @@ impl LauncherApp {
                         }),
                     ),
             )
-            .child(version_tile(IconName::Package, cx.theme().primary))
+            .child(version_tile(IconName::Package, cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -258,13 +258,14 @@ impl LauncherApp {
                                     .child(version.display_name().to_owned()),
                             )
                             .child(if version.is_isolated() {
-                                Tag::success().child("隔离").small()
+                                Tag::secondary().child("隔离").small()
                             } else {
                                 Tag::new().outline().child("共享").small()
                             })
                             .when_some(loader, |this, loader| {
                                 this.child(
-                                    Tag::info()
+                                    Tag::new()
+                                        .outline()
                                         .child(format!(
                                             "{} {}",
                                             loader.kind.label(),
@@ -519,8 +520,7 @@ impl LauncherApp {
             .border_color(cx.theme().border)
             .bg(cx.theme().background.opacity(0.35))
             .p_3()
-            .hover(|style| style.bg(cx.theme().list_hover))
-            .child(version_tile(content_icon(kind), cx.theme().primary))
+            .child(version_tile(content_icon(kind), cx.theme().primary, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -613,7 +613,7 @@ fn content_icon(kind: ContentKind) -> IconName {
 
 fn content_stat(label: &str, total: usize, enabled: usize, cx: &App) -> impl IntoElement {
     v_flex()
-        .w(px(112.))
+        .w(rems(7.))
         .flex_shrink_0()
         .gap_1()
         .child(

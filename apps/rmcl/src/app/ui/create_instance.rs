@@ -18,6 +18,7 @@ use rmcl_app::LoaderKind;
 
 use super::super::{LauncherApp, Page, short_date, version_type_label};
 use super::common::{card, error_banner, field_label, section_title};
+use super::layout;
 
 impl LauncherApp {
     pub fn render_create_instance(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -172,8 +173,8 @@ impl LauncherApp {
                                         this.child(
                                             h_flex()
                                                 .w_full()
-                                                .max_w(px(360.))
-                                                .h(px(32.))
+                                                .max_w(rems(22.5))
+                                                .h_8()
                                                 .px_3()
                                                 .rounded(cx.theme().radius)
                                                 .border_1()
@@ -186,7 +187,7 @@ impl LauncherApp {
                                         this.child(
                                             div()
                                                 .w_full()
-                                                .max_w(px(360.))
+                                                .max_w(rems(22.5))
                                                 .when(catalog_ready, |this| {
                                                     this.child(
                                                         Combobox::new(
@@ -195,7 +196,7 @@ impl LauncherApp {
                                                         .w_full()
                                                         .placeholder("选择 Minecraft 版本")
                                                         .search_placeholder("搜索版本 ID")
-                                                        .menu_max_h(px(320.)),
+                                                        .menu_max_h(layout::rem_px(cx, rems(20.))),
                                                     )
                                                 })
                                                 .when(catalog_loading && !catalog_ready, |this| {
@@ -346,7 +347,7 @@ impl LauncherApp {
                                 } else {
                                     v_flex()
                                         .w_full()
-                                        .max_h(px(260.))
+                                        .max_h(layout::MENU_MAX_HEIGHT)
                                         .gap_1()
                                         .overflow_y_scrollbar()
                                         .children(loader_versions.into_iter().map(|version| {
@@ -400,7 +401,7 @@ impl LauncherApp {
                                     .child(
                                         Input::new(&self.create_name_input)
                                             .w_full()
-                                            .max_w(px(420.)),
+                                            .max_w(layout::DIALOG_SMALL),
                                     ),
                             )
                             .child(
@@ -410,7 +411,7 @@ impl LauncherApp {
                                     .child(
                                         Input::new(&self.create_id_input)
                                             .w_full()
-                                            .max_w(px(420.)),
+                                            .max_w(layout::DIALOG_SMALL),
                                     )
                                     .child(
                                         div()
