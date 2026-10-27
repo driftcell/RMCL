@@ -201,10 +201,40 @@ impl VanillaInstaller {
                 missing.push(file.destination.clone());
             }
         }
-        if !base_plan.extractions.is_empty() {
-            let natives = instance.natives_dir(&request.platform);
-            if !natives.is_dir() {
-                missing.push(natives);
+        let mut natives = Vec::new();
+        if missing.is_empty() && !base_plan.extractions.is_empty() {
+            let natives_dir = instance.natives_dir(&request.platform);
+            if !natives_dir.is_dir() {
+                // NOTE: A version installed by another launcher, or a partial
+                // install left by an older RMCL, may lack RMCL's natives
+                // directory while the native JARs are already present. Extract
+                // them locally instead of failing launch and requiring a
+                // network repair.
+                let mut missing_sources = Vec::new();
+                for extraction in &base_plan.extractions {
+                    let exists =
+                        tokio::fs::try_exists(&extraction.source)
+                            .await
+                            .map_err(|source| AppError::Io {
+                                operation: "check native archive",
+                                path: extraction.source.clone(),
+                                source,
+                            })?;
+                    if !exists {
+                        missing_sources.push(extraction.source.clone());
+                    }
+                }
+                if missing_sources.is_empty() {
+                    natives = merge_natives(
+                        self.extractor.clone(),
+                        base_plan.extractions.clone(),
+                        cancellation.clone(),
+                        None,
+                    )
+                    .await?;
+                } else {
+                    missing.extend(missing_sources);
+                }
             }
         }
         if !missing.is_empty() {
@@ -236,7 +266,7 @@ impl VanillaInstaller {
             base_plan,
             asset_plan,
             downloads: DownloadSummary::default(),
-            natives: Vec::new(),
+            natives,
         })
     }
 
