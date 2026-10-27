@@ -107,9 +107,9 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 4. 发出 `Starting` 后创建 `GameProcess`，随后发出 `Started` 并持续转发 stdout/stderr。
 5. 等待自然退出或取消后的 kill，排空日志后返回 `GameLaunchOutcome`。
 
-`GameLauncher::run_installed` 跳过第 1 步：读取已有版本 JSON、生成计划、检查 base 文件和 natives 目录存在，然后执行第 2 至第 5 步；不检查 asset objects 的哈希。缺少基础文件时返回 `InstallationIncomplete`，由界面引导用户先执行检查修复。`Started` 只表示 JVM 进程创建成功，不表示主类加载、窗口或主菜单已经就绪。游戏自身以非零码退出仍返回正常 `GameLaunchOutcome`，任务层记录为 `Exited`；安装、Java、计划、spawn 或进程 I/O 错误才记录为 `Failed`。当前不自动推断崩溃原因。
+`GameLauncher::run_installed` 跳过第 1 步：读取已有版本 JSON、生成计划、检查 base 文件；natives 目录缺失而 native JAR 已存在时，直接用这些 JAR 解压补齐，不访问网络。随后执行第 2 至第 5 步；不检查 asset objects 的哈希。缺少基础文件或 native JAR 时返回 `InstallationIncomplete`，由界面引导用户先执行检查修复。`Started` 只表示 JVM 进程创建成功，不表示主类加载、窗口或主菜单已经就绪。游戏自身以非零码退出仍返回正常 `GameLaunchOutcome`，任务层记录为 `Exited`；安装、Java、计划、spawn 或进程 I/O 错误才记录为 `Failed`。当前不自动推断崩溃原因。
 
-`TaskManager::with_java` 启用 `start_launch` 和 `start_launch_installed`；安装专用构造器没有 Java 服务时会返回 `JavaNotConfigured`。`start_launch` 走完整 ensure/repair；`start_launch_installed` 只读取已有版本 JSON、生成计划并检查 base 文件和 natives 目录存在，不下载也不重新哈希 asset objects。缺少基础文件时返回 `InstallationIncomplete`，由界面提示先修复。游戏任务在整个运行期间保留版本互斥，防止同时重装相同版本。退出后互斥释放。
+`TaskManager::with_java` 启用 `start_launch` 和 `start_launch_installed`；安装专用构造器没有 Java 服务时会返回 `JavaNotConfigured`。`start_launch` 走完整 ensure/repair；`start_launch_installed` 只读取已有版本 JSON、生成计划并检查 base 文件，natives 目录缺失时从已有 native JAR 解压补齐，不下载也不重新哈希 asset objects。缺少基础文件或 native JAR 时返回 `InstallationIncomplete`，由界面提示先修复。游戏任务在整个运行期间保留版本互斥，防止同时重装相同版本。退出后互斥释放。
 
 每个游戏任务保留最近 1024 行已脱敏日志，`log_lines` 记录实际接收的总行数，`logs` 返回当前保留内容。日志事件广播不反压游戏进程，慢订阅者丢失事件不代表这些行超出环形缓冲。应用任务而非 View 持有 `GameProcess`；不承诺启动器退出后 detach 或进程树管理。
 

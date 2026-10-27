@@ -88,6 +88,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
 fn write_metadata(root: &Path) {
     let client = b"client";
     let index = b"{}";
+    let native = native_jar();
     let version = serde_json::to_vec(&json!({
         "id": "test",
         "mainClass": "example.Main",
@@ -109,7 +110,21 @@ fn write_metadata(root: &Path) {
             "sha1": sha1(index),
             "size": index.len()
         },
-        "libraries": []
+        "libraries": [{
+            "name": "com.example:native:1.0",
+            "natives": {"linux": "natives-linux"},
+            "downloads": {
+                "classifiers": {
+                    "natives-linux": {
+                        "path": "com/example/native/1.0/native-1.0-natives-linux.jar",
+                        "url": "https://example.invalid/native-linux.jar",
+                        "sha1": sha1(&native),
+                        "size": native.len()
+                    }
+                }
+            },
+            "extract": {"exclude": ["META-INF/"]}
+        }]
     }))
     .unwrap();
     std::fs::create_dir_all(root.join("versions/test")).unwrap();
@@ -117,6 +132,27 @@ fn write_metadata(root: &Path) {
     std::fs::write(root.join("versions/test/test.json"), version).unwrap();
     std::fs::write(root.join("versions/test/test.jar"), client).unwrap();
     std::fs::write(root.join("assets/indexes/test-index.json"), index).unwrap();
+
+    let native_path = root.join("libraries/com/example/native/1.0/native-1.0-natives-linux.jar");
+    std::fs::create_dir_all(native_path.parent().unwrap()).unwrap();
+    std::fs::write(native_path, native).unwrap();
+
+    let natives = root.join("versions/test/natives-linux-x86_64");
+    std::fs::create_dir_all(&natives).unwrap();
+    std::fs::write(natives.join("libtest.so"), b"native").unwrap();
+}
+
+fn native_jar() -> Vec<u8> {
+    use std::io::Write as _;
+    use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
+
+    let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    writer.start_file("libtest.so", options).unwrap();
+    writer.write_all(b"native").unwrap();
+    writer.start_file("META-INF/ignored.txt", options).unwrap();
+    writer.write_all(b"ignored").unwrap();
+    writer.finish().unwrap().into_inner()
 }
 
 fn write_java(path: &Path, mode: ScriptMode) {
@@ -341,6 +377,26 @@ async fn installed_launch_reports_missing_base_files() {
         error,
         AppError::InstallationIncomplete { ref version, .. } if version == "test"
     ));
+}
+
+#[tokio::test]
+async fn installed_launch_materializes_missing_natives_from_existing_archives() {
+    let fixture = fixture(ScriptMode::Exit);
+    let natives = fixture.root.join("versions/test/natives-linux-x86_64");
+    std::fs::remove_dir_all(&natives).unwrap();
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    assert_eq!(
+        std::fs::read(natives.join("libtest.so")).unwrap(),
+        b"native"
+    );
+    assert!(!natives.join("META-INF").exists());
 }
 
 async fn wait_for_phase(
