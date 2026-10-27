@@ -5473,7 +5473,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "gpui-kit",
  "image",
@@ -5496,7 +5496,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-app"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -5534,7 +5534,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-archive"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "crc32fast",
  "relative-path",
@@ -5548,7 +5548,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-auth"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "axum",
  "md-5",
@@ -5564,7 +5564,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-content"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "axum",
  "mvn_version",
@@ -5585,7 +5585,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-domain"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "hex",
  "thiserror 2.0.21",
@@ -5594,7 +5594,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-install"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "rmcl-domain",
  "rmcl-instance",
@@ -5607,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-instance"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "relative-path",
  "rmcl-domain",
@@ -5619,7 +5619,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-java"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "axum",
  "relative-path",
@@ -5641,7 +5641,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-launch"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "rmcl-auth",
  "rmcl-domain",
@@ -5659,7 +5659,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-minecraft"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "regex",
  "rmcl-domain",
@@ -5670,7 +5670,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-net"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "axum",
  "fastrand",
@@ -5687,7 +5687,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-platform"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "keyring",
  "thiserror 2.0.21",
@@ -5695,7 +5695,7 @@ dependencies = [
 
 [[package]]
 name = "rmcl-store"
-version = "0.4.5"
+version = "0.5.0"
 dependencies = [
  "serde",
  "tempfile",

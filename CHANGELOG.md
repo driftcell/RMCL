@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/driftcell/RMCL/compare/v0.4.5...v0.5.0) - 2026-10-27
+
+### Added
+
+- *(skin)* add official skin page with 3D preview ([#25](https://github.com/driftcell/RMCL/pull/25))
+- *(home)* add quick connect for saved servers ([#19](https://github.com/driftcell/RMCL/pull/19))
+- *(ui)* use searchable version picker for new instances ([#18](https://github.com/driftcell/RMCL/pull/18))
+
 ## [0.4.5](https://github.com/driftcell/RMCL/compare/v0.4.4...v0.4.5) - 2026-10-27
 
 ### Fixed
