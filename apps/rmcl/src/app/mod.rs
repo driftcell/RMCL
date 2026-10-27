@@ -941,6 +941,7 @@ impl LauncherApp {
         };
         app.refresh_account_heads(window, cx);
         app.refresh_microsoft_profiles(window, cx);
+        app.refresh_servers(window, cx);
         app._server_auto_task = Some(app.spawn_server_auto_refresh(window, cx));
         app._update_poll_task = Some(app.spawn_update_poll(window, cx));
         app
@@ -954,8 +955,10 @@ impl LauncherApp {
                     .await;
                 let keep_running = this
                     .update_in(cx, |view, window, cx| {
-                        if view.page == Page::Servers {
-                            view.refresh_active_servers(window, cx);
+                        match view.page {
+                            Page::Home => view.refresh_servers(window, cx),
+                            Page::Servers => view.refresh_active_servers(window, cx),
+                            _ => {}
                         }
                         true
                     })
@@ -1649,10 +1652,12 @@ impl LauncherApp {
     }
 
     fn refresh_servers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.page != Page::Servers
-            || self.server_tab != ServerTab::Favorites
-            || self.servers.refreshing
-        {
+        let visible = match self.page {
+            Page::Home => true,
+            Page::Servers => self.server_tab == ServerTab::Favorites,
+            _ => false,
+        };
+        if !visible || self.servers.refreshing {
             return;
         }
         let servers = self.config.servers.clone();
@@ -2172,6 +2177,9 @@ impl LauncherApp {
         }
         if page == Page::Downloads && self.catalog.manifest.is_none() && !self.catalog.loading {
             self.load_catalog(false, window, cx);
+        }
+        if page == Page::Home {
+            self.refresh_servers(window, cx);
         }
         if page == Page::Servers {
             self.refresh_active_servers(window, cx);

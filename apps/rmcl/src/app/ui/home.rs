@@ -17,6 +17,7 @@ use rmcl_app::InstalledVersion;
 use super::super::{LauncherApp, Page, ServerTab, short_date, version_tile, version_type_label};
 use super::common::{card, page_header, section_title, server_tile, type_tag};
 use super::layout;
+use super::servers::{server_players, server_status_line};
 
 impl LauncherApp {
     pub fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -318,11 +319,13 @@ impl LauncherApp {
 
         let mut tiles = Vec::new();
         for server in &servers {
-            let icon_path = self
-                .servers
-                .statuses
-                .get(&server.id)
-                .and_then(|view| view.icon_path.as_deref());
+            let view = self.servers.statuses.get(&server.id);
+            let loading = view.is_none_or(|view| view.loading);
+            let status = view.and_then(|view| view.status.as_ref());
+            let icon_path = view.and_then(|view| view.icon_path.as_deref());
+            let motd = status
+                .map(|status| status.motd.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|motd| !motd.is_empty());
             let id = server.id.clone();
             let name = server.name.clone();
             tiles.push(
@@ -342,14 +345,39 @@ impl LauncherApp {
                         v_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap_0p5()
-                            .child(div().text_sm().font_medium().truncate().child(name.clone()))
+                            .gap_1()
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_sm()
+                                            .font_medium()
+                                            .truncate()
+                                            .child(name.clone()),
+                                    )
+                                    .when_some(server_players(status, cx), |this, players| {
+                                        this.child(players)
+                                    }),
+                            )
+                            .child(server_status_line(loading, status, cx))
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
                                     .truncate()
                                     .child(server.address.clone()),
+                            )
+                            .child(
+                                div()
+                                    .min_h(px(16.))
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
+                                    .child(motd.unwrap_or_default()),
                             ),
                     )
                     .child(
@@ -452,7 +480,7 @@ impl LauncherApp {
                 )
             })
             .when(!servers.is_empty(), |this| {
-                this.child(h_flex().w_full().gap_3().children(tiles))
+                this.child(h_flex().w_full().items_stretch().gap_3().children(tiles))
             })
     }
 
