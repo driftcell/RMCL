@@ -2601,12 +2601,15 @@ impl LauncherApp {
         }));
     }
 
-    fn hide_for_game(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
+    fn hide_for_game(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         if self.launcher_hidden {
             return;
         }
         self.launcher_hidden = true;
-        window.minimize_window();
+        #[cfg(target_os = "macos")]
+        _cx.hide();
+        #[cfg(not(target_os = "macos"))]
+        _window.minimize_window();
     }
 
     fn restore_launcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2615,7 +2618,7 @@ impl LauncherApp {
         }
         self.launcher_hidden = false;
         #[cfg(target_os = "macos")]
-        deminiaturize_windows();
+        restore_macos_windows();
         cx.activate(true);
         window.activate_window();
     }
@@ -6698,7 +6701,7 @@ pub fn version_tile(icon: IconName, color: Hsla, cx: &App) -> impl IntoElement {
 }
 
 #[cfg(target_os = "macos")]
-fn deminiaturize_windows() {
+fn restore_macos_windows() {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
 
@@ -6706,6 +6709,7 @@ fn deminiaturize_windows() {
         return;
     };
     let application = NSApplication::sharedApplication(marker);
+    application.unhide(None);
     for window in application.windows().iter() {
         if window.isMiniaturized() {
             window.deminiaturize(None);

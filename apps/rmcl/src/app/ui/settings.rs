@@ -57,7 +57,7 @@ impl LauncherApp {
                     })
                     .child(
                         card(cx)
-                            .child(section_title("游戏", "不会改写 HMCL 配置。", cx))
+                            .child(section_title("游戏", "", cx))
                             .child(
                                 v_flex()
                                     .w_full()
@@ -486,6 +486,7 @@ impl LauncherApp {
                                         Button::new("settings-gpui")
                                             .ghost()
                                             .small()
+                                            .cursor_pointer()
                                             .icon(IconName::ExternalLink)
                                             .label("GPUI Kit 文档")
                                             .on_click(|_, _, cx| {
@@ -496,6 +497,7 @@ impl LauncherApp {
                                         Button::new("settings-folder")
                                             .ghost()
                                             .small()
+                                            .cursor_pointer()
                                             .icon(IconName::FolderOpen)
                                             .label("打开游戏目录")
                                             .on_click(cx.listener(|this, _, window, cx| {
