@@ -3,6 +3,7 @@ use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Sizable, Size, StyledExt,
         button::{Button, ButtonVariants},
+        combobox::Combobox,
         h_flex,
         input::Input,
         scroll::ScrollableElement,
@@ -15,13 +16,14 @@ use gpui_kit::{
 };
 use rmcl_app::LoaderKind;
 
-use super::super::{LauncherApp, Page};
+use super::super::{LauncherApp, Page, short_date, version_type_label};
 use super::common::{card, error_banner, field_label, section_title};
 
 impl LauncherApp {
     pub fn render_create_instance(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let generated_id = self.generated_instance_id(cx);
         let entered_id = self.create_id_input.read(cx).value().trim().to_owned();
+        let base = self.create_base_input.read(cx).value().trim().to_owned();
         let copy_mode = self.create_copy_source.is_some();
         let copy_source_name = self.create_copy_source.as_ref().and_then(|id| {
             self.installed_versions
@@ -29,6 +31,33 @@ impl LauncherApp {
                 .find(|version| version.id.as_str() == id.as_str())
                 .map(|version| version.display_name().to_owned())
         });
+        let catalog_ready = self.catalog.manifest.is_some();
+        let catalog_loading = self.catalog.loading;
+        let catalog_error = if catalog_ready {
+            None
+        } else {
+            self.catalog.error.clone()
+        };
+        let base_hint = if copy_mode {
+            "基础版本来自现有实例，不能修改。".to_owned()
+        } else if let Some(version) = self
+            .catalog
+            .manifest
+            .as_ref()
+            .and_then(|manifest| manifest.find(&base))
+        {
+            format!(
+                "{} · {}",
+                version_type_label(version.version_type.as_deref()),
+                short_date(version.release_time.as_deref())
+            )
+        } else if catalog_loading && !catalog_ready {
+            "正在获取 Mojang 官方版本列表…".to_owned()
+        } else if catalog_ready {
+            "从 Mojang 官方版本列表中选择，可输入版本 ID 搜索。".to_owned()
+        } else {
+            "版本列表加载失败时，可手动填写版本 ID，例如 1.21.1。".to_owned()
+        };
         let loader_index: usize = match self.create_loader {
             None => 0,
             Some(LoaderKind::Fabric) => 1,
@@ -48,7 +77,7 @@ impl LauncherApp {
         };
         let loader_ready = self.create_loader.is_none() || self.create_loader_version.is_some();
         let can_create = self.can_start_operation()
-            && !self.create_base_input.read(cx).value().trim().is_empty()
+            && !base.is_empty()
             && !self.create_loader_loading
             && loader_ready
             && (!copy_mode || self.create_loader.is_some());
@@ -139,21 +168,77 @@ impl LauncherApp {
                                 v_flex()
                                     .gap_1()
                                     .child(field_label("Minecraft 版本"))
-                                    .child(
-                                        Input::new(&self.create_base_input)
-                                            .w_full()
-                                            .max_w(px(360.))
-                                            .readonly(copy_mode),
-                                    )
+                                    .when(copy_mode, |this| {
+                                        this.child(
+                                            h_flex()
+                                                .w_full()
+                                                .max_w(px(360.))
+                                                .h(px(32.))
+                                                .px_3()
+                                                .rounded(cx.theme().radius)
+                                                .border_1()
+                                                .border_color(cx.theme().border)
+                                                .bg(cx.theme().muted.opacity(0.45))
+                                                .child(div().text_sm().child(base.clone())),
+                                        )
+                                    })
+                                    .when(!copy_mode, |this| {
+                                        this.child(
+                                            div()
+                                                .w_full()
+                                                .max_w(px(360.))
+                                                .when(catalog_ready, |this| {
+                                                    this.child(
+                                                        Combobox::new(
+                                                            &self.create_version_select,
+                                                        )
+                                                        .w_full()
+                                                        .placeholder("选择 Minecraft 版本")
+                                                        .search_placeholder("搜索版本 ID")
+                                                        .menu_max_h(px(320.)),
+                                                    )
+                                                })
+                                                .when(catalog_loading && !catalog_ready, |this| {
+                                                    this.child(
+                                                        Combobox::new(
+                                                            &self.create_version_select,
+                                                        )
+                                                        .w_full()
+                                                        .placeholder("正在获取版本列表…")
+                                                        .disabled(true),
+                                                    )
+                                                })
+                                                .when(!catalog_loading && !catalog_ready, |this| {
+                                                    this.child(
+                                                        Input::new(&self.create_base_input).w_full(),
+                                                    )
+                                                }),
+                                        )
+                                        .when_some(catalog_error, |this, error| {
+                                            this.child(error_banner(
+                                                "无法获取版本列表",
+                                                &error,
+                                                cx,
+                                            ))
+                                            .child(
+                                                Button::new("create-instance-retry-catalog")
+                                                    .outline()
+                                                    .small()
+                                                    .icon(IconName::RefreshCw)
+                                                    .label("重新获取")
+                                                    .on_click(cx.listener(
+                                                        |this, _, window, cx| {
+                                                            this.load_catalog(true, window, cx)
+                                                        },
+                                                    )),
+                                            )
+                                        })
+                                    })
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(if copy_mode {
-                                                "基础版本来自现有实例，不能修改。"
-                                            } else {
-                                                "填写版本 ID，例如 1.21.1 或 24w14a。创建时从 Mojang manifest 校验。"
-                                            }),
+                                            .child(base_hint),
                                     ),
                             )
                             .child(
@@ -256,7 +341,7 @@ impl LauncherApp {
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("填写 Minecraft 版本后点击“获取加载器版本”。")
+                                        .child("选择 Minecraft 版本后会自动获取加载器版本；失败时可重试。")
                                         .into_any_element()
                                 } else {
                                     v_flex()
