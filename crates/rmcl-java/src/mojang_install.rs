@@ -571,10 +571,10 @@ async fn find_java_executable(
     root: &Path,
     os: rmcl_domain::OperatingSystem,
 ) -> Result<RepositoryPath, JavaError> {
-    let candidates: &[&str] = if os == rmcl_domain::OperatingSystem::MacOs {
-        &["jre.bundle/Contents/Home/bin/java", "bin/java"]
-    } else {
-        &["bin/java"]
+    let candidates: &[&str] = match os {
+        rmcl_domain::OperatingSystem::MacOs => &["jre.bundle/Contents/Home/bin/java", "bin/java"],
+        rmcl_domain::OperatingSystem::Windows => &["bin/java.exe", "bin/java"],
+        rmcl_domain::OperatingSystem::Linux => &["bin/java"],
     };
     for candidate in candidates {
         let path = RepositoryPath::new(*candidate)?;
@@ -659,5 +659,27 @@ fn io_error(path: &Path, source: std::io::Error) -> JavaError {
     JavaError::Io {
         path: path.display().to_string(),
         source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcl_domain::OperatingSystem;
+
+    #[tokio::test]
+    async fn finds_windows_java_executable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let bin = temporary.path().join("bin");
+        tokio::fs::create_dir_all(&bin).await.unwrap();
+        tokio::fs::write(bin.join("java.exe"), b"fake")
+            .await
+            .unwrap();
+
+        let executable = find_java_executable(temporary.path(), OperatingSystem::Windows)
+            .await
+            .unwrap();
+
+        assert_eq!(executable.as_str(), "bin/java.exe");
     }
 }

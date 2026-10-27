@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现
 
-日期：2026-10-25
+日期：2026-10-27
 
 ## API 与阶段
 
@@ -15,7 +15,7 @@
 
 两阶段分离允许执行器先取得 asset index，再规划其中的对象。计划本身不会读写文件、访问网络、修改版本 JSON 或执行解压；实际下载由 [下载执行器](DOWNLOAD_EXECUTOR.md) 提供。显式 asset base 不接受 query 或 fragment，避免把来源根配置误当成对象级签名 URL。
 
-`plan_vanilla` 要求传入已解析的 profile；直接传入仍带 `inheritsFrom` 的版本会返回 `UnsupportedInheritance`。合并后的 profile 允许 `jar != id`，此时 client JAR 计划到 `jar` 指向的基础版本目录，供 Fabric/Quilt 实例复用基础 client JAR。`virtual: true` 和 `map_to_resources: true` 的 asset index 仍明确报错。
+`plan_vanilla` 要求传入已解析的 profile；直接传入仍带 `inheritsFrom` 的版本会返回 `UnsupportedInheritance`。合并后的 profile 允许 `jar != id`，此时 client JAR 计划到 `jar` 指向的基础版本目录，供 Fabric/Quilt 实例复用基础 client JAR。asset index 的 `virtual` / `map_to_resources` 标志不再使对象规划失败；对象仍按 hash 规划，执行层负责展开旧版布局。
 
 `InstallPlan` 包含：
 
@@ -46,6 +46,16 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 
 只接受绝对 `http`/`https` URL。显式 URL 不会无条件与 base URL 组合成额外候选；镜像候选以后必须由明确的来源策略提供。
 
+## Legacy 资产布局
+
+`plan_asset_objects*` 只规划 content-addressed objects，不解析 `virtual` / `map_to_resources` 的展开路径。执行层读取 index 后：
+
+- `virtual`：把对象复制到 `assets/virtual/<index>/<原始名称>`。
+- `map_to_resources`：额外复制到实例游戏目录的 `resources/<原始名称>`。
+- 启动时 legacy index 的 `--assetsDir` 指向 `assets/virtual/<index>`，同时保留实例 `resources/` 副本。
+- 原始名称经过 `RepositoryPath` 校验；目标已存在时按 size 跳过，拒绝替换符号链接或非文件目标。
+- 缺少 asset object 时返回安装不完整，要求执行修复，不把部分展开当作成功。
+
 ## 完整性、去重与冲突
 
 - SHA-1 字符串通过 `hex` 解析为 20 字节值；接受大小写并统一为小写表示。
@@ -64,7 +74,6 @@ Maven 坐标支持 `group:artifact:version[:classifier][@extension]`，默认扩
 - TAR 等其他归档格式；ZIP/JAR 解压、路径与 symlink 防护、同目录 native 合并已在 [ZIP 安全解压](ARCHIVE_EXTRACTION.md) 实现。
 - Fabric/Quilt profile 合并、Forge/NeoForge installer processors 和实例创建见 [加载器与实例创建](LOADERS.md)；安装计划只负责 profile 中的普通文件、native 和资产。
 - 无 `assetIndex` 的旧版本内置回退表。
-- `virtual` / `map_to_resources` 资产名称重建。
 - 镜像选择、修复执行与应用层启动编排；[安装用例](APPLICATION.md)、Java 管理和启动参数分别由对应 crate 提供。
 
 这些非目标不能通过把计划生成成功解释为安装或启动成功。

@@ -515,21 +515,15 @@ fn plans_asset_objects_with_an_explicit_source_root() {
 }
 
 #[test]
-fn rejects_unsupported_asset_layouts_and_unsafe_source_roots() {
+fn accepts_legacy_asset_layouts_and_rejects_unsafe_source_roots() {
     let virtual_catalog =
         AssetCatalog::from_json(&json!({"virtual": true, "objects": {}}).to_string()).unwrap();
-    assert!(matches!(
-        plan_asset_objects(&layout(), &virtual_catalog),
-        Err(InstallPlanError::UnsupportedVirtualAssets)
-    ));
+    assert!(plan_asset_objects(&layout(), &virtual_catalog).is_ok());
 
     let mapped_catalog =
         AssetCatalog::from_json(&json!({"map_to_resources": true, "objects": {}}).to_string())
             .unwrap();
-    assert!(matches!(
-        plan_asset_objects(&layout(), &mapped_catalog),
-        Err(InstallPlanError::UnsupportedMappedAssets)
-    ));
+    assert!(plan_asset_objects(&layout(), &mapped_catalog).is_ok());
 
     let catalog = AssetCatalog::default();
     let signed = url::Url::parse("https://example.invalid/assets/?token=secret").unwrap();

@@ -42,10 +42,6 @@ pub enum InstallPlanError {
     InheritanceCycle { id: String },
     #[error("version `{id}` exceeds the maximum inheritance depth of {max_depth}")]
     InheritanceDepth { id: String, max_depth: usize },
-    #[error("virtual asset indexes are not supported")]
-    UnsupportedVirtualAssets,
-    #[error("asset indexes with map_to_resources are not supported")]
-    UnsupportedMappedAssets,
     #[error("version `{0}` has no client download")]
     MissingClientDownload(String),
     #[error("version `{0}` has no asset index")]

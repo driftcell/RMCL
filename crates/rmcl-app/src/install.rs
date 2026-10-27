@@ -1,11 +1,13 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
 use rmcl_archive::{ArchiveExtractor, ExtractionError, ExtractionReport};
-use rmcl_domain::DownloadRequest;
+use rmcl_domain::{DownloadRequest, Sha1Hash};
 use rmcl_install::{
     InstallPlan, PlannedFileKind, plan_asset_objects_with_base, plan_vanilla, resolve_version,
 };
-use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
+use rmcl_instance::{
+    InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, RepositoryPath, VersionId,
+};
 use rmcl_minecraft::{AssetCatalog, GameVersion, VersionManifest, VersionSummary};
 use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadReport, ProgressStage, progress_channel};
 use tokio_util::sync::CancellationToken;
@@ -118,6 +120,11 @@ impl VanillaInstaller {
             .await?;
         downloads.extend(asset_downloads);
 
+        if catalog.is_virtual == Some(true) || catalog.map_to_resources == Some(true) {
+            emit_phase(&events, InstallPhase::MaterializingAssets).await;
+            ensure_legacy_assets(&layout, &instance, &version, &catalog, &cancellation).await?;
+        }
+
         emit_phase(&events, InstallPhase::MergingNatives).await;
         let natives = merge_natives(
             self.extractor.clone(),
@@ -218,6 +225,7 @@ impl VanillaInstaller {
         let catalog = AssetCatalog::from_json(&catalog_json)?;
         let asset_plan =
             plan_asset_objects_with_base(&layout, &catalog, &self.sources.asset_object_base)?;
+        ensure_legacy_assets(&layout, &instance, &version, &catalog, &cancellation).await?;
         check_cancelled(&cancellation)?;
         Ok(InstallOutcome {
             layout,
@@ -428,6 +436,137 @@ fn validate_download_report(
         });
     }
     Ok(DownloadSummary::from_report(&report))
+}
+
+/// Materializes legacy `virtual` and `map_to_resources` asset indexes.
+///
+/// Legacy indexes are not consumed directly by the game as content-addressed
+/// objects. The virtual directory keeps assets under their original names, and
+/// `map_to_resources` additionally needs a flat copy in the instance game
+/// directory for pre-1.6 clients.
+async fn ensure_legacy_assets(
+    layout: &MinecraftLayout,
+    instance: &InstanceLayout,
+    version: &GameVersion,
+    catalog: &AssetCatalog,
+    cancellation: &CancellationToken,
+) -> Result<(), AppError> {
+    if catalog.is_virtual != Some(true) && catalog.map_to_resources != Some(true) {
+        return Ok(());
+    }
+    let Some(asset_index) = version.asset_index.as_ref() else {
+        return Err(AppError::InvalidRequest(format!(
+            "version `{}` has legacy assets but no asset index",
+            version.id
+        )));
+    };
+    let virtual_root = layout.virtual_assets_dir(&asset_index.id)?;
+    let resources_root =
+        (catalog.map_to_resources == Some(true)).then(|| instance.game_dir().join("resources"));
+
+    let mut assets = Vec::with_capacity(catalog.objects.len());
+    let mut missing_count = 0;
+    let mut first_missing = None;
+    for (name, object) in &catalog.objects {
+        check_cancelled(cancellation)?;
+        let relative = RepositoryPath::new(name.clone())?;
+        let hash: Sha1Hash = object.hash.parse()?;
+        let source = layout.asset_object_path(hash);
+        let source_size = tokio::fs::metadata(&source)
+            .await
+            .ok()
+            .map(|metadata| metadata.len());
+        if source_size != Some(object.size) {
+            missing_count += 1;
+            if first_missing.is_none() {
+                first_missing = Some(source);
+            }
+            continue;
+        }
+        assets.push((source, relative, object.size));
+    }
+    if let Some(first_missing) = first_missing {
+        return Err(AppError::InstallationIncomplete {
+            version: version.id.clone(),
+            missing_count,
+            first_missing: first_missing.display().to_string(),
+        });
+    }
+
+    for (source, relative, size) in assets {
+        copy_asset_if_needed(
+            &source,
+            &relative.to_path(&virtual_root),
+            size,
+            cancellation,
+        )
+        .await?;
+        if let Some(resources_root) = &resources_root {
+            copy_asset_if_needed(
+                &source,
+                &relative.to_path(resources_root),
+                size,
+                cancellation,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn copy_asset_if_needed(
+    source: &Path,
+    target: &Path,
+    size: u64,
+    cancellation: &CancellationToken,
+) -> Result<(), AppError> {
+    check_cancelled(cancellation)?;
+    match tokio::fs::symlink_metadata(target).await {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            tokio::fs::remove_file(target)
+                .await
+                .map_err(|source| AppError::Io {
+                    operation: "remove legacy asset symlink",
+                    path: target.to_path_buf(),
+                    source,
+                })?;
+        }
+        Ok(metadata) if metadata.is_file() && metadata.len() == size => return Ok(()),
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => {
+            return Err(AppError::InvalidRequest(format!(
+                "refusing to replace non-file legacy asset path `{}`",
+                target.display()
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(AppError::Io {
+                operation: "inspect legacy asset target",
+                path: target.to_path_buf(),
+                source,
+            });
+        }
+    }
+
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|source| AppError::Io {
+                operation: "create legacy asset directory",
+                path: parent.to_path_buf(),
+                source,
+            })?;
+    }
+    if let Err(source_error) = tokio::fs::copy(source, target).await {
+        let _ = tokio::fs::remove_file(target).await;
+        return Err(AppError::Io {
+            operation: "copy legacy asset",
+            path: target.to_path_buf(),
+            source: source_error,
+        });
+    }
+    Ok(())
 }
 
 async fn merge_natives(
@@ -642,6 +781,55 @@ mod tests {
 
         assert_eq!(instance.isolation(), IsolationMode::Shared);
         assert!(instance.load_manifest().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn materializes_legacy_assets_into_virtual_and_resources_directories() {
+        use sha1::{Digest, Sha1};
+
+        let temporary = TempDir::new().unwrap();
+        let layout = MinecraftLayout::new(temporary.path());
+        let instance = layout.instance(id("b1.8.1"), IsolationMode::Isolated);
+        let object = b"legacy asset".to_vec();
+        let hash = hex::encode(Sha1::digest(&object));
+        let source = layout.asset_object_path(hash.parse().unwrap());
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, &object).unwrap();
+
+        let catalog = AssetCatalog::from_json(&format!(
+            r#"{{"map_to_resources":true,"objects":{{"icons/icon.png":{{"hash":"{hash}","size":{}}}}}}}"#,
+            object.len()
+        ))
+        .unwrap();
+        let version = GameVersion::from_json(
+            r#"{"id":"b1.8.1","assetIndex":{"id":"pre-1.6","url":"https://example.invalid/index.json"}}"#,
+        )
+        .unwrap();
+
+        ensure_legacy_assets(
+            &layout,
+            &instance,
+            &version,
+            &catalog,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read(
+                layout
+                    .virtual_assets_dir("pre-1.6")
+                    .unwrap()
+                    .join("icons/icon.png")
+            )
+            .unwrap(),
+            object
+        );
+        assert_eq!(
+            std::fs::read(instance.game_dir().join("resources/icons/icon.png")).unwrap(),
+            object
+        );
     }
 
     #[test]

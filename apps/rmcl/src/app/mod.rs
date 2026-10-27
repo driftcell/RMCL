@@ -6273,6 +6273,7 @@ pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
         TaskPhase::Install(InstallPhase::ReadingAssetIndex) => "读取资源索引",
         TaskPhase::Install(InstallPhase::PlanningAssets) => "规划资源对象",
         TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
+        TaskPhase::Install(InstallPhase::MaterializingAssets) => "展开旧版资源",
         TaskPhase::Install(InstallPhase::DownloadingLoader) => "下载加载器文件",
         TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
         TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
