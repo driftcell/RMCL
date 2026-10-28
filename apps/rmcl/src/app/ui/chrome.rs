@@ -25,13 +25,6 @@ use super::layout;
 
 impl LauncherApp {
     pub fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let snapshot = self.log_state.snapshot.as_ref();
-        let running = snapshot.is_some_and(|snapshot| {
-            matches!(
-                snapshot.status,
-                rmcl_app::TaskStatus::Running | rmcl_app::TaskStatus::Cancelling
-            )
-        });
         let dark = cx.theme().mode.is_dark();
         TitleBar::new().child(
             h_flex()
@@ -47,23 +40,6 @@ impl LauncherApp {
                         .small(),
                 )
                 .child(div().flex_1())
-                .when(running, |this| {
-                    this.child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                Spinner::new()
-                                    .with_size(Size::XSmall)
-                                    .color(cx.theme().primary),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(task_phase_label(snapshot)),
-                            ),
-                    )
-                })
                 .child(
                     Button::new("theme-toggle")
                         .ghost()

@@ -3287,6 +3287,7 @@ impl LauncherApp {
                         .child(
                             Button::new("open-login-page")
                                 .primary()
+                                .cursor_pointer()
                                 .icon(IconName::ExternalLink)
                                 .label("打开浏览器")
                                 .w_full()

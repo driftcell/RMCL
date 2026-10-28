@@ -277,7 +277,7 @@ impl LauncherApp {
         let source_button = server.source_url.as_ref().map(|url| {
             let url = url.clone();
             Button::new(format!("featured-source-{}", server.id))
-                .ghost()
+                .link()
                 .small()
                 .icon(IconName::ExternalLink)
                 .tooltip("打开官网")
