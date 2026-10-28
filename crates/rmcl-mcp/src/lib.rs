@@ -2,6 +2,7 @@
 
 mod access;
 mod error;
+mod notifications;
 mod schema;
 mod server;
 mod transport;

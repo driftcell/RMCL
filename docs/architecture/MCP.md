@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页、GUI 外部变更刷新和任务通知尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页和 GUI 外部变更刷新尚未实现
 
 日期：2026-10-28
 
@@ -32,7 +32,7 @@ stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_ba
 rmcl mcp --http --port 39271
 ```
 
-监听 `127.0.0.1`，端点 `/mcp`，使用 `StreamableHttpService`。默认端口为 `39271`，可以显式修改；`0` 被拒绝。stdio 始终为 `read_write`，HTTP 默认 `read_only`，只有查询和 `instances_create` / `content_install` 的 `dry_run` 可以执行；真实写操作返回 `permission_denied`。
+监听 `127.0.0.1`，端点 `/mcp`，使用 `StreamableHttpService`。默认端口为 `39271`，可以显式修改；`0` 被拒绝。stdio 始终为 `read_write`，HTTP 默认 `read_only`，查询、任务订阅和 `instances_create` / `content_install` 的 `dry_run` 可以执行；真实写操作返回 `permission_denied`。
 
 HTTP 还执行以下边界：
 
@@ -66,6 +66,8 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `tasks_list` | 当前与保留的最近任务快照 |
 | `tasks_get` | 按 `TaskId` 查询任务快照 |
 | `tasks_logs` | 按 cursor 分页读取脱敏日志，单页默认 200、最多 1000 行 |
+| `tasks_subscribe` | 当前 MCP session 显式订阅任务事件，可按 task 过滤并选择是否包含日志 |
+| `tasks_unsubscribe` | 取消当前 session 的一个订阅并等待转发器停止 |
 | `tasks_cancel` | 协作式取消运行中的任务并返回最新快照 |
 
 错误使用 JSON-RPC invalid params 或 internal error；未知实例和未知任务不会被伪装成空结果。结构化响应使用 `structuredContent`，同时保留 rmcp 生成的文本内容。
@@ -109,6 +111,50 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 | `cancelled` | 操作已取消，可按工作流决定是否重试 |
 | `unavailable` | 所需应用服务未配置 |
 | `internal_error` | 其他内部失败；默认不建议盲目重试 |
+
+## 任务通知
+
+RMCL 默认不向 MCP 客户端推送任务事件。客户端必须调用 `tasks_subscribe`：省略 `task_id` 时订阅全部任务，提供时只转发该任务；`include_logs` 默认 `false`。响应包含 `subscription_id` 和建立订阅时的 `items` 快照。广播接收器先于快照创建，因此订阅建立期间发生的事件会保留在有界队列中，可能与初始快照重复，客户端应按 task ID 和最新状态处理。
+
+`tasks_unsubscribe` 取消并等待对应转发器退出。连接或 session 结束时，其所有订阅也会取消；订阅 ID 只在创建它的 MCP session 内有效。HTTP `read_only` 允许订阅和退订，因为这不修改启动器数据。
+
+通知使用自定义方法 `notifications/rmcl/task`，`params` 总是包含 `subscription_id` 和 `type`：
+
+| type | 附加字段与语义 |
+| --- | --- |
+| `snapshot` | `task` 为与 `tasks_get` 相同的稳定快照 DTO |
+| `log` | `task_id`、单调行号 `line` 和脱敏 `log { stream, text }`；仅 `include_logs=true` 时发送 |
+| `dismissed` | `task_id` 对应的保留任务已被移除 |
+| `lagged` | `missed` 表示有界广播队列丢弃的事件数，客户端应重新同步 |
+
+例如：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/rmcl/task",
+  "params": {
+    "subscription_id": 1,
+    "type": "snapshot",
+    "task": {
+      "id": 7,
+      "kind": "java_install",
+      "subject": { "type": "java", "major_version": 21, "component": null },
+      "status": "completed",
+      "phase": { "kind": "installing_java" },
+      "progress": null,
+      "error": null,
+      "exit": null,
+      "stop_requested": false,
+      "log_lines": 0
+    }
+  }
+}
+```
+
+TaskManager 的广播和 rmcp 的 peer 队列均有界。慢客户端可能丢失高频进度或日志，但不会造成无界内存排队，也不会阻塞任务执行。收到 `lagged` 后，使用 `tasks_get` 获取最新快照，并使用 `tasks_logs` 的 cursor 补齐日志；通知不是持久、无丢失的事件日志。日志订阅只转发订阅后的新日志，历史日志仍通过 `tasks_logs` 获取。
+
+stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的客户端还需按 MCP 传输约定接收服务端 SSE 事件；仅读取各个 POST 的 JSON 响应不能替代异步通知流。
 
 ## 实例写操作
 
@@ -170,7 +216,7 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 ## 后续阶段
 
-1. 任务 notifications、设置页开关、端口和 GUI 外部变更刷新。
+1. 设置页开关、端口和 GUI 外部变更刷新。
 2. 服务器和皮肤接口。
 3. 更完整的内容更新工作流。
 
