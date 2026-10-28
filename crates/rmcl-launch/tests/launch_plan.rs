@@ -86,6 +86,20 @@ fn options() -> LaunchOptions {
     options.with_demo(true)
 }
 
+#[cfg(unix)]
+#[test]
+fn rejects_non_utf8_launch_paths() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let mut options = options();
+    options.game_directory = PathBuf::from(std::ffi::OsString::from_vec(b"bad-\xff".to_vec()));
+
+    assert!(matches!(
+        LaunchPlan::from_options(&modern_version(), options),
+        Err(LaunchError::NonUtf8Path(_))
+    ));
+}
+
 #[test]
 fn builds_modern_launch_plan_with_safe_diagnostics() {
     let version = modern_version();

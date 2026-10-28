@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现；真实游戏验证范围见末节
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## 边界与输入
 
@@ -38,7 +38,7 @@ manifest 存在但 `arguments.jvm` 为空列表时保持空列表，不隐式恢
 
 默认 JVM 参数包含 natives、launcher brand/version 和 classpath，并保留 Windows heap dump 与 Windows 10 OS 属性兼容项。支持参数包含 client JAR、RMI/JNDI 和 log4j 安全属性；非 Windows 平台还设置游戏目录上一级的 `user.home`。
 
-占位符覆盖账号、版本、目录、asset index、classpath、路径分隔符和 launcher 信息。未知 `${...}` 保留原文，不静默替换为空。`demo` 和分辨率通过 feature map 控制 modern ruled arguments；legacy 分辨率由启动层追加。
+占位符覆盖账号、版本、目录、asset index、classpath、路径分隔符和 launcher 信息。未知 `${...}` 保留原文，不静默替换为空。`demo` 和分辨率通过 feature map 控制 modern ruled arguments；legacy 分辨率由启动层追加。实际执行路径必须能表示为 UTF-8，否则在生成计划时返回 `NonUtf8Path`，不会用替换字符继续启动。
 
 ## 账户与秘密处理
 

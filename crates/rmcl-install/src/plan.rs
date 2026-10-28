@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use rmcl_domain::{DownloadRequest, ExtractionPlan};
+use rmcl_domain::{DownloadRequest, ExtractionPlan, destination_collision_key};
 use rmcl_minecraft::Sha1Hash;
 use url::Url;
 
@@ -55,13 +55,17 @@ pub enum PlannedFileKind {
 #[derive(Default)]
 pub(crate) struct InstallPlanBuilder {
     plan: InstallPlan,
-    file_indices: HashMap<PathBuf, usize>,
+    file_indices: HashMap<String, usize>,
 }
 
 impl InstallPlanBuilder {
     pub(crate) fn push_file(&mut self, file: PlannedFile) -> Result<(), InstallPlanError> {
-        if let Some(index) = self.file_indices.get(&file.destination).copied() {
+        let collision_key = destination_collision_key(&file.destination);
+        if let Some(index) = self.file_indices.get(&collision_key).copied() {
             let existing = &mut self.plan.files[index];
+            if existing.destination != file.destination {
+                return Err(conflict(&file));
+            }
             if existing.sha1 != file.sha1 || existing.size != file.size {
                 return Err(conflict(&file));
             }
@@ -83,7 +87,7 @@ impl InstallPlanBuilder {
         }
 
         self.file_indices
-            .insert(file.destination.clone(), self.plan.files.len());
+            .insert(collision_key, self.plan.files.len());
         self.plan.files.push(file);
         Ok(())
     }
@@ -128,5 +132,26 @@ mod tests {
 
         let owned = DownloadRequest::from(file);
         assert_eq!(owned, request);
+    }
+
+    #[test]
+    fn builder_rejects_case_only_destination_collisions() {
+        fn file(destination: &str) -> PlannedFile {
+            PlannedFile {
+                kind: PlannedFileKind::Library,
+                destination: PathBuf::from(destination),
+                sources: vec![Url::parse("https://example.invalid/library.jar").unwrap()],
+                sha1: Some("0123456789abcdef0123456789abcdef01234567".parse().unwrap()),
+                size: Some(42),
+            }
+        }
+
+        let mut builder = InstallPlanBuilder::default();
+        builder.push_file(file("libraries/Example.jar")).unwrap();
+
+        assert!(matches!(
+            builder.push_file(file("libraries/example.jar")),
+            Err(InstallPlanError::ConflictingDownload { .. })
+        ));
     }
 }

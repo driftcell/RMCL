@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, ffi::OsString, fmt, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    ffi::OsString,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use rmcl_domain::OperatingSystem;
 use rmcl_java::JavaRequirement;
@@ -53,6 +58,7 @@ impl LaunchPlan {
         mut options: LaunchOptions,
     ) -> Result<Self, LaunchError> {
         make_paths_absolute(&mut options)?;
+        validate_launch_paths(&options)?;
         let main_class = version
             .main_class
             .clone()
@@ -72,8 +78,10 @@ impl LaunchPlan {
                 .chain(std::iter::once(&options.client_jar)),
         )
         .map_err(|error| LaunchError::InvalidClasspath(error.to_string()))?;
-        let classpath = classpath.to_string_lossy().into_owned();
-        let placeholders = placeholders(version, &options, &classpath);
+        let classpath = classpath
+            .into_string()
+            .map_err(|path| LaunchError::NonUtf8Path(path.to_string_lossy().into_owned()))?;
+        let placeholders = placeholders(version, &options, &classpath)?;
         let mut jvm_arguments = supporting_jvm_arguments(&options);
         jvm_arguments.extend(match &version.arguments {
             Some(arguments) => {
@@ -181,6 +189,32 @@ fn make_paths_absolute(options: &mut LaunchOptions) -> Result<(), LaunchError> {
     Ok(())
 }
 
+fn validate_launch_paths(options: &LaunchOptions) -> Result<(), LaunchError> {
+    for path in [
+        &options.java.executable,
+        &options.game_directory,
+        &options.library_directory,
+        &options.assets_root,
+        &options.natives_directory,
+        &options.client_jar,
+    ] {
+        utf8_path(path)?;
+    }
+    for library in &options.libraries {
+        utf8_path(library)?;
+    }
+    Ok(())
+}
+
+fn utf8_path(path: &Path) -> Result<&str, LaunchError> {
+    path.to_str()
+        .ok_or_else(|| LaunchError::NonUtf8Path(path.to_string_lossy().into_owned()))
+}
+
+fn path_string(path: &Path) -> Result<String, LaunchError> {
+    Ok(utf8_path(path)?.to_owned())
+}
+
 fn supporting_jvm_arguments(options: &LaunchOptions) -> Vec<String> {
     let mut arguments = vec![
         "-Dminecraft.client.jar=${primary_jar}".to_owned(),
@@ -223,7 +257,7 @@ fn placeholders(
     version: &rmcl_minecraft::GameVersion,
     options: &LaunchOptions,
     classpath: &str,
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, LaunchError> {
     let mut values = BTreeMap::from([
         (
             "auth_player_name".to_owned(),
@@ -249,34 +283,30 @@ fn placeholders(
         ("version_name".to_owned(), version.id.clone()),
         (
             "game_directory".to_owned(),
-            options.game_directory.display().to_string(),
+            path_string(&options.game_directory)?,
         ),
-        (
-            "assets_root".to_owned(),
-            options.assets_root.display().to_string(),
-        ),
-        (
-            "game_assets".to_owned(),
-            options.assets_root.display().to_string(),
-        ),
+        ("assets_root".to_owned(), path_string(&options.assets_root)?),
+        ("game_assets".to_owned(), path_string(&options.assets_root)?),
         (
             "library_directory".to_owned(),
-            options.library_directory.display().to_string(),
+            path_string(&options.library_directory)?,
         ),
         (
             "libraries_directory".to_owned(),
-            options.library_directory.display().to_string(),
+            path_string(&options.library_directory)?,
         ),
-        (
-            "primary_jar".to_owned(),
-            options.client_jar.display().to_string(),
-        ),
+        ("primary_jar".to_owned(), path_string(&options.client_jar)?),
         (
             "primary_jar_name".to_owned(),
             options
                 .client_jar
                 .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
+                .map(|name| {
+                    name.to_str().map(str::to_owned).ok_or_else(|| {
+                        LaunchError::NonUtf8Path(name.to_string_lossy().into_owned())
+                    })
+                })
+                .transpose()?
                 .unwrap_or_default(),
         ),
         (
@@ -293,12 +323,12 @@ fn placeholders(
         ),
         (
             "game_directory_parent".to_owned(),
-            options
-                .game_directory
-                .parent()
-                .unwrap_or(&options.game_directory)
-                .display()
-                .to_string(),
+            path_string(
+                options
+                    .game_directory
+                    .parent()
+                    .unwrap_or(&options.game_directory),
+            )?,
         ),
         ("profile_name".to_owned(), "Minecraft".to_owned()),
         (
@@ -312,7 +342,7 @@ fn placeholders(
         ),
         (
             "natives_directory".to_owned(),
-            options.natives_directory.display().to_string(),
+            path_string(&options.natives_directory)?,
         ),
         ("classpath".to_owned(), classpath.to_owned()),
         ("launcher_name".to_owned(), options.launcher_brand.clone()),
@@ -333,7 +363,7 @@ fn placeholders(
         values.insert("resolution_width".to_owned(), width.to_string());
         values.insert("resolution_height".to_owned(), height.to_string());
     }
-    values
+    Ok(values)
 }
 
 fn supports_quick_play(version: &str) -> Result<bool, LaunchError> {

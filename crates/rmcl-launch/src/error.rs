@@ -12,6 +12,8 @@ pub enum LaunchError {
     InvalidArguments(String),
     #[error("invalid classpath: {0}")]
     InvalidClasspath(String),
+    #[error("launch path is not valid UTF-8: `{0}`")]
+    NonUtf8Path(String),
     #[error("failed to resolve launch path `{path}` as an absolute path: {source}")]
     AbsolutePath {
         path: String,

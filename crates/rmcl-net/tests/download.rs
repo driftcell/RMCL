@@ -468,6 +468,34 @@ async fn batch_rejects_duplicate_destinations() {
 }
 
 #[tokio::test]
+async fn batch_rejects_case_only_destination_collisions() {
+    let server = serve(Router::new().route("/file", get(|| async { "good" }))).await;
+    let temporary = TempDir::new().unwrap();
+    let first = request(
+        server.url("/file"),
+        temporary.path().join("File.txt"),
+        b"good",
+    );
+    let second = request(
+        server.url("/file"),
+        temporary.path().join("file.txt"),
+        b"good",
+    );
+
+    let report = executor()
+        .download_all(vec![first, second], CancellationToken::new(), None)
+        .await;
+
+    assert!(!report.is_success());
+    assert_eq!(report.outcomes.len(), 1);
+    assert_eq!(report.failures.len(), 1);
+    assert!(matches!(
+        report.failures[0].error,
+        DownloadError::ConflictingDestination(_)
+    ));
+}
+
+#[tokio::test]
 async fn emits_bounded_progress_events() {
     let server = serve(Router::new().route("/file", get(|| async { "good" }))).await;
     let temporary = TempDir::new().unwrap();

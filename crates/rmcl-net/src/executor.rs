@@ -7,7 +7,7 @@ use std::{
 
 use futures::{StreamExt, stream};
 use reqwest::StatusCode;
-use rmcl_domain::{DownloadRequest, Sha1Hash};
+use rmcl_domain::{DownloadRequest, Sha1Hash, destination_collision_key};
 use sha1::{Digest, Sha1};
 use tempfile::NamedTempFile;
 use tokio::{
@@ -94,7 +94,7 @@ impl DownloadExecutor {
         let mut destinations = HashSet::new();
         let mut unique_requests = Vec::new();
         for request in requests {
-            if destinations.insert(request.destination.clone()) {
+            if destinations.insert(destination_collision_key(&request.destination)) {
                 unique_requests.push(request);
             } else {
                 let destination = request.destination.display().to_string();
