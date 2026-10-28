@@ -6,25 +6,23 @@ mod state;
 mod theme;
 
 use app::LauncherApp;
+use clap::Parser;
 use gpui_kit::component::TitleBar;
 use gpui_kit::*;
-use services::{Bootstrap, Services};
+use services::{Bootstrap, LauncherArgs, Services};
 
 fn main() {
-    if let Some(result) = rmcl_app::apply_update_from_args() {
-        if let Err(error) = result {
+    let arguments = LauncherArgs::parse();
+    if let Some(plan) = arguments.apply_update.as_deref() {
+        if let Err(error) = rmcl_app::apply_update(plan) {
             eprintln!("failed to apply RMCL update: {error}");
         }
         return;
     }
-    let bootstrap = match Bootstrap::from_args() {
-        Ok(Some(bootstrap)) => bootstrap,
-        Ok(None) => {
-            println!("{}", Bootstrap::usage());
-            return;
-        }
+    let bootstrap = match Bootstrap::from_arguments(arguments) {
+        Ok(bootstrap) => bootstrap,
         Err(error) => {
-            eprintln!("{error}\n\n{}", Bootstrap::usage());
+            eprintln!("{error}");
             std::process::exit(2);
         }
     };

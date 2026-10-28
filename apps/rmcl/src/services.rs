@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use clap::Parser;
 use rmcl_app::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
     LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
@@ -133,6 +134,28 @@ impl Services {
     }
 }
 
+#[derive(Debug, Parser)]
+#[command(name = "rmcl", about = "A cross-platform Minecraft launcher")]
+pub(crate) struct LauncherArgs {
+    #[arg(long, value_name = "PLAN", hide = true)]
+    pub(crate) apply_update: Option<PathBuf>,
+    /// Launcher configuration (default: platform configuration directory).
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+    /// Override Minecraft repository for this run.
+    #[arg(long, value_name = "PATH")]
+    minecraft_root: Option<PathBuf>,
+    /// Override managed Java store for this run.
+    #[arg(long, value_name = "PATH")]
+    java_store: Option<PathBuf>,
+    /// Override the initially selected version.
+    #[arg(long, value_name = "ID")]
+    version: Option<String>,
+    /// Add or select an offline player.
+    #[arg(long, value_name = "NAME")]
+    player: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Bootstrap {
     pub config: LauncherConfig,
@@ -143,52 +166,16 @@ pub struct Bootstrap {
 }
 
 impl Bootstrap {
-    pub fn from_args() -> Result<Option<Self>, String> {
-        let mut arguments = std::env::args_os().skip(1);
-        let mut config_path = default_config_path();
-        let mut minecraft_root = None;
-        let mut java_store = None;
-        let mut version = None;
-        let mut player = None;
-
-        while let Some(argument) = arguments.next() {
-            match argument.to_str() {
-                Some("--help") | Some("-h") => return Ok(None),
-                Some("--config") => {
-                    config_path = PathBuf::from(next_value(&mut arguments, "--config")?);
-                }
-                Some("--minecraft-root") => {
-                    minecraft_root = Some(PathBuf::from(next_value(
-                        &mut arguments,
-                        "--minecraft-root",
-                    )?));
-                }
-                Some("--java-store") => {
-                    java_store = Some(PathBuf::from(next_value(&mut arguments, "--java-store")?));
-                }
-                Some("--version") => {
-                    version = Some(
-                        next_value(&mut arguments, "--version")?
-                            .into_string()
-                            .map_err(|_| "--version must be valid UTF-8".to_owned())?,
-                    );
-                }
-                Some("--player") => {
-                    player = Some(
-                        next_value(&mut arguments, "--player")?
-                            .into_string()
-                            .map_err(|_| "--player must be valid UTF-8".to_owned())?,
-                    );
-                }
-                _ => {
-                    return Err(format!(
-                        "unsupported argument `{}`; use --help",
-                        argument.to_string_lossy()
-                    ));
-                }
-            }
-        }
-
+    pub(crate) fn from_arguments(arguments: LauncherArgs) -> Result<Self, String> {
+        let LauncherArgs {
+            apply_update: _,
+            config,
+            minecraft_root,
+            java_store,
+            version,
+            player,
+        } = arguments;
+        let config_path = config.unwrap_or_else(default_config_path);
         let has_overrides = minecraft_root.is_some()
             || java_store.is_some()
             || version.is_some()
@@ -230,7 +217,7 @@ impl Bootstrap {
             config.java_store = default_java_store();
         }
 
-        Ok(Some(Self {
+        Ok(Self {
             config,
             config_store,
             config_warning: config_warning.clone(),
@@ -239,11 +226,7 @@ impl Bootstrap {
                 has_overrides,
                 config_warning.as_deref(),
             ),
-        }))
-    }
-
-    pub fn usage() -> &'static str {
-        "RMCL\n\nOptions:\n  --config <PATH>          Launcher configuration (default: platform configuration directory)\n  --minecraft-root <PATH>  Override Minecraft repository for this run\n  --java-store <PATH>      Override managed Java store for this run\n  --version <ID>           Override the initially selected version\n  --player <NAME>          Add or select an offline player\n  -h, --help               Show this help"
+        })
     }
 }
 
@@ -321,15 +304,6 @@ fn should_save_on_start(config_existed: bool, has_overrides: bool, warning: Opti
     warning.is_none() && (!config_existed || !has_overrides)
 }
 
-fn next_value(
-    arguments: &mut impl Iterator<Item = std::ffi::OsString>,
-    option: &str,
-) -> Result<std::ffi::OsString, String> {
-    arguments
-        .next()
-        .ok_or_else(|| format!("{option} requires a value"))
-}
-
 /// Opens a local file or directory with the platform's default handler.
 pub fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
@@ -370,9 +344,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn usage_documents_config_override() {
-        assert!(Bootstrap::usage().contains("--config"));
-        assert!(Bootstrap::usage().contains("--minecraft-root"));
+    fn cli_help_documents_all_overrides() {
+        use clap::error::ErrorKind;
+
+        let error = LauncherArgs::try_parse_from(["rmcl", "--help"]).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::DisplayHelp);
+        let help = error.to_string();
+        for option in [
+            "--config",
+            "--minecraft-root",
+            "--java-store",
+            "--version",
+            "--player",
+        ] {
+            assert!(help.contains(option), "help should contain {option}");
+        }
+        assert!(!help.contains("--apply-update"));
+    }
+
+    #[test]
+    fn cli_parses_all_overrides() {
+        let arguments = LauncherArgs::try_parse_from([
+            "rmcl",
+            "--config",
+            "config.toml",
+            "--minecraft-root",
+            "minecraft",
+            "--java-store",
+            "java",
+            "--version",
+            "1.21.1",
+            "--player",
+            "Steve",
+        ])
+        .unwrap();
+
+        assert_eq!(arguments.config.as_deref(), Some(Path::new("config.toml")));
+        assert_eq!(
+            arguments.minecraft_root.as_deref(),
+            Some(Path::new("minecraft"))
+        );
+        assert_eq!(arguments.java_store.as_deref(), Some(Path::new("java")));
+        assert_eq!(arguments.version.as_deref(), Some("1.21.1"));
+        assert_eq!(arguments.player.as_deref(), Some("Steve"));
+    }
+
+    #[test]
+    fn cli_parses_hidden_update_helper_mode() {
+        let arguments =
+            LauncherArgs::try_parse_from(["rmcl", "--apply-update", "update-plan.json"]).unwrap();
+
+        assert_eq!(
+            arguments.apply_update.as_deref(),
+            Some(Path::new("update-plan.json"))
+        );
+    }
+
+    #[test]
+    fn cli_reports_missing_values_with_help() {
+        let error = LauncherArgs::try_parse_from(["rmcl", "--config"]).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("a value is required"));
+        assert!(message.contains("try '--help'"));
     }
 
     #[test]

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+clap.workspace = true
 gpui-kit.workspace = true
 image.workspace = true
 rmcl-app.workspace = true
