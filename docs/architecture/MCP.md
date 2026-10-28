@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、本地皮肤库、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；正版皮肤工作流和高级内容更新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、本地皮肤库与正版皮肤工作流、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；高级内容更新尚未实现
 
 日期：2026-10-28
 
@@ -112,6 +112,7 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `servers_list` | 服务器收藏元数据，不发起网络请求 |
 | `servers_ping` | 按收藏 ID 或临时地址执行 Java Edition SLP，返回 MOTD、人数、延迟和图标缓存路径 |
 | `skins_list` | 本地皮肤库元数据、模型提示和头像缓存路径 |
+| `skins_profile` | 刷新正版资料，返回 owned skins/capes，不包含令牌 |
 | `content_list` | 实例的 Mod、资源包和光影及扫描警告，可按 kind 过滤 |
 | `content_search` | 按 kind、查询词、游戏版本、loader、排序和分页搜索 Modrinth |
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
@@ -256,7 +257,19 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 导入复用现有大小、64×64/64×32、PNG 解码和官方上传字节规范化。HTTPS 来源拒绝 URL 凭据、私网/回环地址、非 PNG 内容和超限重定向。文件准备完成后，在皮肤库自己的 `.rmcl.lock` 内更新索引，与库内 mutex 共同协调跨进程写入。重复内容使用同一个 SHA-256 ID，不增加重复条目；`source_url`、模型提示和头像路径只作为本地元数据返回，不暴露图片字节或账户凭据。
 
-这些工具只管理本地库，不调用 Microsoft/Mojang 换肤接口，也不改变当前激活皮肤。正版资料刷新、上传和恢复默认是独立后续工作流。
+这些工具只管理本地库，不调用 Microsoft/Mojang 换肤接口，也不改变当前激活皮肤。
+
+## 正版皮肤工作流
+
+| 工具 | 语义 |
+| --- | --- |
+| `skins_profile` | 使用缓存凭据刷新资料，返回玩家名、UUID、当前皮肤和 owned skins/capes |
+| `skins_apply` | 上传本地库 ID 或文件/HTTPS 来源的 PNG，指定 `classic` 或 `slim`，成功后写入本地库 |
+| `skins_reset` | 恢复默认皮肤；服务不返回资料时立即刷新 |
+
+三个工具都复用 `MicrosoftAccountService` 的凭据加载、刷新、上传和 reset，不在响应中包含 refresh token 或 access token。`username` 省略时使用当前选中的 Microsoft 账户；离线选择或未知账户会拒绝。apply 要求 `skin_id` 与 `source` 恰好提供一个，模型必须是 `classic` 或 `slim`，并保留现有图片和 URL 安全校验。真实上传和 reset 需要 `read_write`，HTTP 默认只读模式返回 `permission_denied`。
+
+上传成功后才会写入本地皮肤库。若远程上传已成功但本地写入失败，返回 `conflict` 并说明部分成功，调用方应先通过 `skins_profile` 和 `skins_list` 刷新，不应盲目重试。`skins_reset` 对状态具有幂等性，但每次仍会调用官方 reset；owned skins 的按 ID 一键切换仍未暴露，apply 是下载校验后的 multipart 上传。
 
 ## 内容写操作
 
@@ -292,7 +305,6 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. 正版皮肤资料刷新、上传和恢复默认。
-2. 更完整的内容更新工作流。
+1. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。
