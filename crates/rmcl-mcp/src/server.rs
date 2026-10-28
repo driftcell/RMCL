@@ -7,8 +7,8 @@ use std::{
 
 use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
-    CreateInstanceRequest, GameLaunchRequest, InstalledVersion, LoaderKind, LoaderSelection,
-    RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, TaskId,
+    CreateInstanceRequest, GameLaunchRequest, InstalledVersion, JavaEnsureRequest, LoaderKind,
+    LoaderSelection, RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, TaskId,
     VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
     delete_instance_content_with_guard, discover_installed_versions,
     import_instance_content_with_guard, migrate_instance_to_isolated_with_guard,
@@ -20,7 +20,7 @@ use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::ServerAddress;
 use rmcl_instance::VersionId;
 use rmcl_launch::LaunchAccount;
-use rmcl_store::StoredAccountKind;
+use rmcl_store::{LauncherConfig, StoredAccountKind};
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::{tool::schema_for_type, wrapper::Parameters},
@@ -38,10 +38,11 @@ use crate::{
         permission_denied, revision_conflict,
     },
     schema::{
-        Capabilities, ContentDelete, ContentInstallResult, ContentList, ContentWrite,
-        CreateInstancePlan, CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan,
-        InstanceDelete, InstanceDeletePlan, InstanceDeleteResult, InstanceList, InstanceSummary,
-        JavaFailure, JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
+        AccountDelete, AccountKind, AccountList, AccountSummary, AccountWrite, Capabilities,
+        ContentDelete, ContentInstallResult, ContentList, ContentWrite, CreateInstancePlan,
+        CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan, InstanceDelete,
+        InstanceDeletePlan, InstanceDeleteResult, InstanceList, InstanceSummary, JavaFailure,
+        JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
         MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
         PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
         RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, content_entry,
@@ -59,6 +60,24 @@ pub struct McpServer {
 struct InstanceIdParams {
     /// Stable instance directory ID.
     instance_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AccountSelectorParams {
+    /// Account username.
+    username: String,
+    /// Account kind: offline or microsoft.
+    kind: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateOfflineAccountParams {
+    /// Offline player name.
+    username: String,
+    /// Optional explicit UUID; defaults to the offline UUID derivation.
+    uuid: Option<String>,
+    /// Select this account after writing it.
+    make_current: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -83,6 +102,14 @@ struct TaskLogsParams {
     cursor: Option<usize>,
     /// Maximum lines per page, from 1 to 1000; defaults to 200.
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct JavaEnsureParams {
+    /// Required Java major version; omit to accept any compatible runtime.
+    major_version: Option<u32>,
+    /// Optional Mojang runtime component, such as jre-legacy or java-runtime-alpha.
+    component: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -156,6 +183,8 @@ struct RepairInstanceParams {
 struct LaunchInstanceParams {
     /// Stable instance directory ID.
     instance_id: String,
+    /// Optional account used only for this launch; does not change the saved selection.
+    account: Option<AccountSelectorParams>,
     /// Run the full ensure/repair pass before launching.
     repair: Option<bool>,
     /// Optional server address to join immediately.
@@ -338,6 +367,11 @@ impl McpServer {
                 "content_versions",
                 "content_install",
                 "java_list",
+                "java_ensure",
+                "accounts_list",
+                "accounts_select",
+                "accounts_create_offline",
+                "accounts_delete",
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
@@ -523,6 +557,182 @@ impl McpServer {
                     error: failure.error.to_string(),
                 })
                 .collect(),
+        })
+    }
+
+    #[tool(
+        description = "Ensure a compatible Java runtime and return its install task",
+        output_schema = schema_for_type::<TaskStarted>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
+    async fn java_ensure(
+        &self,
+        Parameters(params): Parameters<JavaEnsureParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("java_ensure")?;
+        let requirement = rmcl_java::JavaRequirement {
+            component: params.component,
+            major_version: params.major_version,
+            maximum_major: None,
+            operating_system: self.context.platform.os,
+            architecture: self.context.platform.arch.clone(),
+        };
+        let task = self
+            .context
+            .tasks
+            .start_java_ensure(JavaEnsureRequest {
+                root: self.context.java_store.clone(),
+                requirement,
+            })
+            .await
+            .map_err(app_error)?;
+        structured(task_started(task, false))
+    }
+
+    #[tool(
+        description = "List offline and Microsoft accounts without exposing credentials",
+        output_schema = schema_for_type::<AccountList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn accounts_list(&self) -> Result<CallToolResult, McpError> {
+        let config = self.context.config_store.load().map_err(internal_error)?;
+        structured(AccountList {
+            items: account_summaries(&config),
+            selected_account: config.selected_account.clone(),
+            selected_account_kind: account_kind(config.selected_account_kind),
+        })
+    }
+
+    #[tool(
+        description = "Select an existing account for later launches",
+        output_schema = schema_for_type::<AccountWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn accounts_select(
+        &self,
+        Parameters(params): Parameters<AccountSelectorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("accounts_select")?;
+        let _repository_guard = self.lock_repository()?;
+        let kind = parse_account_kind(&params.kind)?;
+        let mut config = self.context.config_store.load().map_err(internal_error)?;
+        if account_summary(&config, &params.username, kind).is_none() {
+            return Err(not_found(format!(
+                "account `{}` was not found",
+                params.username
+            )));
+        }
+        config.selected_account = Some(params.username.clone());
+        config.selected_account_kind = kind;
+        self.context
+            .config_store
+            .save(&config)
+            .map_err(internal_error)?;
+        let account = account_summary(&config, &params.username, kind)
+            .ok_or_else(|| internal_error("selected account was not written"))?;
+        structured(AccountWrite { account })
+    }
+
+    #[tool(
+        description = "Create or update an offline account with an optional explicit UUID",
+        output_schema = schema_for_type::<AccountWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn accounts_create_offline(
+        &self,
+        Parameters(params): Parameters<CreateOfflineAccountParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("accounts_create_offline")?;
+        let _repository_guard = self.lock_repository()?;
+        let account = match params.uuid.as_deref() {
+            Some(uuid) => {
+                let uuid =
+                    Uuid::parse_str(uuid).map_err(|error| invalid_input(error.to_string()))?;
+                OfflineAccount::with_uuid(&params.username, uuid).map_err(internal_error)?
+            }
+            None => OfflineAccount::new(&params.username).map_err(internal_error)?,
+        };
+        let stored = rmcl_store::StoredOfflineAccount {
+            username: account.username().to_owned(),
+            uuid: account.uuid().to_string(),
+        };
+        let mut config = self.context.config_store.load().map_err(internal_error)?;
+        config
+            .accounts
+            .retain(|existing| existing.username != stored.username);
+        config.accounts.push(stored.clone());
+        if params.make_current.unwrap_or(false) {
+            config.selected_account = Some(stored.username.clone());
+            config.selected_account_kind = StoredAccountKind::Offline;
+        }
+        self.context
+            .config_store
+            .save(&config)
+            .map_err(internal_error)?;
+        structured(AccountWrite {
+            account: account_summary(&config, &stored.username, StoredAccountKind::Offline)
+                .ok_or_else(|| internal_error("offline account was not written"))?,
+        })
+    }
+
+    #[tool(
+        description = "Delete an offline or Microsoft account and its selected state",
+        output_schema = schema_for_type::<AccountDelete>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
+    async fn accounts_delete(
+        &self,
+        Parameters(params): Parameters<AccountSelectorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("accounts_delete")?;
+        let _repository_guard = self.lock_repository()?;
+        let kind = parse_account_kind(&params.kind)?;
+        let mut config = self.context.config_store.load().map_err(internal_error)?;
+        if account_summary(&config, &params.username, kind).is_none() {
+            return Err(not_found(format!(
+                "account `{}` was not found",
+                params.username
+            )));
+        }
+        match kind {
+            StoredAccountKind::Offline => {
+                config
+                    .accounts
+                    .retain(|account| account.username != params.username);
+            }
+            StoredAccountKind::Microsoft => {
+                let stored = config
+                    .microsoft_accounts
+                    .iter()
+                    .find(|account| account.username == params.username)
+                    .ok_or_else(|| not_found("Microsoft account was not found"))?;
+                let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
+                let profile =
+                    MicrosoftAccount::new(&stored.username, uuid).map_err(internal_error)?;
+                self.context
+                    .microsoft_accounts
+                    .remove_credentials(&profile)
+                    .await
+                    .map_err(internal_error)?;
+                config
+                    .microsoft_accounts
+                    .retain(|account| account.username != params.username);
+            }
+        }
+        if config.selected_account.as_deref() == Some(params.username.as_str())
+            && config.selected_account_kind == kind
+        {
+            config.selected_account = None;
+        }
+        ensure_account_selection(&mut config);
+        self.context
+            .config_store
+            .save(&config)
+            .map_err(internal_error)?;
+        structured(AccountDelete {
+            deleted: true,
+            username: params.username,
+            kind: account_kind(kind),
         })
     }
 
@@ -902,7 +1112,7 @@ impl McpServer {
     ) -> Result<CallToolResult, McpError> {
         self.require_write("instances_launch")?;
         let instance = self.instance(&params.instance_id).await?;
-        let account = self.launch_account().await?;
+        let account = self.launch_account(params.account.as_ref()).await?;
         let server = params
             .server
             .as_deref()
@@ -1215,13 +1425,25 @@ impl McpServer {
         })
     }
 
-    async fn launch_account(&self) -> Result<LaunchAccount, McpError> {
+    async fn launch_account(
+        &self,
+        selector: Option<&AccountSelectorParams>,
+    ) -> Result<LaunchAccount, McpError> {
         let config = self.context.config_store.load().map_err(internal_error)?;
-        let selected = config
-            .selected_account
-            .as_deref()
-            .ok_or_else(|| invalid_input("no account is selected"))?;
-        match config.selected_account_kind {
+        let (selected, kind) = match selector {
+            Some(selector) => (
+                selector.username.as_str(),
+                parse_account_kind(&selector.kind)?,
+            ),
+            None => (
+                config
+                    .selected_account
+                    .as_deref()
+                    .ok_or_else(|| invalid_input("no account is selected"))?,
+                config.selected_account_kind,
+            ),
+        };
+        match kind {
             StoredAccountKind::Offline => {
                 let stored = config
                     .accounts
@@ -1346,6 +1568,91 @@ fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
 
 fn task_started(task: TaskId, replay: bool) -> TaskStarted {
     TaskStarted::new(task.get(), replay)
+}
+
+fn account_kind(kind: StoredAccountKind) -> AccountKind {
+    match kind {
+        StoredAccountKind::Offline => AccountKind::Offline,
+        StoredAccountKind::Microsoft => AccountKind::Microsoft,
+    }
+}
+
+fn parse_account_kind(value: &str) -> Result<StoredAccountKind, McpError> {
+    match value {
+        "offline" => Ok(StoredAccountKind::Offline),
+        "microsoft" => Ok(StoredAccountKind::Microsoft),
+        _ => Err(invalid_input(format!(
+            "unsupported account kind `{value}`; expected offline or microsoft"
+        ))),
+    }
+}
+
+fn account_summaries(config: &LauncherConfig) -> Vec<AccountSummary> {
+    config
+        .accounts
+        .iter()
+        .map(|account| AccountSummary {
+            username: account.username.clone(),
+            uuid: account.uuid.clone(),
+            kind: AccountKind::Offline,
+            skin_url: None,
+            selected: config.selected_account_kind == StoredAccountKind::Offline
+                && config.selected_account.as_deref() == Some(account.username.as_str()),
+        })
+        .chain(
+            config
+                .microsoft_accounts
+                .iter()
+                .map(|account| AccountSummary {
+                    username: account.username.clone(),
+                    uuid: account.uuid.clone(),
+                    kind: AccountKind::Microsoft,
+                    skin_url: account.skin_url.clone(),
+                    selected: config.selected_account_kind == StoredAccountKind::Microsoft
+                        && config.selected_account.as_deref() == Some(account.username.as_str()),
+                }),
+        )
+        .collect()
+}
+
+fn account_summary(
+    config: &LauncherConfig,
+    username: &str,
+    kind: StoredAccountKind,
+) -> Option<AccountSummary> {
+    account_summaries(config)
+        .into_iter()
+        .find(|account| account.username == username && account.kind == account_kind(kind))
+}
+
+fn ensure_account_selection(config: &mut LauncherConfig) {
+    let selected_exists = match config.selected_account_kind {
+        StoredAccountKind::Offline => config.selected_account.as_ref().is_some_and(|selected| {
+            config
+                .accounts
+                .iter()
+                .any(|account| &account.username == selected)
+        }),
+        StoredAccountKind::Microsoft => config.selected_account.as_ref().is_some_and(|selected| {
+            config
+                .microsoft_accounts
+                .iter()
+                .any(|account| &account.username == selected)
+        }),
+    };
+    if selected_exists {
+        return;
+    }
+    if let Some(account) = config.accounts.first() {
+        config.selected_account = Some(account.username.clone());
+        config.selected_account_kind = StoredAccountKind::Offline;
+    } else if let Some(account) = config.microsoft_accounts.first() {
+        config.selected_account = Some(account.username.clone());
+        config.selected_account_kind = StoredAccountKind::Microsoft;
+    } else {
+        config.selected_account = None;
+        config.selected_account_kind = StoredAccountKind::Offline;
+    }
 }
 
 fn parse_conflict_policy(value: Option<&str>) -> Result<ConflictPolicy, McpError> {

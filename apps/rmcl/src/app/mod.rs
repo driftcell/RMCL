@@ -6673,6 +6673,7 @@ pub fn task_kind_label(kind: TaskKind) -> &'static str {
         TaskKind::InstanceCreate => "创建实例",
         TaskKind::ContentInstall => "安装内容",
         TaskKind::GameLaunch => "启动",
+        TaskKind::JavaInstall => "安装 Java",
     }
 }
 
