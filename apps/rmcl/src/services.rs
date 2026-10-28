@@ -1,6 +1,5 @@
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     rc::Rc,
     sync::Arc,
 };
@@ -306,14 +305,7 @@ fn should_save_on_start(config_existed: bool, has_overrides: bool, warning: Opti
 
 /// Opens a local file or directory with the platform's default handler.
 pub fn open_path(path: &Path) -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    let program = "open";
-    #[cfg(windows)]
-    let program = "explorer";
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let program = "xdg-open";
-
-    Command::new(program).arg(path).spawn().map(|_| ())
+    open::that(path)
 }
 
 fn mirror_preference(value: DownloadSourcePreference) -> MirrorPreference {

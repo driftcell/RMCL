@@ -43,6 +43,7 @@ hex = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 md-5 = "0.11"
 mvn_version = "0.1"
+open = "5"
 regex = "1"
 relative-path = "2"
 rmcl-app = { path = "crates/rmcl-app" }
