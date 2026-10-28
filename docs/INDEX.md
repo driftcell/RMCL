@@ -16,6 +16,7 @@
 
 - [目标工作区](architecture/WORKSPACE.md)：多 crate 边界和依赖方向。
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
+- [Model Context Protocol](architecture/MCP.md)：只读 MCP 工具、stdio、Streamable HTTP 与后续写入边界。
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
 - [服务器列表与一键进服](architecture/SERVERS.md)：全局服务器收藏、Server List Ping、MOTD/人数/延迟、图标缓存与 Quick Play/legacy 进服。

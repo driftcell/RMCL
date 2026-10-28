@@ -1,0 +1,15 @@
+[package]
+name = "rmcl-mcp-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rmcl-mcp"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+rmcl-app.workspace = true
+rmcl-mcp.workspace = true
+tokio-util.workspace = true

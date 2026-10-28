@@ -6,7 +6,7 @@
 
 use std::{
     collections::HashMap,
-    rc::Rc,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -160,7 +160,7 @@ impl EventEmitter<SkinServiceEvent> for SkinService {}
 
 /// Per-account skin profiles, textures and the local recent list.
 pub struct SkinService {
-    services: Rc<Services>,
+    services: Arc<Services>,
     profiles: HashMap<Uuid, ProfileState>,
     textures: HashMap<Uuid, EquippedSkinState>,
     recent: Loadable<Vec<SkinLibraryEntry>>,
@@ -169,7 +169,7 @@ pub struct SkinService {
 }
 
 impl SkinService {
-    pub fn new(services: Rc<Services>, _cx: &mut Context<Self>) -> Self {
+    pub fn new(services: Arc<Services>, _cx: &mut Context<Self>) -> Self {
         Self {
             services,
             profiles: HashMap::new(),

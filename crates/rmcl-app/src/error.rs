@@ -130,6 +130,8 @@ pub enum AppError {
     Launch(#[from] rmcl_launch::LaunchError),
     #[error("Microsoft authentication is unavailable: {0}")]
     MicrosoftAuth(#[from] rmcl_auth::MicrosoftAuthError),
+    #[error(transparent)]
+    Store(#[from] rmcl_store::StoreError),
     #[error("system credential storage is unavailable: {0}")]
     SecretStore(#[from] rmcl_platform::SecretStoreError),
     #[error("skin source is unavailable: {0}")]

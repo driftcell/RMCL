@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/rmcl",
+    "apps/rmcl-mcp",
     "crates/rmcl-app",
     "crates/rmcl-archive",
     "crates/rmcl-auth",
@@ -11,6 +12,7 @@ members = [
     "crates/rmcl-java",
     "crates/rmcl-launch",
     "crates/rmcl-minecraft",
+    "crates/rmcl-mcp",
     "crates/rmcl-net",
     "crates/rmcl-platform",
     "crates/rmcl-store",
@@ -44,6 +46,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 md-5 = "0.11"
 mvn_version = "0.1"
 open = "5"
+rmcp = { version = "3.8", default-features = false, features = ["server", "macros", "schemars", "transport-io", "transport-streamable-http-server"] }
 regex = "1"
 relative-path = "2"
 rmcl-app = { path = "crates/rmcl-app" }
@@ -56,6 +59,7 @@ rmcl-install = { path = "crates/rmcl-install" }
 rmcl-java = { path = "crates/rmcl-java" }
 rmcl-launch = { path = "crates/rmcl-launch" }
 rmcl-minecraft = { path = "crates/rmcl-minecraft" }
+rmcl-mcp = { path = "crates/rmcl-mcp" }
 rmcl-net = { path = "crates/rmcl-net" }
 rmcl-platform = { path = "crates/rmcl-platform" }
 rmcl-store = { path = "crates/rmcl-store" }
@@ -72,6 +76,7 @@ thiserror = "2"
 toml = "1.1"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tower = { version = "0.5", features = ["util"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 which = "8"

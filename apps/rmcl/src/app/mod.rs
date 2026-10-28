@@ -2,7 +2,7 @@ mod skin_service;
 mod skin_viewer;
 mod ui;
 
-use std::{cell::Cell, collections::HashMap, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::Cell, collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use gpui_kit::{
     assets::IconName,
@@ -407,7 +407,7 @@ enum MicrosoftLoginUi {
 }
 
 pub struct LauncherApp {
-    services: Rc<Services>,
+    services: Arc<Services>,
     page: Page,
     config: LauncherConfig,
     config_warning: Option<String>,
@@ -521,7 +521,7 @@ impl LauncherApp {
     pub fn new(
         window: &mut Window,
         cx: &mut Context<Self>,
-        services: Rc<Services>,
+        services: Arc<Services>,
         bootstrap: Bootstrap,
     ) -> Self {
         let save_on_start = bootstrap.save_on_start;
@@ -1249,7 +1249,7 @@ impl LauncherApp {
 
     fn spawn_event_bridge(
         window: &mut Window,
-        services: &Rc<Services>,
+        services: &Arc<Services>,
         cx: &mut Context<Self>,
     ) -> Task<()> {
         let manager = services.tasks.clone();

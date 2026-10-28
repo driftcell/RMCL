@@ -2,11 +2,11 @@
 
 状态：已接受的目标架构
 
-日期：2026-10-25
+日期：2026-10-28
 
 ## 当前状态
 
-RMCL 已是 Cargo workspace：`apps/rmcl` 提供 GPUI 启动器壳、主页、版本列表、远程下载、设置、离线/正版账户、官方皮肤头像和任务日志界面；`rmcl-app` 提供 headless Vanilla 安装、实例继承解析与创建、Fabric/Quilt 加载器安装、实例扫描与旧实例隔离迁移、本地内容异步用例、Modrinth 内容下载任务、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期、已安装版本扫描、远程版本目录、有界日志、Microsoft 凭据用例和皮肤头像缓存；`rmcl-store` 提供 TOML 配置、离线/Microsoft 账户元数据和原子写入；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号和 Microsoft 设备代码认证；`rmcl-platform` 提供系统凭据存储抽象与 Keychain / Credential Manager / Secret Service 适配；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局、实例 manifest 与隔离/共享游戏目录语义；`rmcl-content` 提供 Mod、资源包和光影的本地扫描、导入、删除、启用/禁用、`options.txt` 管理，以及 provider-neutral 远程模型和 Modrinth 元数据客户端；`rmcl-install` 提供版本继承合并和 Vanilla/loader 共用的纯安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供实例感知的启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
+RMCL 已是 Cargo workspace：`apps/rmcl` 提供 GPUI 启动器壳、主页、版本列表、远程下载、设置、离线/正版账户、官方皮肤头像和任务日志界面；`apps/rmcl-mcp` 提供独立 stdio 与本地 Streamable HTTP 控制台；`AppContext` 是 GUI 与外部协议共享的 headless 服务层；`rmcl-app` 提供 headless Vanilla 安装、实例继承解析与创建、Fabric/Quilt 加载器安装、实例扫描与旧实例隔离迁移、本地内容异步用例、Modrinth 内容下载任务、稳定任务 ID、快照、互斥、取消、Java ensure、游戏生命周期、已安装版本扫描、远程版本目录、有界日志、Microsoft 凭据用例和皮肤头像缓存；`rmcl-mcp` 提供只读 MCP 工具与传输适配；`rmcl-store` 提供 TOML 配置、离线/Microsoft 账户元数据和原子写入；`rmcl-domain` 提供共享平台类型、校验、下载请求与提取计划；`rmcl-auth` 提供离线账号和 Microsoft 设备代码认证；`rmcl-platform` 提供系统凭据存储抽象与 Keychain / Credential Manager / Secret Service 适配；`rmcl-minecraft` 提供版本元数据与规则；`rmcl-instance` 提供安全仓库布局、实例 manifest 与隔离/共享游戏目录语义；`rmcl-content` 提供 Mod、资源包和光影的本地扫描、导入、删除、启用/禁用、`options.txt` 管理，以及 provider-neutral 远程模型和 Modrinth 元数据客户端；`rmcl-install` 提供版本继承合并和 Vanilla/loader 共用的纯安装计划；`rmcl-net` 提供并行下载执行；`rmcl-archive` 提供安全 ZIP 解压与合并；`rmcl-java` 提供 Java 检测、探测、选择、Mojang runtime 安装与复用；`rmcl-launch` 提供实例感知的启动计划、真实进程、日志脱敏和退出状态。其他边界按实现进度加入，本文件其余部分描述目标结构。
 
 ## 目标结构
 
@@ -28,6 +28,7 @@ RMCL/
 │   ├── rmcl-content/         # Mod、资源包与整合包生态
 │   ├── rmcl-store/           # 配置持久化、迁移与原子写入
 │   └── rmcl-app/             # 用例、任务、进度与事件编排
+│   └── rmcl-mcp/             # MCP 工具、schema 与传输适配
 ├── xtask/                    # 开发和打包自动化
 ├── packaging/                # 平台打包资源
 └── tests/                    # 跨 crate fixtures 与兼容性测试
@@ -40,7 +41,7 @@ RMCL/
 ```text
 apps/rmcl ─────┐
                ├──> rmcl-app ───> 领域服务 crates
-apps/rmcl-cli ─┘
+apps/rmcl-mcp ─┘
 ```
 
 - `gpui-kit` 仅属于桌面应用及其 UI 组件。
@@ -48,7 +49,7 @@ apps/rmcl-cli ─┘
 - `rmcl-minecraft` 的解析与计划生成尽量保持纯计算，不自行弹出 UI 或决定页面流程。
 - `apps/rmcl` 持有应用级服务（Tokio runtime、任务、配置、版本目录）和 GPUI 页面状态；页面只通过命令与只读快照交互。
 - `rmcl-store` 只负责启动器配置的读取、schema 校验和原子写入，不依赖 GPUI 或安装逻辑。
-- `rmcl-cli` 与 GUI 复用同一核心能力，用于诊断、自动化测试和不依赖显示服务器的验证。
+- `apps/rmcl-mcp` 与 GUI 复用同一核心能力，用于 MCP、自动化测试和不依赖显示服务器的验证。
 
 ## GPUI 依赖约束
 

@@ -526,6 +526,17 @@ impl TaskManager {
         Ok((id, cancellation))
     }
 
+    pub async fn snapshots(&self) -> Vec<TaskSnapshot> {
+        let registry = self.inner.registry.lock().await;
+        let mut snapshots = registry
+            .tasks
+            .values()
+            .map(|record| record.snapshot.clone())
+            .collect::<Vec<_>>();
+        snapshots.sort_by_key(|snapshot| snapshot.id);
+        snapshots
+    }
+
     pub async fn snapshot(&self, id: TaskId) -> Option<TaskSnapshot> {
         let registry = self.inner.registry.lock().await;
         registry
