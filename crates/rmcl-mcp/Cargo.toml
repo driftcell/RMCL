@@ -27,6 +27,7 @@ tower.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+image.workspace = true
 rmcp = { workspace = true, features = ["client"] }
 rmcl-net.workspace = true
 sha1.workspace = true

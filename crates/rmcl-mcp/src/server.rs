@@ -9,13 +9,13 @@ use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
     CreateInstanceRequest, GameLaunchRequest, InstalledVersion, JavaEnsureRequest, LoaderKind,
     LoaderSelection, RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard,
-    ServerBookmarkError, TaskId, VanillaInstallRequest, VersionSource,
-    delete_installed_version_with_guard, delete_instance_content_with_guard,
-    discover_installed_versions, import_instance_content_with_guard,
-    migrate_instance_to_isolated_with_guard, preflight_content_install, remove_server_bookmark,
-    rename_instance_with_guard, scan_installed_mods, set_instance_content_enabled_with_guard,
-    set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
-    upsert_server_bookmark,
+    ServerBookmarkError, SkinLibraryEntry, SkinLibraryError, SkinSourceError, TaskId,
+    VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
+    delete_instance_content_with_guard, discover_installed_versions,
+    import_instance_content_with_guard, load_skin_file, migrate_instance_to_isolated_with_guard,
+    preflight_content_install, remove_server_bookmark, rename_instance_with_guard,
+    scan_installed_mods, set_instance_content_enabled_with_guard, set_instance_java_with_guard,
+    set_instance_launch_settings_with_guard, try_lock_repository, upsert_server_bookmark,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::ServerAddress;
@@ -48,8 +48,9 @@ use crate::{
         MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
         PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
         RemoteVersionSummary, ServerBookmark, ServerDelete, ServerList, ServerPingResult,
-        ServerWrite, TaskList, TaskSnapshot, TaskStarted, TaskSubscription, TaskSubscriptionEnded,
-        content_entry, instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
+        ServerWrite, SkinDelete, SkinEntry, SkinList, SkinWrite, TaskList, TaskSnapshot,
+        TaskStarted, TaskSubscription, TaskSubscriptionEnded, content_entry, instance_revision,
+        instance_summary, java_runtime, log_page, task_snapshot,
     },
 };
 
@@ -96,6 +97,28 @@ struct ServerPingParams {
     server_id: Option<String>,
     /// Address to ping without saving it; exactly one of server_id or address is required.
     address: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SkinImportParams {
+    /// Local PNG path or direct HTTPS PNG URL.
+    source: String,
+    /// Optional display name; defaults to the normalized file name.
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SkinRenameParams {
+    /// Content SHA-256 ID of the library entry.
+    skin_id: String,
+    /// New display name.
+    name: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SkinIdParams {
+    /// Content SHA-256 ID of the library entry.
+    skin_id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -422,6 +445,10 @@ impl McpServer {
                 "servers_upsert",
                 "servers_delete",
                 "servers_ping",
+                "skins_list",
+                "skins_import",
+                "skins_rename",
+                "skins_delete",
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
@@ -905,6 +932,129 @@ impl McpServer {
             protocol: status.protocol,
             latency_ms: u64::try_from(status.latency.as_millis()).unwrap_or(u64::MAX),
             icon_path,
+        })
+    }
+
+    #[tool(
+        description = "List validated skins in the local RMCL skin library",
+        output_schema = schema_for_type::<SkinList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn skins_list(&self) -> Result<CallToolResult, McpError> {
+        let entries = self
+            .context
+            .skin_library
+            .list()
+            .await
+            .map_err(skin_library_error)?;
+        structured(SkinList {
+            items: entries
+                .iter()
+                .map(|entry| self.skin_entry(entry))
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+
+    #[tool(
+        description = "Validate and import a local PNG or direct HTTPS PNG into the skin library",
+        output_schema = schema_for_type::<SkinWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
+    async fn skins_import(
+        &self,
+        Parameters(params): Parameters<SkinImportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("skins_import")?;
+        let source = params.source.trim();
+        if source.is_empty() {
+            return Err(invalid_input("skin source cannot be blank"));
+        }
+        let prepared = if source.starts_with("https://") || source.starts_with("http://") {
+            self.context
+                .skin_urls
+                .fetch(source, &tokio_util::sync::CancellationToken::new())
+                .await
+                .map_err(skin_source_error)?
+        } else if source.contains("://") {
+            return Err(invalid_input("skin URL must use HTTPS"));
+        } else {
+            load_skin_file(source).await.map_err(skin_source_error)?
+        };
+        let _library_guard =
+            try_lock_repository(self.context.skin_library.root()).map_err(app_error)?;
+        let mut entry = self
+            .context
+            .skin_library
+            .import(&prepared)
+            .await
+            .map_err(skin_library_error)?;
+        if let Some(name) = params.name.as_deref().map(str::trim)
+            && !name.is_empty()
+        {
+            self.context
+                .skin_library
+                .rename(&entry.id, name)
+                .await
+                .map_err(skin_library_error)?;
+            entry.name = name.to_owned();
+        }
+        structured(SkinWrite {
+            skin: self.skin_entry(&entry)?,
+        })
+    }
+
+    #[tool(
+        description = "Rename a local skin library entry without changing its content ID",
+        output_schema = schema_for_type::<SkinWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn skins_rename(
+        &self,
+        Parameters(params): Parameters<SkinRenameParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("skins_rename")?;
+        let _library_guard =
+            try_lock_repository(self.context.skin_library.root()).map_err(app_error)?;
+        self.context
+            .skin_library
+            .rename(&params.skin_id, &params.name)
+            .await
+            .map_err(skin_library_error)?;
+        let entries = self
+            .context
+            .skin_library
+            .list()
+            .await
+            .map_err(skin_library_error)?;
+        let entry = entries
+            .iter()
+            .find(|entry| entry.id == params.skin_id)
+            .ok_or_else(|| not_found(format!("skin `{}` was not found", params.skin_id)))?;
+        structured(SkinWrite {
+            skin: self.skin_entry(entry)?,
+        })
+    }
+
+    #[tool(
+        description = "Delete a local skin library entry and its full texture",
+        output_schema = schema_for_type::<SkinDelete>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
+    async fn skins_delete(
+        &self,
+        Parameters(params): Parameters<SkinIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("skins_delete")?;
+        let _library_guard =
+            try_lock_repository(self.context.skin_library.root()).map_err(app_error)?;
+        self.context
+            .skin_library
+            .remove(&params.skin_id)
+            .await
+            .map_err(skin_library_error)?;
+        structured(SkinDelete {
+            deleted: true,
+            skin_id: params.skin_id,
         })
     }
 
@@ -1760,6 +1910,23 @@ impl McpServer {
             .find(|instance| instance.id.as_str() == id)
             .ok_or_else(|| not_found(format!("unknown instance ID `{id}`")))
     }
+
+    fn skin_entry(&self, entry: &SkinLibraryEntry) -> Result<SkinEntry, McpError> {
+        let head_path = self
+            .context
+            .skin_library
+            .head_path(&entry.id)
+            .ok_or_else(|| internal_error("skin library contains an invalid content ID"))?;
+        Ok(SkinEntry {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            variant: entry.variant.as_str().to_owned(),
+            source_url: entry.source_url.clone(),
+            imported_at: entry.imported_at,
+            file_name: entry.file_name.clone(),
+            head_path: head_path.display().to_string(),
+        })
+    }
 }
 
 #[tool_handler(
@@ -1778,6 +1945,18 @@ fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
 
 fn task_started(task: TaskId, replay: bool) -> TaskStarted {
     TaskStarted::new(task.get(), replay)
+}
+
+fn skin_library_error(error: SkinLibraryError) -> McpError {
+    match error {
+        SkinLibraryError::NotFound { id } => not_found(format!("skin `{id}` was not found")),
+        SkinLibraryError::Source(error) => skin_source_error(error),
+        other => internal_error(other),
+    }
+}
+
+fn skin_source_error(error: SkinSourceError) -> McpError {
+    invalid_input(error.to_string())
 }
 
 fn server_bookmark_error(error: ServerBookmarkError) -> McpError {

@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；皮肤和高级内容工作流尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、本地皮肤库、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；正版皮肤工作流和高级内容更新尚未实现
 
 日期：2026-10-28
 
@@ -111,6 +111,7 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `java_ensure` | 确保兼容 Java runtime，返回安装/复用任务 |
 | `servers_list` | 服务器收藏元数据，不发起网络请求 |
 | `servers_ping` | 按收藏 ID 或临时地址执行 Java Edition SLP，返回 MOTD、人数、延迟和图标缓存路径 |
+| `skins_list` | 本地皮肤库元数据、模型提示和头像缓存路径 |
 | `content_list` | 实例的 Mod、资源包和光影及扫描警告，可按 kind 过滤 |
 | `content_search` | 按 kind、查询词、游戏版本、loader、排序和分页搜索 Modrinth |
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
@@ -245,6 +246,18 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 无 ID 的 `servers_upsert` 每次都会创建新 UUID，因此该工具不声明无条件 `idempotentHint`；带 ID 更新使用同一书签。GUI 与 MCP 共用 `upsert_server_bookmark` / `remove_server_bookmark`，并在窗口重新激活时刷新外部收藏变化。
 
+## 本地皮肤库
+
+| 工具 | 语义 |
+| --- | --- |
+| `skins_import` | 校验本地 PNG 或 HTTPS 图片直链并导入皮肤库，可选显示名 |
+| `skins_rename` | 修改显示名，保持内容 ID 不变 |
+| `skins_delete` | 删除库条目和完整纹理，不影响账户当前皮肤 |
+
+导入复用现有大小、64×64/64×32、PNG 解码和官方上传字节规范化。HTTPS 来源拒绝 URL 凭据、私网/回环地址、非 PNG 内容和超限重定向。文件准备完成后，在皮肤库自己的 `.rmcl.lock` 内更新索引，与库内 mutex 共同协调跨进程写入。重复内容使用同一个 SHA-256 ID，不增加重复条目；`source_url`、模型提示和头像路径只作为本地元数据返回，不暴露图片字节或账户凭据。
+
+这些工具只管理本地库，不调用 Microsoft/Mojang 换肤接口，也不改变当前激活皮肤。正版资料刷新、上传和恢复默认是独立后续工作流。
+
 ## 内容写操作
 
 | 工具 | 语义 |
@@ -279,7 +292,7 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. 皮肤接口。
+1. 正版皮肤资料刷新、上传和恢复默认。
 2. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。

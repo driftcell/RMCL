@@ -1063,6 +1063,33 @@ pub struct ServerPingResult {
     pub icon_path: Option<String>,
 }
 
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct SkinEntry {
+    pub id: String,
+    pub name: String,
+    pub variant: String,
+    pub source_url: Option<String>,
+    pub imported_at: u64,
+    pub file_name: String,
+    pub head_path: String,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct SkinList {
+    pub items: Vec<SkinEntry>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct SkinWrite {
+    pub skin: SkinEntry,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct SkinDelete {
+    pub deleted: bool,
+    pub skin_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use rmcl_app::{TaskId, TaskProgress as AppTaskProgress};
