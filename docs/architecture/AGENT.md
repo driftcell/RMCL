@@ -23,11 +23,11 @@
 - 免费通道遇到 429 时显示“请求过多，请稍后再试或配置自己的 Key”，不暴露原始 HTTP 错误。
 - BYOK 仍支持 OpenAI、Anthropic、Google Gemini、DeepSeek、OpenRouter、通义千问、Kimi、智谱 GLM 和自定义 OpenAI-compatible 服务商。
 - Provider 配置写入 `config.toml`（schema 7）：`agent_provider`、`agent_model`、`agent_base_url`、`agent_proxy`。
-- API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。Kilo 不使用 Keyring。
+- API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。Kilo 不使用 Keyring。钥匙串读写在同一 `AgentKeyStore` 内串行执行，新读取会等待旧保存/删除完成，避免 UI 状态与实际凭据不一致。
 - 已保存的 Key 不回填输入框，只显示“已保存在系统钥匙串”和移除按钮。
 - 保存时不自动发起模型请求；首次发送消息时验证服务商与 Key。
 - 代理支持 HTTP(S)、SOCKS5 和 SOCKS5H；留空时跟随系统/环境代理。代理只影响 AI 请求，不改变全局网络设置。Base URL 和代理 URL 拒绝内嵌用户名或密码，避免凭据写入 `config.toml` 或进入错误横幅。
-- 非法 Provider ID 会显示配置错误并阻止发送，不会静默切换到 Kilo。模型和 Base URL 留空时继续使用 Provider 预设，不会在首次发送后固化默认值。Provider 错误在显示前会移除原始或 URL 编码后的 API Key。
+- 非法 Provider ID 会显示配置错误并阻止发送，不会静默切换到 Kilo。模型和 Base URL 留空时继续使用 Provider 预设，不会在首次发送后固化默认值。Gemini 的旧 `/v1beta` Base URL 会先归一化，避免升级后重复路径。Provider 错误在显示前会移除原始或 URL 编码后的 API Key。
 - 设置卡片明确提示：对话内容和工具结果（实例名、路径、玩家名）会发送给所选服务商。
 
 ## MCP 连接

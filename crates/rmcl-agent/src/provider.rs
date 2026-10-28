@@ -1,6 +1,6 @@
 //! Provider presets, settings, and key storage for the built-in AI assistant.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use rmcl_platform::{SecretStore, SecretStoreError};
 use serde::{Deserialize, Serialize};
@@ -206,11 +206,23 @@ fn has_userinfo(url: &Url) -> bool {
 #[derive(Clone)]
 pub struct AgentKeyStore {
     secrets: Arc<dyn SecretStore>,
+    operations: Arc<Mutex<()>>,
 }
 
 impl AgentKeyStore {
     pub fn new(secrets: Arc<dyn SecretStore>) -> Self {
-        Self { secrets }
+        Self {
+            secrets,
+            operations: Arc::new(Mutex::new(())),
+        }
+    }
+
+    fn lock_operations(&self) -> MutexGuard<'_, ()> {
+        // OS credential operations cannot be cancelled once started. Serialize
+        // them so a newer read always observes older saves/deletes as complete.
+        self.operations
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn key_name(provider: AgentProvider) -> String {
@@ -218,6 +230,7 @@ impl AgentKeyStore {
     }
 
     pub fn load(&self, provider: AgentProvider) -> Result<Option<String>, AgentError> {
+        let _operation = self.lock_operations();
         let Some(value) = self.secrets.get(&Self::key_name(provider))? else {
             return Ok(None);
         };
@@ -233,6 +246,7 @@ impl AgentKeyStore {
     }
 
     pub fn save(&self, provider: AgentProvider, api_key: &str) -> Result<(), AgentError> {
+        let _operation = self.lock_operations();
         let api_key = api_key.trim();
         if api_key.is_empty() {
             return Err(AgentError::BlankKey);
@@ -247,6 +261,7 @@ impl AgentKeyStore {
     }
 
     pub fn delete(&self, provider: AgentProvider) -> Result<(), AgentError> {
+        let _operation = self.lock_operations();
         self.secrets.delete(&Self::key_name(provider))?;
         Ok(())
     }
@@ -421,6 +436,76 @@ mod tests {
 
         store.delete(AgentProvider::OpenAi).unwrap();
         assert!(!store.has_key(AgentProvider::OpenAi).unwrap());
+    }
+
+    #[test]
+    fn key_store_reads_wait_for_older_writes() {
+        use std::sync::mpsc;
+
+        #[derive(Clone)]
+        struct OrderedStore {
+            inner: MemorySecretStore,
+            delete_started: mpsc::Sender<()>,
+            finish_delete: Arc<Mutex<mpsc::Receiver<()>>>,
+            get_called: mpsc::Sender<()>,
+        }
+
+        impl SecretStore for OrderedStore {
+            fn get(&self, key: &str) -> Result<Option<String>, SecretStoreError> {
+                self.get_called.send(()).unwrap();
+                self.inner.get(key)
+            }
+
+            fn set(&self, key: &str, value: &str) -> Result<(), SecretStoreError> {
+                self.inner.set(key, value)
+            }
+
+            fn delete(&self, key: &str) -> Result<(), SecretStoreError> {
+                self.delete_started.send(()).unwrap();
+                self.finish_delete.lock().unwrap().recv().unwrap();
+                self.inner.delete(key)
+            }
+        }
+
+        let (delete_started, delete_finished) = mpsc::channel();
+        let (finish_delete, finish_delete_receiver) = mpsc::channel();
+        let (get_called, get_called_receiver) = mpsc::channel();
+        let secrets = Arc::new(OrderedStore {
+            inner: MemorySecretStore::default(),
+            delete_started,
+            finish_delete: Arc::new(Mutex::new(finish_delete_receiver)),
+            get_called,
+        });
+        secrets
+            .inner
+            .set("agent:openai", r#"{"version":1,"api_key":"secret"}"#)
+            .unwrap();
+        let store = AgentKeyStore::new(secrets);
+
+        let deleting = {
+            let store = store.clone();
+            std::thread::spawn(move || store.delete(AgentProvider::OpenAi))
+        };
+        delete_finished.recv().unwrap();
+        let reading = {
+            let store = store.clone();
+            std::thread::spawn(move || store.has_key(AgentProvider::OpenAi))
+        };
+        assert!(
+            get_called_receiver
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err()
+        );
+
+        finish_delete.send(()).unwrap();
+
+        assert!(!reading.join().unwrap().unwrap());
+        deleting.join().unwrap().unwrap();
+        assert!(
+            get_called_receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .is_ok()
+        );
     }
 
     #[test]

@@ -2665,6 +2665,7 @@ impl LauncherApp {
                 if let Some(snapshot) = snapshot {
                     view.log_state.apply_snapshot(snapshot);
                 }
+                view.replay_deferred_task_terminals(window, cx);
                 match result {
                     Ok(_) => {
                         window.push_notification(

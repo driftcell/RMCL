@@ -30,6 +30,11 @@ pub fn build_model(
 ) -> Result<DynModel<Completion>, AgentError> {
     let model = settings.effective_model()?;
     let base_url = settings.effective_base_url()?;
+    let base_url = if settings.provider == AgentProvider::Gemini {
+        gemini_base_url(base_url)
+    } else {
+        base_url
+    };
     let http = http_client(settings.proxy_url()?)?;
     let model = match settings.provider {
         AgentProvider::Anthropic => AnthropicConfig::new(api_key)
@@ -61,6 +66,11 @@ pub fn build_model(
             .erase(),
     };
     Ok(model)
+}
+
+fn gemini_base_url(value: &str) -> &str {
+    let root = value.trim_end_matches('/');
+    root.strip_suffix("/v1beta").unwrap_or(root)
 }
 
 fn http_client(proxy: Option<url::Url>) -> Result<ReqwestClient, AgentError> {
@@ -155,10 +165,14 @@ mod tests {
 
     #[tokio::test]
     async fn gemini_requests_have_one_version_prefix() {
-        let request = capture_request("gemini", "gemini-test", "", "test-key").await;
-        assert!(
-            request.starts_with("POST /v1beta/models/gemini-test:generateContent?key=test-key ")
-        );
+        for base_path in ["", "/v1beta", "/v1beta/"] {
+            let request = capture_request("gemini", "gemini-test", base_path, "test-key").await;
+            assert!(
+                request
+                    .starts_with("POST /v1beta/models/gemini-test:generateContent?key=test-key "),
+                "unexpected request for base path {base_path}: {request}"
+            );
+        }
         assert_eq!(
             AgentProvider::Gemini.default_base_url(),
             Some("https://generativelanguage.googleapis.com")
