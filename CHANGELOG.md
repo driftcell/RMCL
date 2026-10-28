@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/driftcell/RMCL/compare/v0.8.1...v0.9.0) - 2026-10-28
+
+### Added
+
+- *(mcp)* replace content during updates ([#93](https://github.com/driftcell/RMCL/pull/93))
+- *(mcp)* add server bookmark and status workflows ([#90](https://github.com/driftcell/RMCL/pull/90))
+- *(gui)* refresh external MCP changes ([#89](https://github.com/driftcell/RMCL/pull/89))
+- *(mcp)* manage loopback HTTP from settings ([#88](https://github.com/driftcell/RMCL/pull/88))
+- *(mcp)* add account and Java workflows ([#85](https://github.com/driftcell/RMCL/pull/85))
+- *(mcp)* secure loopback HTTP access ([#83](https://github.com/driftcell/RMCL/pull/83))
+- *(mcp)* add content workflows and launcher subcommand ([#77](https://github.com/driftcell/RMCL/pull/77))
+- *(mcp)* add read-only server and transports ([#75](https://github.com/driftcell/RMCL/pull/75))
+
+### Changed
+
+- *(release)* use single application versioning ([#78](https://github.com/driftcell/RMCL/pull/78))
+
+### Fixed
+
+- *(gui)* run MCP lifecycle on core runtime ([#94](https://github.com/driftcell/RMCL/pull/94))
+
 ## [0.8.1](https://github.com/driftcell/RMCL/compare/v0.8.0...v0.8.1) - 2026-10-28
 
 ### Changed
