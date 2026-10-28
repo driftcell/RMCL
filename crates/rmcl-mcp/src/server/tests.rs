@@ -34,6 +34,44 @@ fn structured(result: CallToolResult) -> Value {
     result.structured_content.unwrap()
 }
 
+fn task_snapshot_for_wait(
+    kind: rmcl_app::TaskKind,
+    status: TaskStatus,
+    phase: Option<TaskPhase>,
+) -> rmcl_app::TaskSnapshot {
+    rmcl_app::TaskSnapshot {
+        id: TaskId::from_raw(1),
+        kind,
+        subject: None,
+        status,
+        phase,
+        progress: None,
+        error: None,
+        exit: None,
+        stop_requested: false,
+        log_lines: 0,
+    }
+}
+
+#[test]
+fn tasks_wait_stops_at_terminal_or_running_game() {
+    assert!(task_wait_satisfied(&task_snapshot_for_wait(
+        rmcl_app::TaskKind::InstanceCreate,
+        TaskStatus::Completed,
+        None,
+    )));
+    assert!(task_wait_satisfied(&task_snapshot_for_wait(
+        rmcl_app::TaskKind::GameLaunch,
+        TaskStatus::Running,
+        Some(TaskPhase::RunningGame),
+    )));
+    assert!(!task_wait_satisfied(&task_snapshot_for_wait(
+        rmcl_app::TaskKind::GameLaunch,
+        TaskStatus::Running,
+        Some(TaskPhase::StartingGame),
+    )));
+}
+
 #[test]
 fn every_tool_declares_an_output_schema() {
     let tools = McpServer::tool_router().list_all();
@@ -49,7 +87,8 @@ fn every_tool_declares_an_output_schema() {
             "capabilities" | "instances_list" | "instances_get" | "accounts_list"
             | "content_list" | "content_search" | "content_versions" | "versions_list"
             | "loaders_list" | "java_list" | "servers_list" | "servers_ping" | "skins_list"
-            | "skins_profile" | "tasks_list" | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
+            | "skins_profile" | "tasks_list" | "tasks_get" | "tasks_wait" | "tasks_logs"
+            | "tasks_unsubscribe" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
