@@ -1,12 +1,22 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
-use rmcl_app::{AppContext, ContentKind, InstalledVersion, TaskId, discover_installed_versions};
+use rmcl_app::{
+    AppContext, ContentKind, CreateInstanceRequest, GameLaunchRequest, InstalledVersion,
+    LoaderKind, LoaderSelection, TaskId, VanillaInstallRequest, VersionSource,
+    discover_installed_versions, migrate_instance_to_isolated, rename_instance, set_instance_java,
+    set_instance_launch_settings,
+};
+use rmcl_auth::{MicrosoftAccount, OfflineAccount};
+use rmcl_domain::ServerAddress;
+use rmcl_launch::LaunchAccount;
+use rmcl_store::StoredAccountKind;
 use rmcp::{
     ErrorData as McpError, ServerHandler, handler::server::wrapper::Parameters,
     model::CallToolResult, schemars, tool, tool_handler, tool_router,
 };
 use serde::Deserialize;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::{
     error::{internal_error, invalid_input},
@@ -48,6 +58,76 @@ struct TaskLogsParams {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct LoaderParams {
+    /// Loader family: fabric, quilt, forge, or neoforge.
+    kind: String,
+    /// Loader version to install.
+    version: String,
+    /// Optional installer version; defaults to `version`.
+    installer_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateInstanceParams {
+    /// New instance directory ID.
+    instance_id: String,
+    /// Base Minecraft version ID.
+    base_version_id: String,
+    /// Optional display name; defaults to the instance ID.
+    name: Option<String>,
+    /// Optional loader to install.
+    loader: Option<LoaderParams>,
+    /// Optional source instance whose content should be copied.
+    copy_content_from: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WindowParams {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct UpdateInstanceParams {
+    /// Stable instance directory ID.
+    instance_id: String,
+    /// New display name.
+    name: Option<String>,
+    /// Explicit Java path; an empty string restores automatic selection.
+    java: Option<String>,
+    /// Memory in MiB; zero restores the JVM default.
+    max_memory_mb: Option<u32>,
+    /// Initial window dimensions.
+    window: Option<WindowParams>,
+    /// Clear the initial window override.
+    clear_window: Option<bool>,
+    /// Set to `isolated` to migrate the instance to an isolated game directory.
+    isolation: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct RepairInstanceParams {
+    /// Stable instance directory ID.
+    instance_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct LaunchInstanceParams {
+    /// Stable instance directory ID.
+    instance_id: String,
+    /// Run the full ensure/repair pass before launching.
+    repair: Option<bool>,
+    /// Optional server address to join immediately.
+    server: Option<String>,
+    /// Additional JVM arguments.
+    additional_jvm_arguments: Option<Vec<String>>,
+    /// Additional game arguments.
+    additional_game_arguments: Option<Vec<String>>,
+    /// Launch in demo mode.
+    demo: Option<bool>,
+}
+
 #[tool_router]
 impl McpServer {
     pub fn new(context: Arc<AppContext>) -> Self {
@@ -59,17 +139,22 @@ impl McpServer {
         Ok(CallToolResult::structured(json!({
             "name": "rmcl",
             "version": env!("CARGO_PKG_VERSION"),
-            "read_only": true,
+            "access": "read_write",
             "transports": ["stdio", "streamable-http"],
             "tools": [
                 "capabilities",
                 "instances_list",
                 "instances_get",
+                "instances_create",
+                "instances_update",
+                "instances_repair",
+                "instances_launch",
                 "content_list",
                 "java_list",
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
+                "tasks_cancel",
             ],
             "platform": {
                 "os": self.context.platform.os.native_directory_name(),
@@ -174,6 +259,249 @@ impl McpServer {
         Ok(CallToolResult::structured(page))
     }
 
+    #[tool(description = "Create a Vanilla or mod-loader instance and return its install task")]
+    async fn instances_create(
+        &self,
+        Parameters(params): Parameters<CreateInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let loader = params
+            .loader
+            .map(|loader| {
+                let kind = parse_loader_kind(&loader.kind)?;
+                let installer_version = loader
+                    .installer_version
+                    .unwrap_or_else(|| loader.version.clone());
+                Ok(LoaderSelection {
+                    kind,
+                    version: loader.version,
+                    installer_version,
+                })
+            })
+            .transpose()?;
+        let request = CreateInstanceRequest {
+            minecraft_root: self.context.minecraft_root.clone(),
+            instance_id: params.instance_id.clone(),
+            name: params.name.unwrap_or_else(|| params.instance_id.clone()),
+            base_version_id: params.base_version_id,
+            platform: self.context.platform.clone(),
+            loader,
+            copy_content_from: params.copy_content_from,
+        };
+        let task = self
+            .context
+            .tasks
+            .start_create_instance(request)
+            .await
+            .map_err(internal_error)?;
+        Ok(task_started(task))
+    }
+
+    #[tool(
+        description = "Rename an instance and update Java, memory, window, and isolation settings"
+    )]
+    async fn instances_update(
+        &self,
+        Parameters(params): Parameters<UpdateInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let instance = self.instance(&params.instance_id).await?;
+        let layout = instance.instance_layout(self.context.minecraft_root.clone());
+        if let Some(name) = params.name {
+            rename_instance(&layout, &name).map_err(internal_error)?;
+        }
+        if let Some(java) = params.java {
+            let java = java.trim();
+            let path = (!java.is_empty()).then(|| PathBuf::from(java));
+            if let Some(path) = &path {
+                self.context
+                    .java
+                    .probe(path.clone())
+                    .await
+                    .map_err(internal_error)?;
+            }
+            set_instance_java(&layout, path).map_err(internal_error)?;
+        }
+
+        let mut memory = instance.max_memory_mb;
+        let mut width = instance.window_width;
+        let mut height = instance.window_height;
+        if let Some(value) = params.max_memory_mb {
+            memory = (value != 0).then_some(value);
+        }
+        if let Some(ref window) = params.window {
+            width = Some(window.width);
+            height = Some(window.height);
+        }
+        if params.clear_window == Some(true) {
+            width = None;
+            height = None;
+        }
+        if params.max_memory_mb.is_some()
+            || params.window.is_some()
+            || params.clear_window == Some(true)
+        {
+            set_instance_launch_settings(&layout, memory, width, height).map_err(internal_error)?;
+        }
+
+        if let Some(isolation) = params.isolation {
+            match isolation.as_str() {
+                "isolated" => {
+                    if !instance.is_isolated() {
+                        migrate_instance_to_isolated(
+                            &self.context.minecraft_root,
+                            &params.instance_id,
+                            true,
+                        )
+                        .await
+                        .map_err(internal_error)?;
+                    }
+                }
+                "shared" => {
+                    return Err(invalid_input(
+                        "changing an instance back to shared mode is not supported",
+                    ));
+                }
+                _ => {
+                    return Err(invalid_input(format!(
+                        "unsupported isolation mode `{isolation}`"
+                    )));
+                }
+            }
+        }
+        self.instances_get(Parameters(InstanceIdParams {
+            instance_id: params.instance_id,
+        }))
+        .await
+    }
+
+    #[tool(description = "Check and repair an installed instance and return the repair task")]
+    async fn instances_repair(
+        &self,
+        Parameters(params): Parameters<RepairInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let instance = self.instance(&params.instance_id).await?;
+        let request = VanillaInstallRequest {
+            minecraft_root: self.context.minecraft_root.clone(),
+            version_id: instance.id.as_str().to_owned(),
+            platform: self.context.platform.clone(),
+            source: VersionSource::Existing,
+        };
+        let task = self
+            .context
+            .tasks
+            .start_install(request)
+            .await
+            .map_err(internal_error)?;
+        Ok(task_started(task))
+    }
+
+    #[tool(description = "Launch an installed instance and return the game task")]
+    async fn instances_launch(
+        &self,
+        Parameters(params): Parameters<LaunchInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let instance = self.instance(&params.instance_id).await?;
+        let account = self.launch_account().await?;
+        let server = params
+            .server
+            .as_deref()
+            .map(|address| ServerAddress::parse(address).map_err(internal_error))
+            .transpose()?;
+        let request = GameLaunchRequest {
+            install: VanillaInstallRequest {
+                minecraft_root: self.context.minecraft_root.clone(),
+                version_id: instance.id.as_str().to_owned(),
+                platform: self.context.platform.clone(),
+                source: VersionSource::Existing,
+            },
+            account,
+            java_executable: instance.java.clone(),
+            max_memory_mb: instance.max_memory_mb,
+            additional_jvm_arguments: params.additional_jvm_arguments.unwrap_or_default(),
+            additional_game_arguments: params.additional_game_arguments.unwrap_or_default(),
+            minecraft_version: instance.minecraft_version.clone(),
+            server,
+            resolution: instance.window_width.zip(instance.window_height),
+            demo: params.demo.unwrap_or(false),
+        };
+        let task = if params.repair.unwrap_or(false) {
+            self.context.tasks.start_launch(request).await
+        } else {
+            self.context.tasks.start_launch_installed(request).await
+        }
+        .map_err(internal_error)?;
+        Ok(task_started(task))
+    }
+
+    #[tool(description = "Cooperatively cancel a running RMCL task")]
+    async fn tasks_cancel(
+        &self,
+        Parameters(params): Parameters<TaskIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cancelled = self
+            .context
+            .tasks
+            .cancel(TaskId::from_raw(params.task_id))
+            .await;
+        if !cancelled {
+            return Err(invalid_input(format!(
+                "task {} is unknown or already terminal",
+                params.task_id
+            )));
+        }
+        let snapshot = self
+            .context
+            .tasks
+            .snapshot(TaskId::from_raw(params.task_id))
+            .await
+            .ok_or_else(|| invalid_input(format!("unknown task ID {}", params.task_id)))?;
+        Ok(CallToolResult::structured(task_snapshot(&snapshot)))
+    }
+
+    async fn launch_account(&self) -> Result<LaunchAccount, McpError> {
+        let config = self.context.config_store.load().map_err(internal_error)?;
+        let selected = config
+            .selected_account
+            .as_deref()
+            .ok_or_else(|| invalid_input("no account is selected"))?;
+        match config.selected_account_kind {
+            StoredAccountKind::Offline => {
+                let stored = config
+                    .accounts
+                    .iter()
+                    .find(|account| account.username == selected)
+                    .ok_or_else(|| {
+                        invalid_input("the selected offline account no longer exists")
+                    })?;
+                let account = match Uuid::parse_str(&stored.uuid) {
+                    Ok(uuid) => {
+                        OfflineAccount::with_uuid(&stored.username, uuid).map_err(internal_error)?
+                    }
+                    Err(_) => OfflineAccount::new(&stored.username).map_err(internal_error)?,
+                };
+                Ok(LaunchAccount::from_offline(&account))
+            }
+            StoredAccountKind::Microsoft => {
+                let stored = config
+                    .microsoft_accounts
+                    .iter()
+                    .find(|account| account.username == selected)
+                    .ok_or_else(|| {
+                        invalid_input("the selected Microsoft account no longer exists")
+                    })?;
+                let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
+                let profile =
+                    MicrosoftAccount::new(&stored.username, uuid).map_err(internal_error)?;
+                let resolved = self
+                    .context
+                    .microsoft_accounts
+                    .resolve_launch_account(&profile, &tokio_util::sync::CancellationToken::new())
+                    .await
+                    .map_err(internal_error)?;
+                Ok(resolved.launch)
+            }
+        }
+    }
+
     async fn installed_versions(&self) -> Result<Vec<InstalledVersion>, McpError> {
         let root = self.context.minecraft_root.clone();
         tokio::task::spawn_blocking(move || discover_installed_versions(root))
@@ -193,9 +521,26 @@ impl McpServer {
 
 #[tool_handler(
     name = "rmcl",
-    instructions = "Read-only access to RMCL instances, content, Java runtimes, and task logs"
+    instructions = "Read and write RMCL instances, content, Java runtimes, and task lifecycles"
 )]
 impl ServerHandler for McpServer {}
+
+fn task_started(task: TaskId) -> CallToolResult {
+    CallToolResult::structured(json!({
+        "task_id": task.get(),
+        "status": "running",
+    }))
+}
+
+fn parse_loader_kind(value: &str) -> Result<LoaderKind, McpError> {
+    match value {
+        "fabric" => Ok(LoaderKind::Fabric),
+        "quilt" => Ok(LoaderKind::Quilt),
+        "forge" => Ok(LoaderKind::Forge),
+        "neoforge" => Ok(LoaderKind::NeoForge),
+        _ => Err(invalid_input(format!("unsupported loader kind `{value}`"))),
+    }
+}
 
 fn parse_content_kind(value: &str) -> Result<ContentKind, McpError> {
     match value {

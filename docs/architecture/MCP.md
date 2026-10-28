@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：第一阶段只读服务已实现；实例写操作、设置页、权限分级和跨进程修改锁尚未实现
+状态：第二阶段实例工作流已实现；内容写入、设置页、权限分级和跨进程修改锁尚未实现
 
 日期：2026-10-28
 
@@ -49,10 +49,23 @@ rmcl-mcp serve --port 39271
 
 错误使用 JSON-RPC invalid params 或 internal error；未知实例和未知任务不会被伪装成空结果。结构化响应使用 `structuredContent`，同时保留 rmcp 生成的文本内容。
 
+## 写操作
+
+| 工具 | 语义 |
+| --- | --- |
+| `instances_create` | 创建 Vanilla 或指定 loader 的实例，返回 `task_id` |
+| `instances_update` | 重命名、修改 Java、内存、窗口和隔离模式，返回最新实例快照 |
+| `instances_repair` | 检查并修复实例，返回 `task_id` |
+| `instances_launch` | 使用当前选中账户启动实例，可选完整修复和服务器目标 |
+| `tasks_cancel` | 协作式取消运行中的任务并返回最新快照 |
+
+创建、修复和启动由 `TaskManager` 执行，调用方立即获得 `task_id`，再通过 `tasks_get` 和 `tasks_logs` 观察终态。配置修改是同步短操作，直接返回最新实例数据。Java 覆盖在写入前执行真实 probe；共享模式迁移到隔离模式时复用现有内容复制逻辑。
+
+当前尚未实现 revision、idempotency key、删除实例、远程内容写入、设置页权限分级和跨进程修改锁。HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。
+
 ## 后续阶段
 
-1. 实例创建、配置修改、修复、启动和停止。
-2. 本地与远程内容安装、`dry_run`、revision 和 idempotency key。
-3. 设置页开关、访问级别和端口。
-4. Bearer token、Origin allowlist、跨进程文件锁和 GUI 外部变更刷新。
-5. 离线账户、服务器和皮肤接口。
+1. 本地与远程内容安装、`dry_run`、revision 和 idempotency key。
+2. 设置页开关、访问级别和端口。
+3. Bearer token、Origin allowlist、跨进程文件锁和 GUI 外部变更刷新。
+4. 离线账户、服务器和皮肤接口。
