@@ -6,7 +6,7 @@
 
 ## GPUI Kit 基线
 
-桌面应用使用 `gpui-kit = 0.8.0`，由其统一提供匹配的 `gpui-pre = 0.3.9`、Base、Component 和默认 assets。应用只直接依赖 `gpui-kit` 并导入 `gpui_kit::*`，不单独覆盖 GPUI 包或混用其他快照。
+桌面应用使用 `gpui-kit = 0.8.1`，由其统一提供匹配的 `gpui-pre = 0.3.10`、Base、Component 和默认 assets。应用只直接依赖 `gpui-kit` 并导入 `gpui_kit::*`，不单独覆盖 GPUI 包或混用其他快照。
 
 应用启用默认 `component + assets`，并使用 `gpui_kit::assets::AllAssets` 获取完整 Lucide 图标目录（约多 1 MiB）。没有启用 `gpui-fast`、speech、tree-sitter、inspector 或 profiler，也没有 mold/LTO 等二进制优化。
 

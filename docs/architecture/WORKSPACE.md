@@ -51,4 +51,4 @@ apps/rmcl ───────────> rmcl-app ───> 领域服务 cr
 
 ## GPUI 依赖约束
 
-当前使用 GPUI Kit 0.8.0 和匹配的 gpui-pre 0.3.9，在 workspace 统一管理版本并提交锁文件。应用通过 `gpui_kit::*` 使用与其匹配的 GPUI 快照，不另行混用不受该版本支持的 GPUI 包。GPUI Kit 升级单独进行并记录验证结果，桥接与窗口行为见 [桌面界面](USER_INTERFACE.md)。
+当前使用 GPUI Kit 0.8.1 和匹配的 gpui-pre 0.3.10，在 workspace 统一管理版本并提交锁文件。应用通过 `gpui_kit::*` 使用与其匹配的 GPUI 快照，不另行混用不受该版本支持的 GPUI 包。GPUI Kit 升级单独进行并记录验证结果，桥接与窗口行为见 [桌面界面](USER_INTERFACE.md)。
