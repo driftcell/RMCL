@@ -68,47 +68,99 @@ pub async fn serve_stdio(context: Arc<AppContext>) -> Result<(), McpServerError>
     Ok(())
 }
 
+/// A running loopback HTTP server whose shutdown can be requested and awaited.
+pub struct HttpServerHandle {
+    cancellation: CancellationToken,
+    worker: Option<tokio::task::JoinHandle<Result<(), McpServerError>>>,
+}
+
+impl HttpServerHandle {
+    pub async fn start(
+        context: Arc<AppContext>,
+        config: HttpServerConfig,
+        cancellation: CancellationToken,
+    ) -> Result<Self, McpServerError> {
+        if config.port == 0 {
+            return Err(McpServerError::Serve(
+                "MCP port must be between 1 and 65535".to_owned(),
+            ));
+        }
+        let access = config.access;
+        let port = config.port;
+        let security = HttpSecurity::from(config);
+        let service_context = context.clone();
+        let config = StreamableHttpServerConfig::default()
+            .with_cancellation_token(cancellation.clone())
+            .with_json_response(true);
+        let service = StreamableHttpService::new(
+            move || Ok(McpServer::with_access(service_context.clone(), access)),
+            Arc::new(LocalSessionManager::default()),
+            config,
+        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+        let service = <StreamableHttpService<_, _> as tower::ServiceExt<
+            axum::http::Request<axum::body::Body>,
+        >>::map_response(service, |response: axum::http::Response<_>| {
+            response.map(axum::body::Body::new)
+        });
+        let service = ServiceBuilder::new()
+            .layer(axum::middleware::from_fn_with_state(
+                security,
+                authorize_http,
+            ))
+            .service(service);
+        let shutdown = cancellation.clone().cancelled_owned();
+        let worker = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::ServiceExt::<axum::http::Request<axum::body::Body>>::into_make_service(
+                    service,
+                ),
+            )
+            .with_graceful_shutdown(shutdown)
+            .await
+            .map_err(|error| McpServerError::Serve(error.to_string()))
+        });
+        Ok(Self {
+            cancellation,
+            worker: Some(worker),
+        })
+    }
+
+    pub async fn stop(mut self) -> Result<(), McpServerError> {
+        self.cancellation.cancel();
+        self.wait_worker().await
+    }
+
+    pub async fn wait(mut self) -> Result<(), McpServerError> {
+        self.wait_worker().await
+    }
+
+    async fn wait_worker(&mut self) -> Result<(), McpServerError> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        worker
+            .await
+            .map_err(|error| McpServerError::Serve(error.to_string()))?
+    }
+}
+
+impl Drop for HttpServerHandle {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
+
 pub async fn serve_http(
     context: Arc<AppContext>,
     config: HttpServerConfig,
     cancellation: CancellationToken,
 ) -> Result<(), McpServerError> {
-    if config.port == 0 {
-        return Err(McpServerError::Serve(
-            "MCP port must be between 1 and 65535".to_owned(),
-        ));
-    }
-    let access = config.access;
-    let port = config.port;
-    let security = HttpSecurity::from(config);
-    let service_context = context.clone();
-    let config = StreamableHttpServerConfig::default()
-        .with_cancellation_token(cancellation.clone())
-        .with_json_response(true);
-    let service = StreamableHttpService::new(
-        move || Ok(McpServer::with_access(service_context.clone(), access)),
-        Arc::new(LocalSessionManager::default()),
-        config,
-    );
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    let service = <StreamableHttpService<_, _> as tower::ServiceExt<
-        axum::http::Request<axum::body::Body>,
-    >>::map_response(service, |response: axum::http::Response<_>| {
-        response.map(axum::body::Body::new)
-    });
-    let service = ServiceBuilder::new()
-        .layer(axum::middleware::from_fn_with_state(
-            security,
-            authorize_http,
-        ))
-        .service(service);
-    axum::serve(
-        listener,
-        axum::ServiceExt::<axum::http::Request<axum::body::Body>>::into_make_service(service),
-    )
-    .with_graceful_shutdown(cancellation.cancelled_owned())
-    .await
-    .map_err(|error| McpServerError::Serve(error.to_string()))
+    HttpServerHandle::start(context, config, cancellation)
+        .await?
+        .wait()
+        .await
 }
 
 async fn authorize_http(

@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页和 GUI 外部变更刷新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁、HTTP 安全和 GUI 服务设置已实现；GUI 外部变更刷新尚未实现
 
 日期：2026-10-28
 
@@ -84,6 +84,12 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 ```
 
 这些控制仍不构成远程监听能力；当前只绑定 loopback，不能据此暴露到局域网或公网。
+
+### GUI 内嵌服务
+
+设置页的 MCP 卡片默认停用，可配置 HTTP 端口并立即启动、停止或重启服务。GUI 内嵌服务固定为 loopback `read_only`，不设置 Bearer token，也不提供无认证写访问；需要写入或其他安全选项时仍使用上述 CLI 参数。配置 schema 6 只保存 `mcp_enabled` 和 `mcp_port`，不保存 token，旧配置默认停用。
+
+`McpHttpService` 由桌面 services 而不是设置页持有，与 GUI 使用同一个 `AppContext` 和 `TaskManager`，因此内嵌客户端能看到 GUI 启动的任务及通知。启停协调串行执行，端口变更先停止旧服务；`HttpServerHandle` 支持请求关闭并等待退出。端口为 0、端口被占用或其他启动失败只写入卡片错误状态，不阻止 GUI 启动，期望的开关与端口仍会保存以便下次重试。CLI 启动不会额外开启 GUI 内嵌服务。
 
 ## 查询与任务工具
 
@@ -253,7 +259,7 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. 设置页开关、端口和 GUI 外部变更刷新。
+1. GUI 外部变更刷新。
 2. 服务器和皮肤接口。
 3. 更完整的内容更新工作流。
 

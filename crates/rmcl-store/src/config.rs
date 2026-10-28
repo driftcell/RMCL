@@ -9,7 +9,8 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 5;
+pub const CONFIG_SCHEMA_VERSION: u32 = 6;
+pub const DEFAULT_MCP_PORT: u16 = 39271;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +29,8 @@ pub struct LauncherConfig {
     pub auto_check_updates: bool,
     pub download_source: DownloadSourcePreference,
     pub launcher_visibility: LauncherVisibility,
+    pub mcp_enabled: bool,
+    pub mcp_port: u16,
     pub appearance: AppearanceConfig,
 }
 
@@ -47,6 +50,8 @@ impl Default for LauncherConfig {
             auto_check_updates: true,
             download_source: DownloadSourcePreference::default(),
             launcher_visibility: LauncherVisibility::default(),
+            mcp_enabled: false,
+            mcp_port: DEFAULT_MCP_PORT,
             appearance: AppearanceConfig::default(),
         }
     }
@@ -187,9 +192,9 @@ impl ConfigStore {
         }
         let mut config = config;
         // Schema 1 predates Microsoft account metadata, schema 3 adds server
-        // bookmarks, schema 4 adds the update check preference, and schema 5
-        // adds the download source preference. Every new field has a safe
-        // default.
+        // bookmarks, schema 4 adds update checks, schema 5 adds the download
+        // source, and schema 6 adds disabled-by-default loopback MCP settings.
+        // Every new field has a safe default.
         if config.schema_version < CONFIG_SCHEMA_VERSION {
             config.schema_version = CONFIG_SCHEMA_VERSION;
         }
@@ -371,6 +376,8 @@ mod tests {
             auto_check_updates: false,
             download_source: DownloadSourcePreference::Mirror,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
+            mcp_enabled: true,
+            mcp_port: 40000,
             ..LauncherConfig::default()
         };
         config.appearance.theme = ThemePreference::Dark;
@@ -483,6 +490,31 @@ launcher_visibility = "keep_visible"
 
         assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
         assert_eq!(config.download_source, DownloadSourcePreference::Auto);
+    }
+
+    #[test]
+    fn schema_five_is_upgraded_with_mcp_disabled() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 5
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+auto_install_java = true
+auto_check_updates = true
+download_source = "auto"
+launcher_visibility = "keep_visible"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert!(!config.mcp_enabled);
+        assert_eq!(config.mcp_port, DEFAULT_MCP_PORT);
     }
 
     #[test]

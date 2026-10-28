@@ -44,6 +44,7 @@ use rmcl_app::{
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_launch::{GameLog, LaunchAccount, LogStream};
+use rmcl_mcp::McpHttpStatus;
 use rmcl_net::{MirrorHealth, MirrorPreference, MirrorProbe};
 use rmcl_store::{
     AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LauncherConfig,
@@ -484,6 +485,11 @@ pub struct LauncherApp {
     visibility_select: Entity<SelectState<SearchableVec<String>>>,
     download_source_select: Entity<SelectState<SearchableVec<String>>>,
     mirror_status: String,
+    mcp_status: McpHttpStatus,
+    mcp_port_input: Entity<InputState>,
+    mcp_pending: bool,
+    mcp_request: u64,
+    _mcp_task: Option<Task<()>>,
     _mirror_probe_task: Option<Task<()>>,
     log_state: LauncherState,
     log_scroll: ScrollHandle,
@@ -663,6 +669,10 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("留空使用 JVM 默认值"));
         let launch_width_input = cx.new(|cx| InputState::new(window, cx).placeholder("1280"));
         let launch_height_input = cx.new(|cx| InputState::new(window, cx).placeholder("720"));
+        let mcp_port_input = cx.new(|cx| InputState::new(window, cx).placeholder("39271"));
+        mcp_port_input.update(cx, |state, cx| {
+            state.set_value(config.mcp_port.to_string(), window, cx)
+        });
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
         let skin_link_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
@@ -833,7 +843,7 @@ impl LauncherApp {
         });
 
         let mut app = Self {
-            services,
+            services: services.clone(),
             page: Page::Home,
             config,
             config_warning,
@@ -908,6 +918,11 @@ impl LauncherApp {
             visibility_select,
             download_source_select,
             mirror_status,
+            mcp_status: services.mcp_status(),
+            mcp_port_input,
+            mcp_pending: false,
+            mcp_request: 0,
+            _mcp_task: None,
             _mirror_probe_task: mirror_probe_task,
             log_state: LauncherState::new(),
             log_scroll: ScrollHandle::new(),
@@ -2800,6 +2815,48 @@ impl LauncherApp {
             Notification::info("Java 自动获取设置将在下次启动 RMCL 时生效。").title("设置已保存"),
             cx,
         );
+        cx.notify();
+    }
+
+    fn set_mcp_enabled(&mut self, enabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_mcp_settings(enabled, window, cx);
+    }
+
+    fn apply_mcp_port(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_mcp_settings(self.config.mcp_enabled, window, cx);
+    }
+
+    fn apply_mcp_settings(&mut self, enabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.mcp_pending {
+            return;
+        }
+        let port = match self.mcp_port_input.read(cx).value().trim().parse::<u16>() {
+            Ok(port) if port != 0 => port,
+            _ => {
+                self.mcp_status.error = Some("端口必须是 1 到 65535 之间的整数。".to_owned());
+                cx.notify();
+                return;
+            }
+        };
+        self.mcp_pending = true;
+        self.mcp_status.error = None;
+        self.mcp_request += 1;
+        let request = self.mcp_request;
+        let services = self.services.clone();
+        self._mcp_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let status = services.reconcile_mcp(enabled, port).await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if view.mcp_request != request {
+                    return;
+                }
+                view.mcp_pending = false;
+                view.mcp_status = status;
+                view.config.mcp_enabled = enabled;
+                view.config.mcp_port = port;
+                view.save_config();
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 

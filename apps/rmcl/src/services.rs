@@ -1,13 +1,50 @@
-use std::path::{Path, PathBuf};
+use std::{
+    ops::Deref,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
-pub use rmcl_app::AppContext as Services;
+use rmcl_app::AppContext;
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
+use rmcl_mcp::{McpHttpService, McpHttpStatus};
 use rmcl_store::{
     CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
     StoredOfflineAccount, default_java_store, default_minecraft_root,
 };
 use uuid::Uuid;
+
+pub(crate) struct Services {
+    pub(crate) context: Arc<AppContext>,
+    pub(crate) mcp: McpHttpService,
+}
+
+impl Services {
+    pub(crate) fn new(
+        config: &LauncherConfig,
+        config_store: ConfigStore,
+    ) -> Result<Arc<Self>, rmcl_app::AppError> {
+        let context = AppContext::new(config, config_store)?;
+        let mcp = McpHttpService::new(context.clone());
+        Ok(Arc::new(Self { context, mcp }))
+    }
+
+    pub(crate) fn mcp_status(&self) -> McpHttpStatus {
+        self.mcp.status()
+    }
+
+    pub(crate) async fn reconcile_mcp(&self, enabled: bool, port: u16) -> McpHttpStatus {
+        self.mcp.reconcile(enabled, port).await
+    }
+}
+
+impl Deref for Services {
+    type Target = AppContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.context
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "rmcl", about = "A cross-platform Minecraft launcher")]
