@@ -328,6 +328,20 @@ fn local_content_tools_enforce_revision_and_create_dry_run() {
         );
         assert_eq!(imported["content"]["relative_path"], "source.jar");
 
+        let repository_guard = try_lock_repository(temporary.path().join("minecraft")).unwrap();
+        let blocked = server
+            .content_import(Parameters(ContentImportParams {
+                instance_id: "example".to_owned(),
+                kind: "mod".to_owned(),
+                source: source.display().to_string(),
+                conflict: Some("reject".to_owned()),
+                expected_revision: Some(revision.to_owned()),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(blocked.data.as_ref().unwrap()["code"], "repository_busy");
+        drop(repository_guard);
+
         let stale = server
             .content_delete(Parameters(ContentDeleteParams {
                 instance_id: "example".to_owned(),

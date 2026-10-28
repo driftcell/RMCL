@@ -15,6 +15,8 @@ pub enum AppError {
     Cancelled,
     #[error("task {existing} is already installing this repository version")]
     TaskAlreadyRunning { existing: TaskId },
+    #[error("repository is being modified by another RMCL process (lock: `{path}`)")]
+    RepositoryBusy { path: PathBuf },
     #[error("game launch requires a configured Java service")]
     JavaNotConfigured,
     #[error("no compatible Java runtime for {requirement:?}; probe failures: {failures:?}")]

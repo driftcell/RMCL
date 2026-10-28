@@ -84,6 +84,7 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 | `not_found` | 未知实例或任务 |
 | `revision_conflict` | revision 不匹配，附 `expected_revision`、`actual_revision` |
 | `task_already_running` | 同类任务已运行，附现有 `task_id` |
+| `repository_busy` | 另一 RMCL 进程持有仓库写锁，附锁文件 `path`，可稍后重试 |
 | `conflict` | 安装不完整、incompatible 等状态冲突 |
 | `cancelled` | 操作已取消，可按工作流决定是否重试 |
 | `unavailable` | 所需应用服务未配置 |
@@ -115,6 +116,14 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 实际安装也先执行同一套预检：已满足的依赖通过 `skip_version_ids` 交给现有安装任务，检测到已安装的不兼容 Mod 时拒绝创建任务。安装和下载仍由 `TaskManager` 与 `ContentInstaller` 执行，MCP 不另写下载或依赖解析实现。
 
+## 跨进程写锁
+
+每个 Minecraft 仓库根目录使用一个 `.rmcl.lock` 文件和标准库文件锁。GUI 与 MCP 共享 `rmcl-app` 的锁实现：安装、实例创建、内容安装和游戏任务从注册前持锁到终态写入后，本地内容修改和实例配置修改在整个短操作期间持锁。不同仓库可以使用不同锁文件并行工作。
+
+锁是非等待式获取；另一个进程已经持锁时返回 `repository_busy`，调用方可以稍后重试。进程内活动任务仍优先返回 `task_already_running`，`register` 在锁内再次检查以保留竞态保护。
+
+带 revision 的操作在同一个 guard 内完成“读取 revision → 校验 → 修改/注册任务”。带 idempotency key 的安装把幂等判定、预检和注册串行化，运行中任务的重复 key 直接重放原 `task_id`，不会再次抢锁或重复预检。
+
 ## revision 与幂等
 
 实例快照中的 `revision` 使用 `sha256:` 前缀，内容来自实例版本 JSON 的原始字节；存在 `rmcl.instance.toml` 时再加入分隔字节和 manifest 原始字节。manifest 不存在是合法 legacy 状态，其他读取错误会返回错误。
@@ -122,14 +131,14 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 - `instances_update`、`instances_repair`、`content_import`、`content_set_enabled` 和 `content_install` 接受可选 `expected_revision`。
 - `content_delete` 强制要求 `expected_revision`。
 - 不匹配时以 invalid params 拒绝，不执行对应修改或创建任务。
-- revision 不哈希 Mod、资源包、光影或整个实例目录，因此内容写入后它可以保持不变；它不是内容目录快照，也不替代后续的跨进程修改锁。
+- revision 不哈希 Mod、资源包、光影或整个实例目录，因此内容写入后它可以保持不变；它不是内容目录快照，实际互斥由上述仓库写锁提供。
 
 `instances_create` 和 `content_install` 接受可选 `idempotency_key`。进程内注册表按操作、配置文件路径和调用方 key 定位任务；重复调用返回原 `task_id` 和 `idempotent_replay=true`，并发重试在任务注册期间互斥。该注册表不持久化，重启后不会保留，也不能协调多个 RMCL 进程。
 
 ## 后续阶段
 
 1. 设置页开关、访问级别和端口。
-2. Bearer token、Origin allowlist、跨进程文件锁和 GUI 外部变更刷新。
+2. Bearer token、Origin allowlist 和 GUI 外部变更刷新。
 3. 离线账户、服务器和皮肤接口。
 4. 实例删除与更完整的内容更新工作流。
 
