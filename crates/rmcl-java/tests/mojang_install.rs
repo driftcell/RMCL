@@ -515,7 +515,15 @@ async fn rejects_unsafe_manifest_paths() {
 #[tokio::test]
 async fn rejects_link_targets_outside_the_runtime() {
     let mut data = mock_data();
-    data.manifest.files.get_mut("legal/readme").unwrap().target = Some("../../../etc".to_owned());
+    data.manifest.files.insert(
+        "legal/readme".to_owned(),
+        MojangFile {
+            kind: MojangFileType::Link,
+            downloads: None,
+            executable: None,
+            target: Some("../../../etc".to_owned()),
+        },
+    );
     let server = serve(data).await;
     let store = TempDir::new().unwrap();
 
