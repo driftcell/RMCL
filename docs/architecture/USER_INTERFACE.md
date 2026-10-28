@@ -136,6 +136,7 @@
 
 - **游戏**：Minecraft 目录使用原生目录选择器，Java 目录、自动获取 Java。目录修改后立即重新扫描版本，不移动现有文件；Java 目录和自动获取设置重启后生效。
 - **启动行为**：启动器可见性。默认保持显示；选择“游戏运行时隐藏”后，游戏进入 `RunningGame` 阶段时隐藏启动器（macOS 隐藏应用，Windows/Linux 最小化窗口），任务退出、失败或取消时恢复。
+- **MCP**：默认停用的本地只读 HTTP 服务、端口输入和实际运行状态。开关与端口修改等待真实启停结果后保存；端口冲突显示在卡片内，不阻止 GUI 使用。
 - **外观**：跟随系统 / 浅色 / 深色，以及翡翠、海蓝、紫罗兰、琥珀、玫瑰五种强调色。修改立即应用并保存。
 - **更新**：当前版本、启动时检查、手动检查、发布说明、下载进度和错误。检查期间按钮自身显示 loading 和“正在检查”，检查完成且无新版本时显示“已是最新版本”，不额外占用状态行。默认从 GitHub Release 检查，下载后校验 SHA-256，退出并重启完成替换。
 - **关于**：版本、配置路径、运行平台和 GPUI Kit 文档链接。
@@ -161,13 +162,13 @@
 - Linux：`~/.config/rmcl/config.toml`，`XDG_CONFIG_HOME` 存在时优先使用它。
 - Windows：`%APPDATA%\rmcl\config.toml`。
 
-基础目录由 `dirs` 按系统规则解析。配置使用 TOML、schema 版本 5（可读取 schema 1/2/3/4 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
+基础目录由 `dirs` 按系统规则解析。配置使用 TOML、schema 版本 6（可读取 schema 1/2/3/4/5 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
 
 Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。RMCL 不读取或改写 HMCL 配置。
 
 ## 事件桥接与状态一致性
 
-`apps/rmcl` 在窗口根持有 `Rc<Services>`：
+`apps/rmcl` 在窗口根持有 `Arc<Services>`。桌面 services 包装共享 `AppContext`，并独立持有 `McpHttpService`，避免长生命周期 HTTP 服务依附于设置页：
 
 - 一个 multi-thread Tokio `Runtime`，驱动 `rmcl-app` 的安装、Java 和游戏任务。
 - 一个 `TaskManager`，持有全部后台任务、取消令牌、快照和日志。
@@ -175,6 +176,7 @@ Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。R
 - 一个 `MicrosoftAccountService`，负责设备代码登录、token 刷新、系统凭据读写和启动身份解析。
 - 一个 `SkinCache`，只从 Mojang 官方纹理域下载并合成头像。
 - 一个 `ConfigStore`，负责 TOML 配置。
+- 一个 `McpHttpService`，按设置启停 loopback 只读 HTTP，和 GUI 共用任务与通知状态。
 - 当前目标 `Platform`，供每个请求克隆使用。
 
 GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spawn` 调用 `start_install`、`start_launch` 或 `cancel`，并在 GPUI foreground task 中 await 返回的 `JoinHandle`。传给 Tokio 的数据必须是 owned `Send` 数据，不捕获 GPUI Context 或 Window。

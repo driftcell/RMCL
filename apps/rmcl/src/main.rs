@@ -43,6 +43,10 @@ fn main() {
         return;
     }
 
+    services
+        .runtime
+        .block_on(services.reconcile_mcp(bootstrap.config.mcp_enabled, bootstrap.config.mcp_port));
+
     #[cfg(windows)]
     release_console();
 
@@ -84,7 +88,7 @@ fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), Stri
         Err("MCP port must be between 1 and 65535".to_owned())
     } else if arguments.stdio {
         runtime.block_on(async {
-            rmcl_mcp::serve_stdio(services.clone())
+            rmcl_mcp::serve_stdio(services.context.clone())
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -96,7 +100,7 @@ fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), Stri
                     arguments.port
                 );
                 rmcl_mcp::serve_http(
-                    services.clone(),
+                    services.context.clone(),
                     config,
                     tokio_util::sync::CancellationToken::new(),
                 )
@@ -107,7 +111,11 @@ fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), Stri
         }
     };
     if let Ok(services) = Arc::try_unwrap(services) {
-        services.runtime.shutdown_background();
+        let services::Services { context, mcp } = services;
+        drop(mcp);
+        if let Ok(context) = Arc::try_unwrap(context) {
+            context.runtime.shutdown_background();
+        }
     }
     result
 }
