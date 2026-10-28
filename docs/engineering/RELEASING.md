@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## 分支保护
 
@@ -32,21 +32,18 @@
 
 ## release-plz
 
-仓库使用 [release-plz](https://release-plz.dev/) 生成 release PR：
+RMCL 使用单应用发布模型，[release-plz](https://release-plz.dev/) 只管理 `rmcl` 的版本、release PR 和应用 tag：
 
-- `.github/workflows/release-plz.yml` 在 push `main` 和手动触发时运行
-- `release-plz release-pr` 根据 Conventional Commits 计算版本、更新 `CHANGELOG.md`、`Cargo.toml` 和 `Cargo.lock`，打开 `release-plz-*` PR
-- 当前 `0.x.y` 阶段启用 `features_always_increment_minor = true`：包含 `feat` 的 release PR 提升 minor（`0.4.4` → `0.5.0`），只包含 `fix`/`perf`/`refactor` 的 PR 仍提升 patch
-- `release-plz release` 只处理已合并的 release PR；`release_always = false` 确保普通提交不会直接打标签
-- 配置使用 `git_only = true`，不发布 crates.io
-- 所有 workspace crate 保持 release-enabled，release-plz 才会分析各 crate 的提交；`rmcl` 通过 `changelog_include` 把这些提交汇总到根目录 `CHANGELOG.md`
-- 只有 `rmcl` 设置 `git_tag_enable = true`；所有 package 共用 `git_tag_name = "v{{ version }}"`，从同一个应用 tag 读取上次发布版本
-- 只有 `rmcl` 设置 `changelog_update = true`；其他 crate 不写 changelog，也不创建 tag
-- release-plz 只创建 tag，不创建 GitHub Release（`git_release_enable = false`）；现有 `release.yml` 负责四平台构建、`SHA256SUMS` 和 Release
+- `workspace.package.version` 固定为 `0.1.0`，内部 crate 是未发布模块，统一继承该版本；只有 `apps/rmcl/Cargo.toml` 显式保存应用版本。新增内部 crate 不需要发布配置或版本 bootstrap。
+- `release-plz.toml` 在 workspace 默认 `release = false`，只对 `rmcl` 设置 `release = true`。内部 crate 不升版、不发布 crates.io、不创建 tag，也不通过 `changelog_include` 逐条汇总提交。
+- `.github/workflows/release-plz.yml` 在 push `main` 和手动触发时运行。原生 `release-plz release-pr` 根据 Conventional Commits 更新应用版本、`Cargo.lock` 和基础 `CHANGELOG.md`，打开 `release-plz-*` PR。
+- 当前 `0.x.y` 阶段启用 `features_always_increment_minor = true`：包含 `feat` 的 release PR 提升 minor（`0.4.4` → `0.5.0`），只包含 `fix`/`perf`/`refactor` 的 PR 仍提升 patch。
+- `release-plz release` 只处理已合并的 release PR；`release_always = false` 确保普通提交不会直接打标签。只有 `rmcl` 设置 `git_only = true`、`git_tag_enable = true` 和 `git_tag_name = "v{{ version }}"`。
+- release-plz 只创建应用 tag，不创建 GitHub Release（`git_release_enable = false`）；现有 `release.yml` 负责四平台构建、`SHA256SUMS` 和 Release。
 
 `features_always_increment_minor` 是刻意偏离 Cargo 默认 0.x SemVer 规则的选择：默认 `feat` 只提升 patch，而 RMCL 在 0.x 阶段仍希望新功能获得可感知的 minor 版本。进入 1.x 后该配置与标准 SemVer 的 feature 规则一致。
 
-不能把 workspace 默认改成 `release = false` 再用 `changelog_include` 汇总：release-plz 只为 release-enabled package 计算 diff，被排除的 crate 即使写在 `changelog_include` 里也不会参与变更检测。这个约束的排查过程见 [release-plz 变更检测](../../notes/development/release_plz_change_detection.md)。
+发布说明以用户价值为中心，不追求自动罗列所有内部 crate 提交。发布负责人根据相邻应用标签之间的 Git 差异，在 release PR 中人工整理和润色功能、修复、兼容性与升级注意事项。相关失败与取舍见 [release-plz 变更检测](../../notes/development/release_plz_change_detection.md)。
 
 ### 必需的 PAT
 
@@ -71,14 +68,14 @@ GitHub 默认 `GITHUB_TOKEN` 创建的 PR 不会触发其他 PR workflow，relea
 7. tag 触发 `release.yml`：构建四平台产物、生成 `SHA256SUMS`、使用 `CHANGELOG.md` 对应章节作为 Release body，最后发布
 8. 下载至少一个平台产物做启动 smoke；自动更新版本还需确认 Release body 和资产名正确
 
-`CHANGELOG.md` 是 release notes 的规范来源，格式为 Keep a Changelog。release-plz 按 `feat`/`fix`/`perf`/`refactor` 分组，跳过 docs/test/ci/chore；发布负责人可以在 release PR 中手工润色分类和 Highlights。`scripts/release-notes.sh` 从 changelog 提取当前版本章节，供 `release.yml` 使用。
+`CHANGELOG.md` 是 release notes 的规范来源，格式为 Keep a Changelog。release-plz 生成的提交分组只是草稿，发布负责人应在合并前将其整理为用户可读的 Highlights 和升级说明，而不是保留内部 commit 清单。后续 release-plz 更新可能重新生成草稿，因此人工润色应在准备合并前进行。`scripts/release-notes.sh` 从 changelog 提取当前版本章节，供 `release.yml` 使用。
 
 ## 手动兜底
 
 如果 release-plz 不可用：
 
 1. 新建 `chore/release-v<version>` 分支
-2. 手动更新 workspace version、`Cargo.lock` 和 `CHANGELOG.md`
+2. 手动更新 `apps/rmcl/Cargo.toml` 的应用版本、`Cargo.lock` 和 `CHANGELOG.md`
 3. 通过 PR 合并
 4. 在 `main` 的绿色提交上创建 annotated tag `v<version>`
 5. 推送 tag 并等待 `release.yml`
@@ -89,4 +86,5 @@ GitHub 默认 `GITHUB_TOKEN` 创建的 PR 不会触发其他 PR workflow，relea
 
 - `.github/workflows/release-plz.yml`、`release-plz.toml` 和 `CHANGELOG.md` 在本仓库启用
 - `scripts/release-notes.sh` 的版本章节提取由发布 workflow 实际执行
-- 真实 release PR、PAT 权限、tag/release 触发和自动更新资产仍需首次发布时验证
+- 2026-10-28 使用 release-plz 0.4.2 在临时 worktree 验证：只有 `rmcl` 从 `0.8.1` 计算到 `0.9.0`，内部 crate 全部保持 `0.1.0`，更新范围只有根包 manifest、`Cargo.lock` 和 changelog 草稿
+- 单应用模型下的真实 release PR、tag/release 触发和自动更新资产仍需首次发布时验证
