@@ -4,6 +4,7 @@ mod checksum;
 mod download;
 mod extraction;
 mod mirror;
+mod path;
 mod platform;
 mod server;
 
@@ -11,5 +12,9 @@ pub use checksum::{ParseSha1Error, Sha1Hash};
 pub use download::DownloadRequest;
 pub use extraction::ExtractionPlan;
 pub use mirror::MirrorSource;
+pub use path::{
+    destination_collision_key, portable_collision_key, validate_portable_component,
+    validate_portable_path,
+};
 pub use platform::{Architecture, OperatingSystem, Platform};
 pub use server::{DEFAULT_MINECRAFT_PORT, ServerAddress, ServerAddressError};

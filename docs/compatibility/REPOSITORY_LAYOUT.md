@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现
 
-日期：2026-10-25
+日期：2026-10-28
 
 ## 标准目录
 
@@ -47,7 +47,9 @@ OS 名称使用 `windows`、`linux`、`macos`。架构使用 RMCL 归一化名�
 - 空组件、`.`、`..`
 - 反斜杠、冒号和 Windows drive prefix
 - 控制字符
+- Windows 保留设备名（包括 `NUL.jar` 等形式）
+- 结尾为点或空格的组件
 
-版本 ID 和 asset index ID 还必须是单一路径组件且不能为空白。Unicode 与空格不会被归一化。
+这些规则由 `rmcl-domain` 共享给实例与归档路径。版本 ID 和 asset index ID 还必须是单一路径组件且不能为空白。Unicode 与空格不会被归一化。
 
 `RepositoryPath` 只负责安全相对路径。与 Maven base URL 组合时，`rmcl-install` 使用 `url` 的路径段 API 进行百分号编码，不能把 `#` 等字符误当成 fragment。

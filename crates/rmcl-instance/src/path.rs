@@ -1,6 +1,7 @@
 use std::{fmt, path::Path};
 
 use relative_path::RelativePathBuf;
+use rmcl_domain::{validate_portable_component, validate_portable_path};
 use thiserror::Error;
 
 /// A validated UTF-8 path relative to a Minecraft repository location.
@@ -68,42 +69,11 @@ pub enum LayoutError {
 }
 
 pub(crate) fn validate_segment(segment: &str) -> Result<(), &'static str> {
-    if segment.trim().is_empty() {
-        return Err("path component is blank");
-    }
-    if segment.contains('/') {
-        return Err("expected one path component");
-    }
-    validate_relative_path(segment)
+    validate_portable_component(segment)
 }
 
 fn validate_relative_path(path: &str) -> Result<(), &'static str> {
-    if path.is_empty() {
-        return Err("path is empty");
-    }
-    if path.starts_with('/') {
-        return Err("absolute paths are not allowed");
-    }
-    if path.ends_with('/') {
-        return Err("path must identify a file or complete component");
-    }
-    if path.contains('\\') {
-        return Err("backslashes are not portable repository separators");
-    }
-    if path.contains(':') {
-        return Err("colons and Windows drive prefixes are not allowed");
-    }
-    if path.chars().any(char::is_control) {
-        return Err("control characters are not allowed");
-    }
-    for segment in path.split('/') {
-        match segment {
-            "" => return Err("empty path components are not allowed"),
-            "." | ".." => return Err("relative traversal components are not allowed"),
-            _ => {}
-        }
-    }
-    Ok(())
+    validate_portable_path(path)
 }
 
 #[cfg(test)]
@@ -139,6 +109,10 @@ mod tests {
             "safe\\escape",
             "trailing/",
             "nul\0byte",
+            "NUL",
+            "safe/COM1.jar",
+            "trailing.",
+            "trailing ",
         ] {
             assert!(RepositoryPath::new(path).is_err(), "accepted {path:?}");
         }
@@ -147,7 +121,9 @@ mod tests {
     #[test]
     fn version_id_is_one_safe_component() {
         assert_eq!(VersionId::new("1.21.1").unwrap().as_str(), "1.21.1");
-        for id in ["", " ", ".", "..", "a/b", "a\\b", "C:"] {
+        for id in [
+            "", " ", ".", "..", "a/b", "a\\b", "C:", "NUL", "LPT1.jar", "name.", "name ",
+        ] {
             assert!(VersionId::new(id).is_err(), "accepted {id:?}");
         }
     }

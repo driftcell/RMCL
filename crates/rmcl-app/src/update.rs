@@ -432,11 +432,7 @@ impl UpdatePlan {
             path: log_directory.to_path_buf(),
             source,
         })?;
-        let mut restart_args = env::args_os()
-            .skip(1)
-            .filter_map(|argument| argument.into_string().ok())
-            .collect::<Vec<_>>();
-        restart_args.retain(|argument| argument != "--apply-update");
+        let restart_args = restart_arguments(env::args_os().skip(1))?;
         Ok(Self {
             archive: archive.to_path_buf(),
             target,
@@ -447,6 +443,21 @@ impl UpdatePlan {
             log: log_directory.join(format!("update-{}.log", std::process::id())),
         })
     }
+}
+
+fn restart_arguments(
+    arguments: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<Vec<String>, UpdateError> {
+    let mut arguments = arguments
+        .into_iter()
+        .map(|argument| {
+            argument.into_string().map_err(|_| {
+                UpdateError::Configuration("restart arguments must be valid UTF-8".to_owned())
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    arguments.retain(|argument| argument != "--apply-update");
+    Ok(arguments)
 }
 
 fn install_target() -> Result<PathBuf, UpdateError> {
@@ -849,6 +860,22 @@ mod tests {
         tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restart_arguments_reject_non_utf8_values() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let arguments = vec![
+            std::ffi::OsString::from("--config"),
+            std::ffi::OsString::from_vec(b"bad-\xff".to_vec()),
+        ];
+
+        assert!(matches!(
+            restart_arguments(arguments),
+            Err(UpdateError::Configuration(_))
+        ));
     }
 
     #[tokio::test]

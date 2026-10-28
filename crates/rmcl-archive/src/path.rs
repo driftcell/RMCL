@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use relative_path::RelativePathBuf;
+use rmcl_domain::{portable_collision_key, validate_portable_path};
 
 use crate::ExtractionError;
 
@@ -18,7 +19,7 @@ impl EntryPath {
         })?;
         Ok(Self {
             relative: RelativePathBuf::from(relative),
-            collision_key: relative.to_lowercase(),
+            collision_key: portable_collision_key(relative),
         })
     }
 
@@ -32,33 +33,8 @@ impl EntryPath {
 }
 
 fn validate(name: &str) -> Result<&str, &'static str> {
-    if name.is_empty() {
-        return Err("entry name is empty");
-    }
-    if name.starts_with('/') {
-        return Err("absolute paths are not allowed");
-    }
-    if name.contains('\\') {
-        return Err("backslashes are not allowed");
-    }
-    if name.contains(':') {
-        return Err("drive prefixes and alternate data streams are not allowed");
-    }
-    if name.chars().any(char::is_control) {
-        return Err("control characters are not allowed");
-    }
-
     let name = name.strip_suffix('/').unwrap_or(name);
-    if name.is_empty() {
-        return Err("entry has no relative path");
-    }
-    for component in name.split('/') {
-        match component {
-            "" => return Err("empty path components are not allowed"),
-            "." | ".." => return Err("traversal components are not allowed"),
-            _ => {}
-        }
-    }
+    validate_portable_path(name)?;
     Ok(name)
 }
 
@@ -89,6 +65,10 @@ mod tests {
             "safe\\escape",
             "nul\0byte",
             "/",
+            "NUL",
+            "safe/LPT1.jar",
+            "trailing.",
+            "trailing ",
         ] {
             assert!(EntryPath::new(name).is_err(), "accepted {name:?}");
         }
