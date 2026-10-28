@@ -540,17 +540,8 @@ pub fn spawn_apply_helper(plan: &UpdatePlan) -> Result<(), UpdateError> {
     Ok(())
 }
 
-/// Handles the helper-only `--apply-update <plan>` mode before GUI startup.
-pub fn apply_update_from_args() -> Option<Result<(), UpdateError>> {
-    let mut arguments = env::args_os().skip(1);
-    if arguments.next().as_deref() != Some(std::ffi::OsStr::new("--apply-update")) {
-        return None;
-    }
-    let path = arguments.next()?;
-    Some(apply_update(Path::new(&path)))
-}
-
-fn apply_update(plan_path: &Path) -> Result<(), UpdateError> {
+/// Applies an update plan in helper mode before GUI startup.
+pub fn apply_update(plan_path: &Path) -> Result<(), UpdateError> {
     let plan: UpdatePlan =
         serde_json::from_slice(&fs::read(plan_path).map_err(|source| UpdateError::Io {
             operation: "read update plan",

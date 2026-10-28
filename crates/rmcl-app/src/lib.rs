@@ -84,6 +84,6 @@ pub use task::{
 };
 pub use update::{
     UpdateAsset, UpdateClient, UpdateError, UpdatePackage, UpdatePlan, UpdateProgress,
-    UpdateRelease, apply_update_from_args, spawn_apply_helper,
+    UpdateRelease, apply_update, spawn_apply_helper,
 };
 pub use versions::{InstalledVersion, delete_installed_version, discover_installed_versions};
