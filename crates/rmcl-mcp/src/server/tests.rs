@@ -46,8 +46,8 @@ fn every_tool_declares_an_output_schema() {
         match tool.name.as_ref() {
             "capabilities" | "instances_list" | "instances_get" | "accounts_list"
             | "content_list" | "content_search" | "content_versions" | "versions_list"
-            | "loaders_list" | "java_list" | "servers_list" | "servers_ping" | "tasks_list"
-            | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
+            | "loaders_list" | "java_list" | "servers_list" | "servers_ping" | "skins_list"
+            | "tasks_list" | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
@@ -57,13 +57,13 @@ fn every_tool_declares_an_output_schema() {
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
-            "servers_upsert" => {
+            "servers_upsert" | "skins_import" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
             "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete"
-            | "servers_delete" => {
+            | "servers_delete" | "skins_delete" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(true));
             }
@@ -88,6 +88,15 @@ fn write_instance(root: &Path, id: &str) {
         .to_string(),
     )
     .unwrap();
+}
+
+fn write_skin(path: &Path, width: u32, height: u32) {
+    let image = image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 255]));
+    let mut bytes = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .unwrap();
+    std::fs::write(path, bytes.into_inner()).unwrap();
 }
 
 fn test_context(temporary: &TempDir, modrinth: ModrinthClient) -> Arc<AppContext> {
@@ -795,6 +804,17 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
             server_write.data.as_ref().unwrap()["code"],
             "permission_denied"
         );
+        let skin_write = server
+            .skins_import(Parameters(SkinImportParams {
+                source: "does-not-exist.png".to_owned(),
+                name: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            skin_write.data.as_ref().unwrap()["code"],
+            "permission_denied"
+        );
         assert!(!temporary.path().join("minecraft/versions/blocked").exists());
         assert_eq!(
             structured(server.tasks_list().await.unwrap())["items"]
@@ -894,6 +914,106 @@ fn server_bookmarks_and_ping_use_shared_services() {
         );
         let missing = server
             .servers_delete(Parameters(ServerIdParams { server_id }))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
+    });
+    drop(server);
+    shutdown_context(context);
+}
+
+#[test]
+fn skin_library_tools_validate_import_rename_and_delete() {
+    let temporary = TempDir::new().unwrap();
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let server = McpServer::new(context.clone());
+    let source = temporary.path().join("source.png");
+    write_skin(&source, 64, 64);
+    context.runtime.block_on(async {
+        let imported = structured(
+            server
+                .skins_import(Parameters(SkinImportParams {
+                    source: source.display().to_string(),
+                    name: Some("My Skin".to_owned()),
+                }))
+                .await
+                .unwrap(),
+        );
+        let skin_id = imported["skin"]["id"].as_str().unwrap().to_owned();
+        assert_eq!(imported["skin"]["name"], "My Skin");
+        assert_eq!(imported["skin"]["variant"], "classic");
+        assert!(Path::new(imported["skin"]["head_path"].as_str().unwrap()).is_file());
+
+        let duplicate = structured(
+            server
+                .skins_import(Parameters(SkinImportParams {
+                    source: source.display().to_string(),
+                    name: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(duplicate["skin"]["id"], skin_id);
+        assert_eq!(duplicate["skin"]["name"], "source.png");
+        assert_eq!(
+            structured(server.skins_list().await.unwrap())["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let invalid = temporary.path().join("invalid.png");
+        write_skin(&invalid, 1, 1);
+        let invalid_error = server
+            .skins_import(Parameters(SkinImportParams {
+                source: invalid.display().to_string(),
+                name: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            invalid_error.data.as_ref().unwrap()["code"],
+            "invalid_input"
+        );
+        let private_url = server
+            .skins_import(Parameters(SkinImportParams {
+                source: "https://127.0.0.1/skin.png".to_owned(),
+                name: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(private_url.data.as_ref().unwrap()["code"], "invalid_input");
+
+        let renamed = structured(
+            server
+                .skins_rename(Parameters(SkinRenameParams {
+                    skin_id: skin_id.clone(),
+                    name: "Renamed".to_owned(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(renamed["skin"]["id"], skin_id);
+        assert_eq!(renamed["skin"]["name"], "Renamed");
+
+        let deleted = structured(
+            server
+                .skins_delete(Parameters(SkinIdParams {
+                    skin_id: skin_id.clone(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(deleted["deleted"], true);
+        assert!(
+            structured(server.skins_list().await.unwrap())["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let missing = server
+            .skins_delete(Parameters(SkinIdParams { skin_id }))
             .await
             .unwrap_err();
         assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
