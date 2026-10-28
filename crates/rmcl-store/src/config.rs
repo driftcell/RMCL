@@ -247,31 +247,14 @@ impl ConfigStore {
 }
 
 pub fn home_directory() -> PathBuf {
-    #[cfg(windows)]
-    let variable = "USERPROFILE";
-    #[cfg(not(windows))]
-    let variable = "HOME";
-    std::env::var_os(variable)
-        .map(PathBuf::from)
+    dirs::home_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 pub fn default_config_dir() -> PathBuf {
-    #[cfg(windows)]
-    {
-        std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home_directory().join("AppData").join("Roaming"))
-            .join("rmcl")
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home_directory().join(".config"))
-            .join("rmcl")
-    }
+    dirs::config_dir()
+        .unwrap_or_else(|| home_directory().join(".config"))
+        .join("rmcl")
 }
 
 pub fn default_minecraft_root() -> PathBuf {
@@ -326,6 +309,16 @@ mod tests {
             LauncherConfig::default().schema_version,
             CONFIG_SCHEMA_VERSION
         );
+    }
+
+    #[test]
+    fn defaults_use_platform_directories() {
+        if let Some(home) = dirs::home_dir() {
+            assert_eq!(home_directory(), home);
+        }
+        if let Some(config) = dirs::config_dir() {
+            assert_eq!(default_config_dir(), config.join("rmcl"));
+        }
     }
 
     #[test]

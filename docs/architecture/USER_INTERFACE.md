@@ -2,7 +2,7 @@
 
 状态：启动器壳、实例创建与隔离迁移、Fabric/Quilt/Forge/NeoForge 加载器安装、本地与 Modrinth 远程 Mod/资源包/光影管理、服务器收藏、精选服务器发现、一键进服与首页快速连接、GitHub Release 自动更新、下载、设置、离线/正版账户、皮肤头像、官方皮肤页与 3D 预览和任务日志界面已实现
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## GPUI Kit 基线
 
@@ -156,10 +156,11 @@
 
 启动器配置由 `rmcl-store` 持久化，默认路径：
 
-- macOS / Linux：`~/.config/rmcl/config.toml`，`XDG_CONFIG_HOME` 存在时优先使用它。
+- macOS：`~/Library/Application Support/rmcl/config.toml`。
+- Linux：`~/.config/rmcl/config.toml`，`XDG_CONFIG_HOME` 存在时优先使用它。
 - Windows：`%APPDATA%\rmcl\config.toml`。
 
-配置使用 TOML、schema 版本 4（可读取 schema 1/2/3 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
+基础目录由 `dirs` 按系统规则解析。配置使用 TOML、schema 版本 5（可读取 schema 1/2/3/4 并升级），并通过同目录临时文件、`sync` 和原子替换写入。损坏或更高版本的配置不会被静默覆盖；界面显示读取错误，设置修改仍会写入当前 schema。详细字段和错误语义见 [启动器配置](CONFIGURATION.md)。
 
 Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。RMCL 不读取或改写 HMCL 配置。
 

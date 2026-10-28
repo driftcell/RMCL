@@ -243,7 +243,7 @@ impl Bootstrap {
     }
 
     pub fn usage() -> &'static str {
-        "RMCL\n\nOptions:\n  --config <PATH>          Launcher configuration (default: ~/.config/rmcl/config.toml)\n  --minecraft-root <PATH>  Override Minecraft repository for this run\n  --java-store <PATH>      Override managed Java store for this run\n  --version <ID>           Override the initially selected version\n  --player <NAME>          Add or select an offline player\n  -h, --help               Show this help"
+        "RMCL\n\nOptions:\n  --config <PATH>          Launcher configuration (default: platform configuration directory)\n  --minecraft-root <PATH>  Override Minecraft repository for this run\n  --java-store <PATH>      Override managed Java store for this run\n  --version <ID>           Override the initially selected version\n  --player <NAME>          Add or select an offline player\n  -h, --help               Show this help"
     }
 }
 

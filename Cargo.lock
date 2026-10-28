@@ -5707,6 +5707,7 @@ dependencies = [
 name = "rmcl-store"
 version = "0.8.0"
 dependencies = [
+ "dirs 6.0.0",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
