@@ -6,11 +6,16 @@
 
 use std::{
     io::Write,
+    net::IpAddr,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use hickory_resolver::{
+    TokioResolver,
+    proto::rr::{RData, rdata::SRV},
+};
 use rmcl_domain::{ServerAddress, ServerAddressError};
 use rmcl_store::{LauncherConfig, StoredServer};
 use serde::Deserialize;
@@ -26,6 +31,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+const SRV_TIMEOUT: Duration = Duration::from_secs(2);
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_MOTD_CHARS: usize = 4096;
 const MAX_CHAT_DEPTH: usize = 16;
@@ -106,13 +112,21 @@ pub fn remove_server_bookmark(
 pub struct ServerStatusClient {
     timeout: Duration,
     max_response_bytes: usize,
+    resolver: Option<TokioResolver>,
 }
 
 impl Default for ServerStatusClient {
     fn default() -> Self {
+        #[cfg(any(unix, windows))]
+        let resolver = TokioResolver::builder_tokio()
+            .ok()
+            .and_then(|builder| builder.build().ok());
+        #[cfg(not(any(unix, windows)))]
+        let resolver = None;
         Self {
             timeout: DEFAULT_TIMEOUT,
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            resolver,
         }
     }
 }
@@ -144,7 +158,8 @@ impl ServerStatusClient {
     }
 
     async fn ping_inner(&self, address: &ServerAddress) -> Result<ServerStatus, ServerPingError> {
-        let sockets = lookup_host((address.host(), address.port()))
+        let (host, port) = self.resolve_endpoint(address).await;
+        let sockets = lookup_host((host.as_str(), port))
             .await
             .map_err(|source| ServerPingError::Resolve {
                 host: address.host().to_owned(),
@@ -212,6 +227,61 @@ impl ServerStatusClient {
             icon_png: parse_favicon(raw.favicon.as_deref())?,
         })
     }
+
+    /// Resolves the TCP endpoint, applying the Java Edition `_minecraft._tcp`
+    /// SRV record when the user did not specify an explicit port.
+    ///
+    /// SRV lookup failures fall back to the default port so servers without a
+    /// record keep working; an SRV target of `.` explicitly disables the
+    /// service and also falls back.
+    async fn resolve_endpoint(&self, address: &ServerAddress) -> (String, u16) {
+        if !uses_srv(address) {
+            return (address.host().to_owned(), address.port());
+        }
+        let Some(resolver) = &self.resolver else {
+            return (address.host().to_owned(), address.port());
+        };
+        let query = format!("_minecraft._tcp.{}.", address.host().trim_end_matches('.'));
+        let lookup = match tokio::time::timeout(SRV_TIMEOUT, resolver.srv_lookup(query)).await {
+            Ok(Ok(lookup)) => lookup,
+            _ => return (address.host().to_owned(), address.port()),
+        };
+        preferred_srv(
+            lookup
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    RData::SRV(srv) => Some(srv),
+                    _ => None,
+                }),
+        )
+        .unwrap_or_else(|| (address.host().to_owned(), address.port()))
+    }
+}
+
+fn uses_srv(address: &ServerAddress) -> bool {
+    !address.has_explicit_port()
+        && address.host().parse::<IpAddr>().is_err()
+        && address.host().contains('.')
+}
+
+fn preferred_srv<'a>(records: impl IntoIterator<Item = &'a SRV>) -> Option<(String, u16)> {
+    records
+        .into_iter()
+        .filter(|record| !record.target.is_root() && record.port != 0)
+        .min_by_key(|record| {
+            (
+                record.priority,
+                std::cmp::Reverse(record.weight),
+                record.target.to_ascii(),
+            )
+        })
+        .map(|record| {
+            (
+                record.target.to_utf8().trim_end_matches('.').to_owned(),
+                record.port,
+            )
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -606,6 +676,47 @@ mod tests {
             remove_server_bookmark(&mut config, &created.id),
             Err(ServerBookmarkError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn srv_only_applies_to_hostnames_without_explicit_ports() {
+        assert!(uses_srv(&ServerAddress::parse("play.example.com").unwrap()));
+        assert!(!uses_srv(
+            &ServerAddress::parse("play.example.com:25566").unwrap()
+        ));
+        assert!(!uses_srv(&ServerAddress::parse("127.0.0.1").unwrap()));
+        assert!(!uses_srv(&ServerAddress::parse("[::1]").unwrap()));
+        assert!(!uses_srv(&ServerAddress::parse("localhost").unwrap()));
+    }
+
+    #[test]
+    fn preferred_srv_uses_priority_then_weight() {
+        let name = |value: &str| hickory_resolver::proto::rr::Name::from_utf8(value).unwrap();
+        let records = [
+            SRV::new(20, 100, 25567, name("backup.example.com.")),
+            SRV::new(10, 1, 25566, name("primary-low.example.com.")),
+            SRV::new(10, 50, 25565, name("primary-high.example.com.")),
+        ];
+        assert_eq!(
+            preferred_srv(records.iter()),
+            Some(("primary-high.example.com".to_owned(), 25565))
+        );
+    }
+
+    #[test]
+    fn root_and_zero_port_srv_targets_are_ignored() {
+        let name = |value: &str| hickory_resolver::proto::rr::Name::from_utf8(value).unwrap();
+        assert_eq!(preferred_srv([].iter()), None);
+        assert_eq!(
+            preferred_srv(
+                [
+                    SRV::new(0, 100, 25565, name(".")),
+                    SRV::new(1, 100, 0, name("backup.example.com.")),
+                ]
+                .iter()
+            ),
+            None
+        );
     }
 
     #[test]

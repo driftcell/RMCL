@@ -1,6 +1,6 @@
 # 服务器列表、状态与一键进服
 
-状态：服务器收藏、Java Edition Server List Ping、MOTD/人数/延迟、图标缓存、Quick Play/legacy 进服、精选服务器发现、直接进服、首页快速连接和 MCP 收藏/状态接口已实现；SRV、Bedrock、动态服务器目录和 `servers.dat` 导入导出尚未实现
+状态：服务器收藏、Java Edition Server List Ping、MOTD/人数/延迟、图标缓存、`_minecraft._tcp` SRV 解析、Quick Play/legacy 进服、精选服务器发现、直接进服、首页快速连接和 MCP 收藏/状态接口已实现；Bedrock、动态服务器目录和 `servers.dat` 导入导出尚未实现
 
 日期：2026-10-28
 
@@ -37,14 +37,16 @@ address = "play.example.com:25565"
 - `[::1]`、`[::1]:25566` 和裸 IPv6 `::1`
 - 拒绝空地址、scheme、路径、查询、空白、`@`、零/越界端口和无效 IPv6。
 
-未显式指定端口时，Quick Play 参数保留裸主机名，让游戏继续应用默认端口或未来的 SRV 语义；只有显式端口才拼成 `host:port`。
+未显式指定端口时，Quick Play 参数保留裸主机名，让游戏继续应用默认端口或 SRV 语义；只有显式端口才拼成 `host:port`。
+
+状态查询在未显式指定端口且主机不是 IP 地址时，先查询 `_minecraft._tcp.<host>` SRV 记录，并连接记录中的目标主机和端口。SRV 查询失败、超时、返回根目标 `.` 或没有可用记录时回退到默认 25565；显式端口和 IP 地址不查询 SRV。握手仍使用用户填写的原始主机名，避免代理按虚拟主机路由时失效。
 
 ## 状态查询
 
 `rmcl-app` 直接实现 Java Edition Server List Ping，不依赖通用 Minecraft 协议库：
 
-1. TCP 连接默认端口 25565。
-2. 发送 handshake（packet id `0x00`，protocol `-1`，主机、端口、next state `1`）。
+1. 未显式指定端口时解析 `_minecraft._tcp` SRV，失败则使用默认端口 25565；随后 TCP 连接解析出的主机和端口。
+2. 发送 handshake（packet id `0x00`，protocol `-1`，用户填写的原始主机、端口、next state `1`）。
 3. 发送 status request。
 4. 读取有长度上限的状态包，解析 `version`、`players`、`description`、`favicon`。
 5. 延迟从发送请求到收到状态响应计算，界面标注为连接延迟。
@@ -122,7 +124,6 @@ Sidebar“游戏”组新增“联机”页，页面内分为“收藏 / 发现�
 ## 当前限制
 
 - 只支持 Java Edition；Bedrock/RakNet（通常 UDP 19132）不在范围内。
-- 尚未实现 `_minecraft._tcp` SRV 查询；需要显式 `host:port` 或默认 25565。
 - 不导入/导出/同步游戏内 `servers.dat`。
 - 不做后台常驻轮询；只有服务器页可见时自动刷新。
 - 不解析富文本颜色、服务器图标以外的图片、SLP 返回的服务器标签或插件信息。
@@ -136,7 +137,7 @@ Sidebar“游戏”组新增“联机”页，页面内分为“收藏 / 发现�
 ## 验证
 
 - `rmcl-domain` 覆盖主机、端口、IPv6、默认端口和非法地址。
-- `rmcl-app` 使用本地 TCP mock 覆盖握手/status、MOTD 扁平化、图标校验、超时和图标缓存；`RMCL_TEST_SERVER` 控制的真实服务器 smoke 标记 `#[ignore]`，不进入 CI。
+- `rmcl-app` 使用本地 TCP mock 覆盖握手/status、MOTD 扁平化、图标校验、超时和图标缓存；SRV 选择覆盖探针条件、优先级/权重排序、根目标和零端口回退；`RMCL_TEST_SERVER` 控制的真实服务器 smoke 标记 `#[ignore]`，不进入 CI。
 - 2026-10-26 在 macOS ARM64 使用 `RMCL_TEST_SERVER=mc.hypixel.net` 运行真实 Server List Ping，连接与状态解析成功；该 smoke 只验证协议，不验证进服。
 - `rmcl-launch` 覆盖 Quick Play/legacy 参数、1.20/23w14a 边界、预发布版、快照、显式端口和 IPv6。
 - `rmcl-app` 假 JVM 集成测试验证服务器目标进入真实进程参数。
