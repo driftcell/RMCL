@@ -2867,8 +2867,22 @@ impl LauncherApp {
         self.mcp_request += 1;
         let request = self.mcp_request;
         let services = self.services.clone();
+        let runtime = services.runtime.handle().clone();
         self._mcp_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let status = services.reconcile_mcp(enabled, port).await;
+            // Tokio networking requires the core runtime context; GPUI's executor
+            // cannot create listeners or tasks directly.
+            let status = match runtime
+                .spawn(async move { services.reconcile_mcp(enabled, port).await })
+                .await
+            {
+                Ok(status) => status,
+                Err(error) => McpHttpStatus {
+                    enabled,
+                    port,
+                    running: false,
+                    error: Some(format!("MCP 后台任务失败: {error}")),
+                },
+            };
             let _ = this.update_in(cx, |view, _, cx| {
                 if view.mcp_request != request {
                     return;
