@@ -90,10 +90,10 @@ accent = "emerald"
 - `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时隐藏启动器（macOS 隐藏应用，其他平台最小化窗口），任务终态恢复。
 - `mcp_enabled`：是否在 GUI 内启动 loopback、只读 MCP HTTP 服务，默认 `false`。启用或修改端口后立即协调启停，绑定失败只显示错误，不阻止 GUI 启动。
 - `mcp_port`：内嵌 MCP HTTP 端口，默认 `39271`，必须是 1–65535。配置不保存 Bearer token；GUI 不提供无认证写访问。
-- `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `kilo`、`openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。`kilo` 使用无需 Key 的免费通道，其余服务商需要 API Key。
-- `agent_model`：模型 ID；空字符串表示使用所选服务商的默认模型。模型必须支持工具调用。
-- `agent_base_url`：可选的 OpenAI-compatible 或原生服务商 Base URL；空字符串表示使用服务商默认值。`custom` 模式必须填写。
-- `agent_proxy`：可选的 AI 请求代理，支持 `http://`、`https://`、`socks5://` 和 `socks5h://`；空字符串表示跟随系统/环境代理。
+- `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `kilo`、`openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。`kilo` 使用无需 Key 的免费通道，其余服务商需要 API Key。未知 ID 会显示错误并阻止发送，不会静默改用其他服务商。
+- `agent_model`：模型 ID；空字符串表示使用所选服务商的默认模型，并持续跟随后续版本的预设更新。模型必须支持工具调用。
+- `agent_base_url`：可选的 OpenAI-compatible 或原生服务商 Base URL；空字符串表示使用服务商默认值。`custom` 模式必须填写。URL 不得内嵌用户名或密码。
+- `agent_proxy`：可选的 AI 请求代理，支持 `http://`、`https://`、`socks5://` 和 `socks5h://`；空字符串表示跟随系统/环境代理。URL 不得内嵌用户名或密码。
 - AI API Key 不写入 `config.toml`，保存在系统凭据存储，服务名为 `com.rmcl.launcher`，键为 `agent:<provider>`，值为 `{ "version": 1, "api_key": "..." }`。`kilo` 免费通道不使用 Keyring。
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。

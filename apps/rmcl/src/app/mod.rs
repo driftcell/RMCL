@@ -440,6 +440,7 @@ pub struct LauncherApp {
     content_browser: ContentBrowserState,
     agent: agent::AgentState,
     _agent_task: Option<Task<()>>,
+    _agent_key_task: Option<Task<()>>,
     remote_query: Entity<InputState>,
     remote_sort: RemoteSort,
     content_browser_request: u64,
@@ -520,6 +521,7 @@ pub struct LauncherApp {
     downloads_scroll: VirtualListScrollHandle,
     active_task_version: Option<String>,
     gui_task_ids: HashSet<TaskId>,
+    deferred_task_terminals: Vec<TaskSnapshot>,
     launcher_hidden: bool,
     logs_attention: bool,
     launch_resolving: bool,
@@ -885,6 +887,7 @@ impl LauncherApp {
             content_browser: ContentBrowserState::default(),
             agent: agent::AgentState::new(window, cx, &config_for_agent),
             _agent_task: None,
+            _agent_key_task: None,
             remote_query,
             remote_sort: RemoteSort::Relevance,
             content_browser_request: 0,
@@ -963,6 +966,7 @@ impl LauncherApp {
             downloads_scroll: VirtualListScrollHandle::new(),
             active_task_version: None,
             gui_task_ids: HashSet::new(),
+            deferred_task_terminals: Vec::new(),
             launcher_hidden: false,
             logs_attention: false,
             launch_resolving: false,
@@ -2598,12 +2602,14 @@ impl LauncherApp {
                     let logs = manager.logs(id).await;
                     let _ = this.update_in(cx, |view, window, cx| {
                         view.gui_task_ids.insert(id);
+                        view.deferred_task_terminals.retain(|task| task.id != id);
                         view.log_state.complete_start(id, snapshot.clone(), logs);
                         if let Some(snapshot) = snapshot
                             && snapshot.status.is_terminal()
                         {
                             view.on_task_terminal(snapshot, window, cx);
                         }
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2615,6 +2621,7 @@ impl LauncherApp {
                             Notification::error(message).title("任务启动失败"),
                             cx,
                         );
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2626,6 +2633,7 @@ impl LauncherApp {
                             Notification::error(message).title("任务启动失败"),
                             cx,
                         );
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2699,6 +2707,25 @@ impl LauncherApp {
         window.activate_window();
     }
 
+    fn defer_task_terminal(&mut self, snapshot: TaskSnapshot) {
+        if let Some(existing) = self
+            .deferred_task_terminals
+            .iter_mut()
+            .find(|existing| existing.id == snapshot.id)
+        {
+            *existing = snapshot;
+        } else {
+            self.deferred_task_terminals.push(snapshot);
+        }
+    }
+
+    fn replay_deferred_task_terminals(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let snapshots = std::mem::take(&mut self.deferred_task_terminals);
+        for snapshot in snapshots {
+            self.on_task_terminal(snapshot, window, cx);
+        }
+    }
+
     fn on_task_terminal(
         &mut self,
         snapshot: TaskSnapshot,
@@ -2706,6 +2733,16 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) {
         self.restore_launcher(window, cx);
+        if self.log_state.command_pending
+            && self.log_state.active_id() == Some(snapshot.id)
+            && !self.gui_task_ids.contains(&snapshot.id)
+        {
+            // A very short task can finish before its start call returns the
+            // ID. Keep the terminal snapshot until the pending GUI command
+            // resolves; it may belong to either that command or an Agent.
+            self.defer_task_terminal(snapshot);
+            return;
+        }
         if !self.log_state.mark_terminal_notified(snapshot.id) {
             return;
         }

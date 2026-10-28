@@ -77,7 +77,7 @@ impl AgentProvider {
             Self::Kilo => Some("https://ai-gateway.kilo.ai/api/v1"),
             Self::OpenAi => Some("https://api.openai.com/v1"),
             Self::Anthropic => Some("https://api.anthropic.com"),
-            Self::Gemini => Some("https://generativelanguage.googleapis.com/v1beta"),
+            Self::Gemini => Some("https://generativelanguage.googleapis.com"),
             Self::DeepSeek => Some("https://api.deepseek.com/v1"),
             Self::OpenRouter => Some("https://openrouter.ai/api/v1"),
             Self::Qwen => Some("https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -134,13 +134,15 @@ impl AgentSettings {
         model: &str,
         base_url: Option<&str>,
         proxy: Option<&str>,
-    ) -> Self {
-        Self {
-            provider: AgentProvider::from_id(provider).unwrap_or_default(),
+    ) -> Result<Self, AgentError> {
+        let provider = AgentProvider::from_id(provider)
+            .ok_or_else(|| AgentError::UnsupportedProvider(provider.to_owned()))?;
+        Ok(Self {
+            provider,
             model: model.trim().to_owned(),
             base_url: non_empty(base_url),
             proxy: non_empty(proxy),
-        }
+        })
     }
 
     pub fn effective_model(&self) -> Result<&str, AgentError> {
@@ -178,26 +180,26 @@ fn non_empty(value: Option<&str>) -> Option<String> {
 }
 
 fn validate_base_url(value: &str) -> Result<(), AgentError> {
-    let url = Url::parse(value).map_err(|source| AgentError::InvalidBaseUrl {
-        value: value.to_owned(),
-        source,
-    })?;
-    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return Err(AgentError::InvalidBaseUrlValue(value.to_owned()));
+    let url = Url::parse(value).map_err(|source| AgentError::InvalidBaseUrl { source })?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() || has_userinfo(&url) {
+        return Err(AgentError::InvalidBaseUrlValue);
     }
     Ok(())
 }
 
 fn parse_proxy_url(value: &str) -> Result<Url, AgentError> {
-    let url = Url::parse(value).map_err(|source| AgentError::InvalidProxyUrl {
-        value: value.to_owned(),
-        source,
-    })?;
-    if !matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h") || url.host_str().is_none()
+    let url = Url::parse(value).map_err(|source| AgentError::InvalidProxyUrl { source })?;
+    if !matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h")
+        || url.host_str().is_none()
+        || has_userinfo(&url)
     {
-        return Err(AgentError::InvalidProxyUrlValue(value.to_owned()));
+        return Err(AgentError::InvalidProxyUrlValue);
     }
     Ok(url)
+}
+
+fn has_userinfo(url: &Url) -> bool {
+    !url.username().is_empty() || url.password().is_some()
 }
 
 /// Stores one versioned JSON credential per provider in the system keyring.
@@ -262,28 +264,32 @@ struct StoredAgentKey {
 
 #[derive(Debug, Error)]
 pub enum AgentError {
+    #[error("assistant turn was cancelled")]
+    Cancelled,
     #[error("assistant model is not configured")]
     MissingModel,
     #[error("assistant base URL is required for a custom provider")]
     MissingBaseUrl,
     #[error("assistant API key is blank")]
     BlankKey,
-    #[error("invalid assistant base URL `{value}`: {source}")]
+    #[error("unsupported assistant provider `{0}`; select a provider explicitly in settings")]
+    UnsupportedProvider(String),
+    #[error("invalid assistant base URL: {source}")]
     InvalidBaseUrl {
-        value: String,
         #[source]
         source: url::ParseError,
     },
-    #[error("assistant base URL `{0}` must use HTTP(S) and include a host")]
-    InvalidBaseUrlValue(String),
-    #[error("invalid assistant proxy URL `{value}`: {source}")]
+    #[error("assistant base URL must use HTTP(S), include a host, and omit embedded credentials")]
+    InvalidBaseUrlValue,
+    #[error("invalid assistant proxy URL: {source}")]
     InvalidProxyUrl {
-        value: String,
         #[source]
         source: url::ParseError,
     },
-    #[error("assistant proxy URL `{0}` must use HTTP(S) or SOCKS5 and include a host")]
-    InvalidProxyUrlValue(String),
+    #[error(
+        "assistant proxy URL must use HTTP(S) or SOCKS5, include a host, and omit embedded credentials"
+    )]
+    InvalidProxyUrlValue,
     #[error("stored assistant credential for {provider:?} is invalid: {source}")]
     InvalidStoredKey {
         provider: AgentProvider,
@@ -341,7 +347,8 @@ mod tests {
     #[test]
     fn settings_resolve_defaults_and_validate_proxy() {
         let settings =
-            AgentSettings::from_config("deepseek", "", None, Some("socks5://127.0.0.1:7890"));
+            AgentSettings::from_config("deepseek", "", None, Some("socks5://127.0.0.1:7890"))
+                .unwrap();
         assert_eq!(settings.effective_model().unwrap(), "deepseek-v4-flash");
         assert_eq!(
             settings.effective_base_url().unwrap(),
@@ -349,16 +356,50 @@ mod tests {
         );
         assert_eq!(settings.proxy_url().unwrap().unwrap().scheme(), "socks5");
 
-        let custom = AgentSettings::from_config("custom", "my-model", None, None);
+        let custom = AgentSettings::from_config("custom", "my-model", None, None).unwrap();
         assert!(matches!(
             custom.effective_base_url(),
             Err(AgentError::MissingBaseUrl)
         ));
         assert!(
             AgentSettings::from_config("openai", "", None, Some("ftp://x"))
+                .unwrap()
                 .proxy_url()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn unknown_providers_and_embedded_credentials_are_rejected_without_echoing_secrets() {
+        assert!(matches!(
+            AgentSettings::from_config("removed-provider", "", None, None),
+            Err(AgentError::UnsupportedProvider(_))
+        ));
+
+        for value in [
+            "https://user:base-secret@example.com/v1",
+            "https://user@example.com/v1",
+        ] {
+            let settings = AgentSettings {
+                provider: AgentProvider::Custom,
+                model: "model".to_owned(),
+                base_url: Some(value.to_owned()),
+                proxy: None,
+            };
+            let error = settings.effective_base_url().unwrap_err().to_string();
+            assert!(!error.contains("base-secret"));
+            assert!(!error.contains("user@"));
+        }
+
+        let settings = AgentSettings {
+            provider: AgentProvider::OpenAi,
+            model: String::new(),
+            base_url: None,
+            proxy: Some("socks5://user:proxy-secret@example.com:1080".to_owned()),
+        };
+        let error = settings.proxy_url().unwrap_err().to_string();
+        assert!(!error.contains("proxy-secret"));
+        assert!(!error.contains("user:proxy-secret"));
     }
 
     #[test]

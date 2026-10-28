@@ -16,7 +16,7 @@
 
 ## 免费通道与 BYOK 服务商
 
-默认服务商是 **Kilo 免费模型**（`kilo`）。它通过 Kilo AI Gateway 的匿名免费池调用 `kilo-auto/free`，不需要 API Key；Rig 在 Key 为空时不会发送 `Authorization` 头。
+默认服务商是 **Kilo 免费模型**（`kilo`）。它通过 Kilo AI Gateway 的匿名免费池调用 `kilo-auto/free`，不需要 API Key；Rig 使用 `Auth::OptionalBearer`，Key 为空时不发送 `Authorization` 头。
 
 - Kilo Base URL：`https://ai-gateway.kilo.ai/api/v1`；默认模型 `kilo-auto/free` 会自动选择当前可用的免费模型。
 - 免费池的模型、限额和隐私策略由 Kilo 控制，可能轮换；免费模型可能记录对话，设置卡片会提示不要发送敏感信息。
@@ -26,7 +26,8 @@
 - API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。Kilo 不使用 Keyring。
 - 已保存的 Key 不回填输入框，只显示“已保存在系统钥匙串”和移除按钮。
 - 保存时不自动发起模型请求；首次发送消息时验证服务商与 Key。
-- 代理支持 HTTP(S)、SOCKS5 和 SOCKS5H；留空时跟随系统/环境代理。代理只影响 AI 请求，不改变全局网络设置。
+- 代理支持 HTTP(S)、SOCKS5 和 SOCKS5H；留空时跟随系统/环境代理。代理只影响 AI 请求，不改变全局网络设置。Base URL 和代理 URL 拒绝内嵌用户名或密码，避免凭据写入 `config.toml` 或进入错误横幅。
+- 非法 Provider ID 会显示配置错误并阻止发送，不会静默切换到 Kilo。模型和 Base URL 留空时继续使用 Provider 预设，不会在首次发送后固化默认值。Provider 错误在显示前会移除原始或 URL 编码后的 API Key。
 - 设置卡片明确提示：对话内容和工具结果（实例名、路径、玩家名）会发送给所选服务商。
 
 ## MCP 连接
@@ -47,8 +48,8 @@
 
 - `read_only_hint = true`：自动执行。
 - `destructive_hint = true`：必须确认。
-- 其余写操作默认执行。
-- 额外强制确认：启动游戏、账户/皮肤写入、`content_update`、`tasks_cancel` 和未知工具。
+- 其余写操作默认执行，但实际 `content_install` 必须确认；`dry_run=true` 的只读预检自动放行。
+- 额外强制确认：启动游戏、`content_update`、`tasks_cancel` 和未知工具；策略层也为账户/皮肤等写入保留强制确认。
 
 确认通过 `AgentHook::on_dispatch` 等待 UI 决定；拒绝时返回 `DispatchAction::skip`，停止时返回 `DispatchAction::stop`。不提供无确认的全自动破坏性模式。
 
@@ -65,7 +66,7 @@
 - 展开/收起步骤会 remeasure 当前行；回合结束后先 append 再观察 `TextViewState`，并在下一帧 remeasure 最后一行，避免虚拟列表高度过期导致滚轮停不到底部。
 - 有 `task_id` 时直接读取同一 `TaskManager` 快照显示进度条，不让模型轮询进度。
 - 输入使用 `Textarea`（`auto_grow(1, 8)`、`submit_on_enter`）；运行时发送按钮变为停止。
-- 会话只保存在内存；提供清空和停止。停止只丢弃当前 Agent 回合，不自动取消已启动的 RMCL 任务。
+- 会话只保存在内存；提供清空和停止。清空同时移除 UI 消息和模型历史。停止立即使当前回合代次失效并取消启动、MCP 连接或模型执行，迟到事件不会进入下一回合；不会自动取消已启动的 RMCL 任务。内部任务异常终止会显示错误，不会静默消失。
 
 ## 任务终态副作用
 
@@ -82,7 +83,7 @@ Agent 写工具成功后主动刷新一次版本、当前实例内容和外部�
 
 ## 验证
 
-- `rmcl-agent` 覆盖 Provider 预设、Kilo 无 Key 模型构建、Base URL/代理校验、Keyring 版本化 JSON、模型构建和系统提示占位符。
-- `rmcl-mcp` 覆盖 `tasks_wait` 的终态/运行游戏边界；已有任务通知和只读权限测试继续运行。
+- `rmcl-agent` 覆盖 Provider 预设、非法 Provider、Base URL/代理及 userinfo 校验、Keyring 版本化 JSON、模型构建和系统提示占位符；本地 HTTP mock 验证 Kilo 空 Key 不发送 `Authorization`，Gemini 请求只包含一个 `/v1beta` 前缀；另覆盖 Provider 错误脱敏、并行/超时确认、清空模型历史和启动前取消。
+- `rmcl-mcp` 覆盖 `tasks_wait` 的终态/运行游戏边界和真实 Java 任务终态等待；已有任务通知和只读权限测试继续运行。
 - `rmcl-store` 覆盖 schema 6 → 7 默认值和往返。
 - AI 页面、确认卡、IME 回车、真实服务商工具调用和多平台窗口仍需人工验收。

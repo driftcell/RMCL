@@ -174,20 +174,20 @@ impl LauncherApp {
 
     fn agent_nav_item(&self, cx: &mut Context<Self>) -> SidebarMenuItem {
         let running = self.agent.run.is_running();
+        let confirming = self.agent.pending_confirmation().is_some();
         SidebarMenuItem::new(Page::Agent.title())
             .icon(Page::Agent.icon())
             .active(self.page == Page::Agent)
-            .when(running, |this| {
+            .when(running && !confirming, |this| {
                 this.suffix(|_, cx| {
                     Spinner::new()
                         .with_size(Size::XSmall)
                         .color(cx.theme().primary)
                 })
             })
-            .when(
-                !running && self.agent.pending_confirmation().is_some(),
-                |this| this.suffix(|_, cx| div().size_1p5().rounded_full().bg(cx.theme().warning)),
-            )
+            .when(confirming, |this| {
+                this.suffix(|_, cx| div().size_1p5().rounded_full().bg(cx.theme().warning))
+            })
             .on_click(cx.listener(|this, _, window, cx| this.navigate(Page::Agent, window, cx)))
     }
 

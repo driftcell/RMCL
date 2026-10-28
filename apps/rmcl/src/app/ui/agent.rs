@@ -1,9 +1,6 @@
 //! AI assistant page.
 
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, time::Duration};
 
 use gpui_kit::{
     assets::IconName,
@@ -39,7 +36,8 @@ impl LauncherApp {
         let key_missing = !keyless && !matches!(self.agent.settings.key, AgentKeyState::Saved);
         let messages = Rc::new(self.agent.conversation.messages.clone());
         let progress = self.agent.task_progress(self.log_state.snapshot.as_ref());
-        let activity = self.render_agent_activity(progress, cx);
+        let active_task_id = self.agent.active_task_id();
+        let activity = self.render_agent_activity(progress, active_task_id, cx);
         let confirmation = self.render_agent_confirmation(cx);
         let running = self.agent.run.is_running();
         let view = cx.entity().downgrade();
@@ -71,7 +69,7 @@ impl LauncherApp {
                         .icon(IconName::Trash)
                         .label("清空")
                         .disabled(self.agent.run.is_running())
-                        .on_click(cx.listener(|this, _, _, cx| this.agent.clear(cx))),
+                        .on_click(cx.listener(|this, _, _, cx| this.clear_agent_conversation(cx))),
                 ),
                 cx,
             ))
@@ -133,7 +131,7 @@ impl LauncherApp {
                                                 div()
                                                     .text_xs()
                                                     .text_color(cx.theme().muted_foreground)
-                                                    .child("当前使用 Kilo 免费模型，无需 API Key"),
+                                                    .child("Kilo 免费模型无需 API Key，可能记录对话；请勿发送敏感信息"),
                                             )
                                         })
                                         .child(
@@ -249,10 +247,12 @@ impl LauncherApp {
                                     .child("Enter 发送 · Shift+Enter 换行"),
                             )
                             .child(div().flex_1())
-                            .when_some(progress, |this, (value, _)| {
+                            .when_some(progress, |this, (value, indeterminate)| {
                                 this.child(
                                     div().w_40().child(
-                                        Progress::new("agent-compose-progress").value(value),
+                                        Progress::new("agent-compose-progress")
+                                            .value(value)
+                                            .loading(indeterminate),
                                     ),
                                 )
                             }),
@@ -261,7 +261,12 @@ impl LauncherApp {
             .into_any_element()
     }
 
-    fn render_agent_activity(&self, progress: Option<(f32, bool)>, cx: &App) -> AnyElement {
+    fn render_agent_activity(
+        &self,
+        progress: Option<(f32, bool)>,
+        active_task_id: Option<u64>,
+        cx: &App,
+    ) -> AnyElement {
         let activity = match &self.agent.run {
             AgentRunState::Idle => return div().into_any_element(),
             AgentRunState::Starting { .. } | AgentRunState::Thinking { .. } => {
@@ -282,16 +287,15 @@ impl LauncherApp {
                 if let Some(status) = status {
                     content = content.child(status_marker(status, true, cx));
                 }
-                content = content.child(
-                    v_flex().w_full().gap_1().children(
-                        steps
-                            .iter()
-                            .rev()
-                            .take(3)
-                            .rev()
-                            .map(|step| tool_marker(step, progress, cx)),
-                    ),
-                );
+                content = content.child(v_flex().w_full().gap_1().children(
+                    steps.iter().rev().take(3).rev().map(|step| {
+                        tool_marker(
+                            step,
+                            progress.filter(|_| step.task_id == active_task_id),
+                            cx,
+                        )
+                    }),
+                ));
             }
         }
         content.into_any_element()
@@ -344,7 +348,7 @@ fn render_agent_message(
     match message {
         AgentMessage::User(text) => Message::new()
             .alignment(MessageAlignment::End)
-            .id(("agent-user", text.len()))
+            .id(("agent-user", index))
             .content(
                 MessageContent::new().bubble(
                     Bubble::new()
@@ -382,40 +386,21 @@ fn render_agent_reply(
             .steps
             .iter()
             .any(|step| step.state == AgentStepState::Failed);
-        let color = if failed {
-            cx.theme().danger
-        } else {
-            cx.theme().success
-        };
         let icon = if failed {
             IconName::CircleX
         } else {
             IconName::CircleCheck
         };
         let view = view.clone();
-        let toggle = h_flex()
-            .id(("agent-reply-history", index))
+        let toggle = Button::new(("agent-reply-history", index))
+            .ghost()
+            .small()
             .w_full()
-            .gap_2()
-            .items_center()
-            .cursor_pointer()
-            .child(Icon::new(icon).small().text_color(color))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(summary),
-            )
-            .child(div().flex_1())
-            .child(
-                Icon::new(if open {
-                    IconName::ChevronUp
-                } else {
-                    IconName::ChevronDown
-                })
-                .small()
-                .text_color(cx.theme().muted_foreground),
-            )
+            .icon(icon)
+            .label(format!(
+                "{summary} · {}",
+                if open { "收起" } else { "展开" }
+            ))
             .on_click(move |_, _, cx| {
                 let _ = view.update(cx, |this, cx| {
                     let mut toggled = false;
@@ -529,11 +514,13 @@ fn tool_marker(step: &AgentStep, progress: Option<(f32, bool)>, cx: &App) -> Any
         })
         .when_some(
             progress.filter(|_| step.state == AgentStepState::Running),
-            |this, (value, _)| {
+            |this, (value, indeterminate)| {
                 this.child(
-                    div()
-                        .pl_6()
-                        .child(Progress::new(("agent-step-progress", step.id)).value(value)),
+                    div().pl_6().child(
+                        Progress::new(("agent-step-progress", step.id))
+                            .value(value)
+                            .loading(indeterminate),
+                    ),
                 )
             },
         )
@@ -569,14 +556,4 @@ fn typing_bubble(cx: &App) -> AnyElement {
         .with_variant(BubbleVariant::Secondary)
         .child(dots)
         .into_any_element()
-}
-
-#[allow(dead_code)]
-fn elapsed_label(started_at: Instant) -> String {
-    let seconds = started_at.elapsed().as_secs();
-    if seconds >= 60 {
-        format!("{} 分 {} 秒", seconds / 60, seconds % 60)
-    } else {
-        format!("{seconds} 秒")
-    }
 }

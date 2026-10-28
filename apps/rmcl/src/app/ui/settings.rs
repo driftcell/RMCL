@@ -368,6 +368,10 @@ impl LauncherApp {
                                                                 &self.agent.settings.key_input,
                                                             )
                                                             .mask_toggle()
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
                                                             .w_full(),
                                                         )
                                                         .child(
@@ -377,6 +381,10 @@ impl LauncherApp {
                                                             .outline()
                                                             .small()
                                                             .label("保存")
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
                                                             .on_click(cx.listener(
                                                                 |this, _, window, cx| {
                                                                     this.save_agent_key(window, cx)
@@ -391,6 +399,10 @@ impl LauncherApp {
                                                                 &self.agent.settings.key_input,
                                                             )
                                                             .mask_toggle()
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
                                                             .w_full(),
                                                         )
                                                         .child(
@@ -406,6 +418,10 @@ impl LauncherApp {
                                                             .outline()
                                                             .small()
                                                             .label("保存")
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
                                                             .on_click(cx.listener(
                                                                 |this, _, window, cx| {
                                                                     this.save_agent_key(window, cx)

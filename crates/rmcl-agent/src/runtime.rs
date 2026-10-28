@@ -1,6 +1,10 @@
 //! One-turn Rig agent orchestration over the in-process MCP server.
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
+};
 
 use rig::{
     DynModel,
@@ -12,7 +16,7 @@ use rig::{
     tool::DynamicTool,
 };
 use rmcl_app::AppContext;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -72,7 +76,11 @@ impl AgentService {
         settings: AgentSettings,
         input: String,
         turn_context: AgentTurnContext,
+        cancellation: CancellationToken,
     ) -> Result<AgentTurn, AgentError> {
+        if cancellation.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
         let key = if settings.provider.requires_key() {
             self.keys
                 .load(settings.provider)?
@@ -83,11 +91,13 @@ impl AgentService {
             String::new()
         };
         let model = build_model(&settings, &key)?;
+        if cancellation.is_cancelled() {
+            return Err(AgentError::Cancelled);
+        }
         let provider = settings.provider;
-        let history = self.history.lock().await.clone();
+        let history = self.lock_history().clone();
         let (event_sender, events) = mpsc::unbounded_channel();
         let confirmations = ConfirmationBroker::default();
-        let cancellation = CancellationToken::new();
         let service = self.clone();
         let turn_confirmations = confirmations.clone();
         let turn_cancellation = cancellation.clone();
@@ -96,6 +106,7 @@ impl AgentService {
                 .run(
                     model,
                     provider,
+                    key,
                     input,
                     history,
                     turn_context,
@@ -108,8 +119,22 @@ impl AgentService {
         Ok(AgentTurn::new(events, confirmations, cancellation, handle))
     }
 
-    pub async fn clear_history(&self) {
-        self.history.lock().await.clear();
+    pub fn clear_history(&self) {
+        self.lock_history().clear();
+    }
+
+    /// Commits a completed transcript after the host accepts its completion event.
+    pub fn extend_history(&self, messages: impl IntoIterator<Item = Message>) {
+        self.lock_history().extend(messages);
+    }
+
+    fn lock_history(&self) -> MutexGuard<'_, Vec<Message>> {
+        // No await happens while this lock is held, so clearing the visible
+        // conversation and starting its next turn can share one synchronous
+        // ordering point on the UI thread.
+        self.history
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -117,6 +142,7 @@ impl AgentService {
         &self,
         model: DynModel<rig::operation::Completion>,
         provider: AgentProvider,
+        api_key: String,
         input: String,
         history: Vec<Message>,
         turn_context: AgentTurnContext,
@@ -125,13 +151,19 @@ impl AgentService {
         cancellation: CancellationToken,
     ) {
         let _ = events.send(AgentEvent::Started);
-        let mcp = match connect_mcp(self.context.clone()).await {
-            Ok(mcp) => mcp,
-            Err(error) => {
-                let _ = events.send(AgentEvent::Failed {
-                    message: error.to_string(),
-                });
+        let mcp = tokio::select! {
+            _ = cancellation.cancelled() => {
+                let _ = events.send(AgentEvent::Stopped);
                 return;
+            }
+            result = connect_mcp(self.context.clone()) => match result {
+                Ok(mcp) => mcp,
+                Err(error) => {
+                    let _ = events.send(AgentEvent::Failed {
+                        message: error.to_string(),
+                    });
+                    return;
+                }
             }
         };
         let status_events = events.clone();
@@ -159,32 +191,48 @@ impl AgentService {
             .dynamic_tools(tools)
             .add_hook(hook)
             .build();
-        let result = agent
-            .prompt(input)
-            .history(history)
-            .max_turns(MAX_TURNS)
-            .run()
-            .await;
+        let result = tokio::select! {
+            _ = cancellation.cancelled() => {
+                let _ = events.send(AgentEvent::Stopped);
+                return;
+            }
+            result = agent
+                .prompt(input)
+                .history(history)
+                .max_turns(MAX_TURNS)
+                .run() => result
+        };
         match result {
             Ok(response) => {
-                self.history
-                    .lock()
-                    .await
-                    .extend(response.messages().iter().cloned());
                 let _ = events.send(AgentEvent::Completed {
                     markdown: response.output(),
+                    messages: response.messages().to_vec(),
                 });
             }
             Err(_error) if cancellation.is_cancelled() => {
                 let _ = events.send(AgentEvent::Stopped);
             }
             Err(error) => {
+                let message = redact_provider_error(&error.to_string(), &api_key);
                 let _ = events.send(AgentEvent::Failed {
-                    message: friendly_error(provider, &error.to_string()),
+                    message: friendly_error(provider, &message),
                 });
             }
         }
         drop(mcp);
+    }
+}
+
+fn redact_provider_error(error: &str, api_key: &str) -> String {
+    if api_key.is_empty() {
+        return error.to_owned();
+    }
+    let redacted = error.replace(api_key, "[redacted]");
+    let encoded = url::form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>();
+    if encoded == api_key {
+        redacted
+    } else {
+        redacted.replace(&encoded, "[redacted]")
     }
 }
 
@@ -243,17 +291,31 @@ impl AgentHook for PermissionHook {
             return DispatchAction::proceed();
         }
         let id = event.id.as_u64();
-        let summary = summarize_tool(name, event.tool_args().unwrap_or("{}"));
+        let args = event.tool_args().unwrap_or("{}");
+        let summary = summarize_tool(name, args);
         let label = tool_label(name);
+        let args = serde_json::from_str::<serde_json::Value>(args).unwrap_or_default();
+        let dry_run = args
+            .get("dry_run")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         let policy = self.policies.get(name).copied();
         let requires_confirmation = policy
-            .map(|policy| policy.requires_confirmation(name))
+            .map(|policy| policy.requires_confirmation(name, dry_run))
             .unwrap_or(true);
+        let task_id = args.get("task_id").and_then(serde_json::Value::as_u64);
+        let _ = self.events.send(AgentEvent::ToolStarted {
+            id,
+            name: name.to_owned(),
+            label: label.to_owned(),
+            summary: summary.clone(),
+            task_id,
+        });
         if requires_confirmation {
             let request = ConfirmationRequest {
                 tool: name.to_owned(),
                 title: format!("允许执行「{label}」？"),
-                body: summary.clone(),
+                body: summary,
                 confirm_label: confirm_label(name).to_owned(),
             };
             match self.confirmations.ask(&self.events, request).await {
@@ -272,16 +334,6 @@ impl AgentHook for PermissionHook {
                 ConfirmationDecision::Stop => return DispatchAction::stop("用户停止了任务"),
             }
         }
-        let task_id = serde_json::from_str::<serde_json::Value>(event.tool_args().unwrap_or("{}"))
-            .ok()
-            .and_then(|value| value.get("task_id").and_then(serde_json::Value::as_u64));
-        let _ = self.events.send(AgentEvent::ToolStarted {
-            id,
-            name: name.to_owned(),
-            label: label.to_owned(),
-            summary,
-            task_id,
-        });
         DispatchAction::proceed()
     }
 
@@ -406,6 +458,7 @@ fn confirm_label(name: &str) -> &'static str {
         "instances_delete" | "content_delete" | "accounts_delete" | "servers_delete"
         | "skins_delete" => "删除",
         "instances_launch" => "启动",
+        "content_install" => "安装",
         "content_update" | "skins_apply" | "skins_reset" => "继续",
         "tasks_cancel" => "取消任务",
         _ => "继续",
@@ -418,19 +471,35 @@ fn summarize_tool(name: &str, args: &str) -> String {
         return String::new();
     }
     let text = |key: &str| value.get(key).and_then(serde_json::Value::as_str);
+    let version = text("base_version_id").or_else(|| text("version_id"));
+    if matches!(
+        name,
+        "content_install" | "content_update" | "content_set_enabled" | "content_delete"
+    ) {
+        let target = text("relative_path")
+            .or_else(|| text("project_id"))
+            .or_else(|| text("instance_id"));
+        let instance = text("instance_id");
+        return match (target, version, instance) {
+            (Some(target), Some(version), Some(instance)) => {
+                format!("{target} · {version} · {instance}")
+            }
+            (Some(target), Some(version), None) => format!("{target} · {version}"),
+            (Some(target), None, Some(instance)) => format!("{target} · {instance}"),
+            (Some(target), None, None) => target.to_owned(),
+            (None, Some(version), Some(instance)) => format!("{version} · {instance}"),
+            (None, Some(version), None) => version.to_owned(),
+            (None, None, _) => truncate(args, 120),
+        };
+    }
     let id = text("instance_id")
         .or_else(|| text("task_id"))
         .or_else(|| text("project_id"))
         .or_else(|| text("relative_path"));
-    let version = text("base_version_id").or_else(|| text("version_id"));
     let query = text("query").or_else(|| text("game_version"));
     match (name, id, version, query) {
         ("instances_create", Some(id), Some(version), _) => format!("{id} · {version}"),
         ("instances_create", Some(id), None, _) => id.to_owned(),
-        ("content_install" | "content_update", Some(path), Some(version), _) => {
-            format!("{path} · {version}")
-        }
-        ("content_install" | "content_update", _, Some(version), _) => version.to_owned(),
         ("content_search" | "versions_list" | "loaders_list", _, _, Some(query)) => {
             query.to_owned()
         }
@@ -481,7 +550,43 @@ mod tests {
             summarize_tool("content_search", r#"{"query":"sodium"}"#),
             "sodium"
         );
+        assert_eq!(
+            summarize_tool(
+                "content_delete",
+                r#"{"instance_id":"fabric","relative_path":"mods/sodium.jar"}"#
+            ),
+            "mods/sodium.jar · fabric"
+        );
+        assert_eq!(
+            summarize_tool(
+                "content_update",
+                r#"{"instance_id":"fabric","relative_path":"mods/sodium.jar","version_id":"v2"}"#
+            ),
+            "mods/sodium.jar · v2 · fabric"
+        );
+        assert_eq!(
+            summarize_tool(
+                "content_install",
+                r#"{"instance_id":"fabric","project_id":"sodium","version_id":"v2"}"#
+            ),
+            "sodium · v2 · fabric"
+        );
         assert!(tool_label("tasks_wait").contains("等待"));
+    }
+
+    #[test]
+    fn provider_errors_redact_raw_and_encoded_api_keys() {
+        let error =
+            "error sending request for url (https://example.com/v1beta/models/x?key=secret/key)";
+        let redacted = redact_provider_error(error, "secret/key");
+        assert!(!redacted.contains("secret/key"));
+        assert!(redacted.contains("[redacted]"));
+        let encoded = redact_provider_error(
+            "error sending request for url (https://example.com/?key=secret%2Fkey)",
+            "secret/key",
+        );
+        assert!(!encoded.contains("secret%2Fkey"));
+        assert!(encoded.contains("[redacted]"));
     }
 
     #[test]
@@ -489,5 +594,66 @@ mod tests {
         let error = "CompletionError: HttpError: 429 Too Many Requests";
         assert!(friendly_error(AgentProvider::Kilo, error).contains("免费通道"));
         assert_eq!(friendly_error(AgentProvider::OpenAi, error), error);
+    }
+
+    fn service(temporary: &tempfile::TempDir) -> Arc<AgentService> {
+        use rmcl_platform::MemorySecretStore;
+        use rmcl_store::{ConfigStore, LauncherConfig};
+
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            auto_install_java: false,
+            ..LauncherConfig::default()
+        };
+        let context = AppContext::new(
+            &config,
+            ConfigStore::new(temporary.path().join("config.toml")),
+        )
+        .unwrap();
+        Arc::new(AgentService::new(
+            context,
+            AgentKeyStore::new(Arc::new(MemorySecretStore::default())),
+        ))
+    }
+
+    #[test]
+    fn clear_history_discards_model_context() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let service = service(&temporary);
+        service.lock_history().push(Message::user("old context"));
+
+        service.clear_history();
+
+        assert!(service.lock_history().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancellation_before_start_prevents_model_or_mcp_work() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let service = service(&temporary);
+        let settings = AgentSettings::from_config("kilo", "", None, None).unwrap();
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+
+        let result = service
+            .start_turn(
+                settings,
+                "hello".to_owned(),
+                AgentTurnContext::default(),
+                cancellation,
+            )
+            .await;
+
+        assert!(matches!(result, Err(AgentError::Cancelled)));
+        let service = match Arc::try_unwrap(service) {
+            Ok(service) => service,
+            Err(_) => panic!("agent service should have one owner"),
+        };
+        let context = match Arc::try_unwrap(service.context) {
+            Ok(context) => context,
+            Err(_) => panic!("app context should have no remaining owners"),
+        };
+        context.runtime.shutdown_background();
     }
 }

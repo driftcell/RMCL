@@ -72,8 +72,9 @@ impl ToolPolicy {
 
     /// Tools that always need explicit user confirmation, even if their MCP
     /// annotations are not destructive.
-    pub fn requires_confirmation(self, name: &str) -> bool {
+    pub fn requires_confirmation(self, name: &str, dry_run: bool) -> bool {
         self.destructive
+            || (name == "content_install" && !dry_run)
             || matches!(
                 name,
                 "instances_launch"
@@ -260,11 +261,13 @@ mod tests {
             read_only: false,
             destructive: true,
         };
-        assert!(destructive.requires_confirmation("instances_delete"));
-        assert!(ToolPolicy::default().requires_confirmation("instances_launch"));
-        assert!(ToolPolicy::default().requires_confirmation("content_update"));
-        assert!(!ToolPolicy::default().requires_confirmation("instances_create"));
-        assert!(!ToolPolicy::default().requires_confirmation("content_search"));
+        assert!(destructive.requires_confirmation("instances_delete", false));
+        assert!(ToolPolicy::default().requires_confirmation("instances_launch", false));
+        assert!(ToolPolicy::default().requires_confirmation("content_update", false));
+        assert!(ToolPolicy::default().requires_confirmation("content_install", false));
+        assert!(!ToolPolicy::default().requires_confirmation("content_install", true));
+        assert!(!ToolPolicy::default().requires_confirmation("instances_create", false));
+        assert!(!ToolPolicy::default().requires_confirmation("content_search", false));
     }
 
     #[test]

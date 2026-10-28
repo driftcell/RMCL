@@ -18,7 +18,6 @@ use rmcl_agent::{
     AgentProvider, AgentSettings, AgentTurnContext,
     events::{AgentEvent, AgentTurnControl, ConfirmationDecision, ConfirmationRequest},
 };
-use rmcl_app::TaskStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentStepState {
@@ -141,7 +140,7 @@ pub enum AgentRunState {
     Idle,
     Starting {
         started_at: Instant,
-        cancelled: bool,
+        cancellation: tokio_util::sync::CancellationToken,
     },
     Thinking {
         started_at: Instant,
@@ -220,7 +219,9 @@ pub struct AgentSettingsState {
     pub proxy_input: Entity<InputState>,
     pub key_input: Entity<InputState>,
     pub key: AgentKeyState,
+    pub provider_error: Option<String>,
     pub error: Option<String>,
+    key_generation: u64,
 }
 
 pub struct AgentConversation {
@@ -233,11 +234,26 @@ pub struct AgentState {
     pub conversation: AgentConversation,
     pub run: AgentRunState,
     pub settings: AgentSettingsState,
+    generation: u64,
 }
 
 impl super::LauncherApp {
+    pub fn clear_agent_conversation(&mut self, cx: &mut Context<Self>) {
+        if self.agent.run.is_running() {
+            return;
+        }
+        self.services.agent.clear_history();
+        self.agent.clear(cx);
+    }
+
     pub fn send_agent_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.agent.run.is_idle() {
+            return;
+        }
+        let composing = self.agent.conversation.input.update(cx, |state, cx| {
+            state.marked_text_range(window, cx).is_some()
+        });
+        if composing {
             return;
         }
         let input = self
@@ -249,6 +265,11 @@ impl super::LauncherApp {
             .trim()
             .to_owned();
         if input.is_empty() {
+            return;
+        }
+        if let Some(error) = self.agent.settings.provider_error.clone() {
+            self.agent.settings.error = Some(error);
+            cx.notify();
             return;
         }
         let provider = self.agent.provider(cx);
@@ -285,12 +306,19 @@ impl super::LauncherApp {
             .conversation
             .input
             .update(cx, |state, cx| state.set_value("", window, cx));
-        self.agent.mark_starting(cx);
+        self.agent.generation = self.agent.generation.wrapping_add(1);
+        let generation = self.agent.generation;
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        self.agent.mark_starting(cancellation.clone(), cx);
         let agent = self.services.agent.clone();
         let runtime = self.services.runtime.handle().clone();
         self._agent_task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = runtime
-                .spawn(async move { agent.start_turn(settings, input, turn_context).await })
+                .spawn(async move {
+                    agent
+                        .start_turn(settings, input, turn_context, cancellation)
+                        .await
+                })
                 .await;
             let Ok(Ok(turn)) = result else {
                 let message = match result {
@@ -299,6 +327,9 @@ impl super::LauncherApp {
                     Ok(Ok(_)) => unreachable!(),
                 };
                 let _ = this.update_in(cx, |view, _, cx| {
+                    if view.agent.generation != generation {
+                        return;
+                    }
                     view.agent
                         .conversation
                         .messages
@@ -311,11 +342,22 @@ impl super::LauncherApp {
                 });
                 return;
             };
-            let (mut events, control) = turn.into_parts();
-            let _ = this.update_in(cx, |view, _, _cx| {
-                view.agent.begin_turn(control);
-            });
-            while let Some(event) = events.recv().await {
+            let (mut events, control, join_handle) = turn.into_parts();
+            let began = this
+                .update_in(cx, |view, _, _cx| {
+                    if view.agent.generation != generation {
+                        control.stop();
+                        false
+                    } else {
+                        view.agent.begin_turn(control);
+                        true
+                    }
+                })
+                .unwrap_or(false);
+            if !began {
+                return;
+            }
+            while let Some(mut event) = events.recv().await {
                 let refresh = matches!(
                     &event,
                     AgentEvent::ToolFinished {
@@ -325,8 +367,18 @@ impl super::LauncherApp {
                         ..
                     } if is_agent_write_tool(name)
                 );
+                let completed_history = match &mut event {
+                    AgentEvent::Completed { messages, .. } => Some(std::mem::take(messages)),
+                    _ => None,
+                };
                 let keep_running = this
                     .update_in(cx, |view, window, cx| {
+                        if view.agent.generation != generation {
+                            return false;
+                        }
+                        if let Some(messages) = completed_history {
+                            view.services.agent.extend_history(messages);
+                        }
                         let keep_running = view.agent.handle_event(event, window, cx);
                         if refresh {
                             view.refresh_after_agent_write(window, cx);
@@ -338,7 +390,23 @@ impl super::LauncherApp {
                     break;
                 }
             }
+            let outcome = join_handle.await;
             let _ = this.update_in(cx, |view, _, cx| {
+                if view.agent.generation != generation {
+                    return;
+                }
+                if let Err(error) = outcome
+                    && !error.is_cancelled()
+                    && !view.agent.run.is_idle()
+                {
+                    view.agent.conversation.messages.push(AgentMessage::Notice(
+                        "AI 后台任务意外结束，请重试。".to_owned(),
+                    ));
+                    view.agent
+                        .conversation
+                        .scroller
+                        .update(cx, |state, cx| state.append(1, cx));
+                }
                 if !view.agent.run.is_idle() {
                     view.agent.finish_turn(cx);
                 }
@@ -353,16 +421,38 @@ impl super::LauncherApp {
     }
 
     pub fn refresh_agent_key_state(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.agent.settings.key, AgentKeyState::Unknown)
+            && self._agent_key_task.is_some()
+        {
+            return;
+        }
         let provider = self.agent.provider(cx);
-        self.agent.settings.key = if provider.requires_key() {
-            match self.services.agent.key_store().has_key(provider) {
-                Ok(true) => AgentKeyState::Saved,
-                Ok(false) => AgentKeyState::Missing,
-                Err(error) => AgentKeyState::Error(error.to_string()),
-            }
-        } else {
-            AgentKeyState::Free
-        };
+        self.agent.settings.key_generation = self.agent.settings.key_generation.wrapping_add(1);
+        let generation = self.agent.settings.key_generation;
+        if !provider.requires_key() {
+            self._agent_key_task = None;
+            self.agent.settings.key = AgentKeyState::Free;
+            cx.notify();
+            return;
+        }
+        self.agent.settings.key = AgentKeyState::Unknown;
+        let keys = self.services.agent.key_store().clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._agent_key_task = Some(cx.spawn(async move |this, cx| {
+            let result = runtime.spawn_blocking(move || keys.has_key(provider)).await;
+            let _ = this.update(cx, |view, cx| {
+                if view.agent.settings.key_generation != generation {
+                    return;
+                }
+                view.agent.settings.key = match result {
+                    Ok(Ok(true)) => AgentKeyState::Saved,
+                    Ok(Ok(false)) => AgentKeyState::Missing,
+                    Ok(Err(error)) => AgentKeyState::Error(error.to_string()),
+                    Err(error) => AgentKeyState::Error(format!("后台钥匙串任务失败：{error}")),
+                };
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 
@@ -375,22 +465,24 @@ impl super::LauncherApp {
             return;
         };
         self.agent.settings.model_input.update(cx, |state, cx| {
-            state.set_value(provider.default_model(), window, cx)
+            state.set_value("", window, cx);
+            state.set_placeholder(provider.default_model(), window, cx);
         });
         self.agent.settings.base_url_input.update(cx, |state, cx| {
-            state.set_value(provider.default_base_url().unwrap_or_default(), window, cx)
+            state.set_value("", window, cx);
+            state.set_placeholder(
+                provider.default_base_url().unwrap_or("https://..."),
+                window,
+                cx,
+            );
         });
-        self.agent.settings.key = if provider.requires_key() {
-            match self.services.agent.key_store().has_key(provider) {
-                Ok(true) => AgentKeyState::Saved,
-                Ok(false) => AgentKeyState::Missing,
-                Err(error) => AgentKeyState::Error(error.to_string()),
-            }
-        } else {
-            AgentKeyState::Free
-        };
-        self.config.agent_provider = provider.id().to_owned();
-        cx.notify();
+        self.agent.settings.key_input.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        self.agent.settings.provider_error = None;
+        self.agent.settings.error = None;
+        self._agent_key_task = None;
+        self.refresh_agent_key_state(cx);
     }
 
     pub fn save_agent_settings(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
@@ -404,12 +496,20 @@ impl super::LauncherApp {
             .map_err(|error| error.to_string())?;
         settings.proxy_url().map_err(|error| error.to_string())?;
         self.config.agent_provider = provider.id().to_owned();
-        self.config.agent_model = self.agent.settings.model_input.read(cx).value().to_string();
+        self.config.agent_model = self
+            .agent
+            .settings
+            .model_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
         self.config.agent_base_url =
             non_empty_value(self.agent.settings.base_url_input.read(cx).value().as_ref());
         self.config.agent_proxy =
             non_empty_value(self.agent.settings.proxy_input.read(cx).value().as_ref());
         self.save_config();
+        self.agent.settings.provider_error = None;
         self.agent.settings.error = None;
         Ok(())
     }
@@ -429,34 +529,72 @@ impl super::LauncherApp {
             cx.notify();
             return;
         }
-        match self.services.agent.key_store().save(provider, &key) {
-            Ok(()) => {
-                self.agent.settings.key_input.update(cx, |state, cx| {
-                    state.set_value("", window, cx);
-                });
-                self.agent.settings.key = AgentKeyState::Saved;
-                self.agent.settings.error = None;
-                if let Err(error) = self.save_agent_settings(cx) {
-                    self.agent.settings.error = Some(error);
+        self.agent.settings.key_generation = self.agent.settings.key_generation.wrapping_add(1);
+        let generation = self.agent.settings.key_generation;
+        self.agent.settings.key = AgentKeyState::Unknown;
+        self.agent.settings.error = None;
+        let keys = self.services.agent.key_store().clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._agent_key_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn_blocking(move || keys.save(provider, &key))
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                if view.agent.settings.key_generation != generation {
+                    return;
                 }
-            }
-            Err(error) => {
-                self.agent.settings.key = AgentKeyState::Error(error.to_string());
-            }
-        }
+                match result {
+                    Ok(Ok(())) => {
+                        view.agent.settings.key_input.update(cx, |state, cx| {
+                            state.set_value("", window, cx);
+                        });
+                        view.agent.settings.key = AgentKeyState::Saved;
+                        view.agent.settings.error = None;
+                        if let Err(error) = view.save_agent_settings(cx) {
+                            view.agent.settings.error = Some(error);
+                        }
+                    }
+                    Ok(Err(error)) => {
+                        view.agent.settings.key = AgentKeyState::Error(error.to_string());
+                    }
+                    Err(error) => {
+                        view.agent.settings.key =
+                            AgentKeyState::Error(format!("后台钥匙串任务失败：{error}"));
+                    }
+                }
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 
     pub fn remove_agent_key(&mut self, cx: &mut Context<Self>) {
         let provider = self.agent.provider(cx);
+        self.agent.settings.key_generation = self.agent.settings.key_generation.wrapping_add(1);
+        let generation = self.agent.settings.key_generation;
         if !provider.requires_key() {
+            self._agent_key_task = None;
             self.agent.settings.key = AgentKeyState::Free;
-        } else {
-            match self.services.agent.key_store().delete(provider) {
-                Ok(()) => self.agent.settings.key = AgentKeyState::Missing,
-                Err(error) => self.agent.settings.key = AgentKeyState::Error(error.to_string()),
-            }
+            cx.notify();
+            return;
         }
+        self.agent.settings.key = AgentKeyState::Unknown;
+        let keys = self.services.agent.key_store().clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._agent_key_task = Some(cx.spawn(async move |this, cx| {
+            let result = runtime.spawn_blocking(move || keys.delete(provider)).await;
+            let _ = this.update(cx, |view, cx| {
+                if view.agent.settings.key_generation != generation {
+                    return;
+                }
+                view.agent.settings.key = match result {
+                    Ok(Ok(())) => AgentKeyState::Missing,
+                    Ok(Err(error)) => AgentKeyState::Error(error.to_string()),
+                    Err(error) => AgentKeyState::Error(format!("后台钥匙串任务失败：{error}")),
+                };
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 }
@@ -468,6 +606,14 @@ impl AgentState {
         config: &rmcl_store::LauncherConfig,
     ) -> Self {
         let provider = AgentProvider::from_id(&config.agent_provider).unwrap_or_default();
+        let provider_error = AgentProvider::from_id(&config.agent_provider)
+            .is_none()
+            .then(|| {
+                format!(
+                    "不支持的 AI 服务商 `{}`，请在设置中重新选择。",
+                    config.agent_provider
+                )
+            });
         let provider_index = AgentProvider::ALL
             .iter()
             .position(|candidate| *candidate == provider)
@@ -485,15 +631,10 @@ impl AgentState {
                 cx,
             )
         });
-        let model = if config.agent_model.trim().is_empty() {
-            provider.default_model().to_owned()
-        } else {
-            config.agent_model.clone()
-        };
         let model_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("模型 ID")
-                .default_value(model)
+                .placeholder(provider.default_model())
+                .default_value(config.agent_model.clone())
         });
         let base_url_input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -538,8 +679,11 @@ impl AgentState {
                 proxy_input,
                 key_input,
                 key,
-                error: None,
+                provider_error: provider_error.clone(),
+                error: provider_error,
+                key_generation: 0,
             },
+            generation: 0,
         }
     }
 
@@ -555,35 +699,27 @@ impl AgentState {
     }
 
     pub fn settings(&self, cx: &Context<super::LauncherApp>) -> AgentSettings {
-        AgentSettings::from_config(
-            self.provider(cx).id(),
-            self.settings.model_input.read(cx).value().as_ref(),
-            Some(self.settings.base_url_input.read(cx).value().as_ref()),
-            Some(self.settings.proxy_input.read(cx).value().as_ref()),
-        )
+        AgentSettings {
+            provider: self.provider(cx),
+            model: self.settings.model_input.read(cx).value().trim().to_owned(),
+            base_url: non_empty_value(self.settings.base_url_input.read(cx).value().as_ref()),
+            proxy: non_empty_value(self.settings.proxy_input.read(cx).value().as_ref()),
+        }
     }
 
-    pub fn mark_starting(&mut self, cx: &mut Context<super::LauncherApp>) {
+    pub fn mark_starting(
+        &mut self,
+        cancellation: tokio_util::sync::CancellationToken,
+        cx: &mut Context<super::LauncherApp>,
+    ) {
         self.run = AgentRunState::Starting {
             started_at: Instant::now(),
-            cancelled: false,
+            cancellation,
         };
         cx.notify();
     }
 
     pub fn begin_turn(&mut self, control: AgentTurnControl) {
-        let cancelled = matches!(
-            self.run,
-            AgentRunState::Starting {
-                cancelled: true,
-                ..
-            }
-        );
-        if cancelled {
-            control.stop();
-            self.run = AgentRunState::Idle;
-            return;
-        }
         self.run = AgentRunState::Thinking {
             started_at: Instant::now(),
             control,
@@ -599,6 +735,7 @@ impl AgentState {
         if self.run.is_running() {
             return;
         }
+        self.generation = self.generation.wrapping_add(1);
         self.conversation.messages.clear();
         self.conversation
             .scroller
@@ -675,10 +812,10 @@ impl AgentState {
                     AgentRunState::Idle => AgentRunState::Idle,
                     AgentRunState::Starting {
                         started_at,
-                        cancelled,
+                        cancellation,
                     } => AgentRunState::Starting {
                         started_at,
-                        cancelled,
+                        cancellation,
                     },
                     AgentRunState::Thinking {
                         started_at,
@@ -715,13 +852,19 @@ impl AgentState {
                     },
                 };
             }
-            AgentEvent::Completed { markdown } => {
+            AgentEvent::ConfirmationExpired { request_id } => {
+                self.expire_confirmation(request_id);
+            }
+            AgentEvent::Completed { markdown, .. } => {
                 let elapsed = self.run.started_at().map(|started| started.elapsed());
                 let steps = self
                     .run
                     .activity()
                     .map(|activity| activity.steps().to_vec())
                     .unwrap_or_default();
+                let history_open = steps
+                    .iter()
+                    .any(|step| step.state == AgentStepState::Failed);
                 let state = cx.new(|cx| TextViewState::markdown(&markdown, cx));
                 let index = self.conversation.messages.len();
                 self.finish_turn(cx);
@@ -731,7 +874,7 @@ impl AgentState {
                         text: state.clone(),
                         steps,
                         elapsed,
-                        history_open: false,
+                        history_open,
                     }));
                 // Append first, then observe. The text view notifies while it
                 // settles its final layout; observing before the row exists
@@ -808,10 +951,10 @@ impl AgentState {
             AgentRunState::Idle => AgentRunState::Idle,
             AgentRunState::Starting {
                 started_at,
-                cancelled,
+                cancellation,
             } => AgentRunState::Starting {
                 started_at,
-                cancelled,
+                cancellation,
             },
             AgentRunState::Thinking {
                 started_at,
@@ -856,6 +999,24 @@ impl AgentState {
         };
     }
 
+    fn expire_confirmation(&mut self, request_id: u64) {
+        let run = std::mem::replace(&mut self.run, AgentRunState::Idle);
+        self.run = match run {
+            AgentRunState::Confirming {
+                started_at,
+                request_id: current_id,
+                activity,
+                control,
+                ..
+            } if current_id == request_id => AgentRunState::Working {
+                started_at,
+                activity,
+                control,
+            },
+            run => run,
+        };
+    }
+
     pub fn resolve_confirmation(
         &mut self,
         decision: ConfirmationDecision,
@@ -890,16 +1051,14 @@ impl AgentState {
     }
 
     pub fn stop(&mut self, cx: &mut Context<super::LauncherApp>) {
-        if let AgentRunState::Starting { started_at, .. } = self.run {
-            self.run = AgentRunState::Starting {
-                started_at,
-                cancelled: true,
-            };
-            cx.notify();
-            return;
-        }
-        if let Some(control) = self.run.control() {
-            control.stop();
+        self.generation = self.generation.wrapping_add(1);
+        match &self.run {
+            AgentRunState::Starting { cancellation, .. } => cancellation.cancel(),
+            _ => {
+                if let Some(control) = self.run.control() {
+                    control.stop();
+                }
+            }
         }
         self.finish_turn(cx);
     }
@@ -916,34 +1075,20 @@ impl AgentState {
     }
 
     pub fn active_task_id(&self) -> Option<u64> {
-        self.run
-            .activity()
-            .and_then(|activity| activity.steps().iter().rev().find(|step| step.is_running()))
-            .and_then(|step| step.task_id)
+        self.run.activity().and_then(|activity| {
+            activity
+                .steps()
+                .iter()
+                .rev()
+                .filter(|step| step.is_running())
+                .find_map(|step| step.task_id)
+        })
     }
 
     pub fn task_progress(&self, snapshot: Option<&rmcl_app::TaskSnapshot>) -> Option<(f32, bool)> {
         let task_id = self.active_task_id()?;
         let snapshot = snapshot.filter(|snapshot| snapshot.id.get() == task_id)?;
-        let running = matches!(
-            snapshot.status,
-            TaskStatus::Running | TaskStatus::Cancelling
-        );
-        let progress = match snapshot.progress.as_ref() {
-            Some(rmcl_app::TaskProgress::Download(progress)) => progress
-                .downloaded_bytes
-                .checked_div(progress.total_bytes.unwrap_or(0))
-                .map(|value| value as f32),
-            Some(rmcl_app::TaskProgress::Content(progress)) => {
-                if progress.total_files == 0 {
-                    None
-                } else {
-                    Some(progress.completed_files as f32 / progress.total_files as f32)
-                }
-            }
-            _ => None,
-        };
-        Some((progress.unwrap_or(0.0).clamp(0.0, 1.0), running))
+        Some(super::task_progress(Some(snapshot)))
     }
 }
 
@@ -967,4 +1112,38 @@ fn is_agent_write_tool(name: &str) -> bool {
             | "java_ensure"
             | "tasks_cancel"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use rmcl_app::{TaskId, TaskKind, TaskProgress, TaskSnapshot, TaskStatus};
+
+    fn snapshot(progress: Option<TaskProgress>) -> TaskSnapshot {
+        TaskSnapshot {
+            id: TaskId::from_raw(1),
+            kind: TaskKind::InstanceCreate,
+            subject: None,
+            status: TaskStatus::Running,
+            phase: None,
+            progress,
+            error: None,
+            exit: None,
+            stop_requested: false,
+            log_lines: 0,
+        }
+    }
+
+    #[test]
+    fn agent_progress_uses_percent_and_indeterminate_semantics() {
+        let partial = snapshot(Some(TaskProgress::Processors {
+            current: String::new(),
+            completed: 1,
+            total: 4,
+        }));
+        assert_eq!(super::super::task_progress(Some(&partial)), (25.0, false));
+        assert_eq!(
+            super::super::task_progress(Some(&snapshot(None))),
+            (0.0, true)
+        );
+    }
 }

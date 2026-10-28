@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use rig::message::Message;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// One user-visible confirmation request.
@@ -54,8 +55,12 @@ pub enum AgentEvent {
         request_id: u64,
         request: ConfirmationRequest,
     },
+    ConfirmationExpired {
+        request_id: u64,
+    },
     Completed {
         markdown: String,
+        messages: Vec<Message>,
     },
     Failed {
         message: String,
@@ -68,6 +73,7 @@ pub enum AgentEvent {
 pub struct ConfirmationBroker {
     next: Arc<AtomicU64>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<ConfirmationDecision>>>>,
+    request_lock: Arc<Mutex<()>>,
 }
 
 impl ConfirmationBroker {
@@ -76,6 +82,10 @@ impl ConfirmationBroker {
         events: &mpsc::UnboundedSender<AgentEvent>,
         request: ConfirmationRequest,
     ) -> ConfirmationDecision {
+        // The page presents one decision at a time. Parallel tool calls may
+        // still run, but their confirmation requests must not replace each
+        // other in the UI.
+        let _request_guard = self.request_lock.lock().await;
         let request_id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(request_id, sender);
@@ -93,6 +103,7 @@ impl ConfirmationBroker {
             decision = receiver => decision.unwrap_or(ConfirmationDecision::Reject),
             _ = tokio::time::sleep(Duration::from_secs(600)) => {
                 self.pending.lock().await.remove(&request_id);
+                let _ = events.send(AgentEvent::ConfirmationExpired { request_id });
                 ConfirmationDecision::Reject
             }
         }
@@ -129,14 +140,22 @@ impl AgentTurn {
         }
     }
 
-    pub fn into_parts(self) -> (mpsc::UnboundedReceiver<AgentEvent>, AgentTurnControl) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        mpsc::UnboundedReceiver<AgentEvent>,
+        AgentTurnControl,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let abort_handle = self.handle.abort_handle();
         (
             self.events,
             AgentTurnControl {
                 confirmations: self.confirmations,
                 cancellation: self.cancellation,
-                handle: self.handle,
+                abort_handle,
             },
+            self.handle,
         )
     }
 }
@@ -145,16 +164,96 @@ impl AgentTurn {
 pub struct AgentTurnControl {
     pub confirmations: ConfirmationBroker,
     cancellation: tokio_util::sync::CancellationToken,
-    handle: tokio::task::JoinHandle<()>,
+    abort_handle: tokio::task::AbortHandle,
 }
 
 impl AgentTurnControl {
     pub fn stop(&self) {
         self.cancellation.cancel();
-        self.handle.abort();
+        self.abort_handle.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(tool: &str) -> ConfirmationRequest {
+        ConfirmationRequest {
+            tool: tool.to_owned(),
+            title: tool.to_owned(),
+            body: String::new(),
+            confirm_label: "继续".to_owned(),
+        }
     }
 
-    pub fn is_finished(&self) -> bool {
-        self.handle.is_finished()
+    #[tokio::test]
+    async fn parallel_confirmation_requests_are_presented_one_at_a_time() {
+        let broker = ConfirmationBroker::default();
+        let (events, mut receiver) = mpsc::unbounded_channel();
+
+        let first = {
+            let broker = broker.clone();
+            let events = events.clone();
+            tokio::spawn(async move { broker.ask(&events, request("first")).await })
+        };
+        let Some(AgentEvent::Confirmation {
+            request_id: first_id,
+            ..
+        }) = receiver.recv().await
+        else {
+            panic!("first confirmation was not emitted");
+        };
+
+        let second = {
+            let broker = broker.clone();
+            let events = events.clone();
+            tokio::spawn(async move { broker.ask(&events, request("second")).await })
+        };
+        tokio::task::yield_now().await;
+        assert!(receiver.try_recv().is_err());
+
+        broker
+            .resolve(first_id, ConfirmationDecision::Approve)
+            .await;
+        assert_eq!(first.await.unwrap(), ConfirmationDecision::Approve);
+
+        let Some(AgentEvent::Confirmation {
+            request_id: second_id,
+            request,
+            ..
+        }) = receiver.recv().await
+        else {
+            panic!("second confirmation was not emitted after resolving the first");
+        };
+        assert_eq!(request.tool, "second");
+        broker
+            .resolve(second_id, ConfirmationDecision::Reject)
+            .await;
+        assert_eq!(second.await.unwrap(), ConfirmationDecision::Reject);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn expired_confirmation_is_reported_to_the_page() {
+        let broker = ConfirmationBroker::default();
+        let (events, mut receiver) = mpsc::unbounded_channel();
+        let pending = {
+            let broker = broker.clone();
+            let events = events.clone();
+            tokio::spawn(async move { broker.ask(&events, request("delete")).await })
+        };
+        let Some(AgentEvent::Confirmation { request_id, .. }) = receiver.recv().await else {
+            panic!("confirmation was not emitted");
+        };
+
+        tokio::time::advance(Duration::from_secs(600)).await;
+
+        assert_eq!(pending.await.unwrap(), ConfirmationDecision::Reject);
+        assert!(matches!(
+            receiver.recv().await,
+            Some(AgentEvent::ConfirmationExpired {
+                request_id: expired_id,
+            }) if expired_id == request_id
+        ));
     }
 }

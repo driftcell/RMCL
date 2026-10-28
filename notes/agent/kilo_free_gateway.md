@@ -36,6 +36,6 @@ Kilo AI Gateway 提供匿名免费模型池，不需要 API Key，OpenAI-compati
 ## 实现选择
 
 - 新增 `AgentProvider::Kilo`，默认 Base URL 和模型如上，`requires_key()` 返回 `false`。
-- `AgentService::start_turn` 对无 Key 服务商传空字符串，Rig 的 OpenAI 客户端会省略 `Authorization` 头。
+- `AgentService::start_turn` 对无 Key 服务商传空字符串，OpenAI 配置显式使用 `Auth::OptionalBearer`，因此省略 `Authorization` 头；本地 HTTP mock 覆盖此行为。
 - `AgentKeyState::Free` 表示当前服务商不需要 Key；设置页隐藏 Key 输入，AI 页不禁用发送按钮。
 - 429 / 401 通过 `friendly_error` 转成中文提示。
