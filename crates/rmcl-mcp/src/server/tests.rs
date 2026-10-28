@@ -190,6 +190,32 @@ fn status_packet(status: Value) -> Vec<u8> {
     packet
 }
 
+async fn read_varint_async(stream: &mut tokio::net::TcpStream) -> std::io::Result<i32> {
+    use tokio::io::AsyncReadExt;
+
+    let mut value = 0i32;
+    for index in 0..5 {
+        let byte = stream.read_u8().await?;
+        value |= i32::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "status packet VarInt is too long",
+    ))
+}
+
+async fn read_test_packet(stream: &mut tokio::net::TcpStream) -> std::io::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+
+    let length = read_varint_async(stream).await?;
+    let mut packet = vec![0; length as usize];
+    stream.read_exact(&mut packet).await?;
+    Ok(packet)
+}
+
 async fn ping_server() -> (String, tokio::task::JoinHandle<()>) {
     use tokio::io::AsyncWriteExt;
 
@@ -197,6 +223,10 @@ async fn ping_server() -> (String, tokio::task::JoinHandle<()>) {
     let address = listener.local_addr().unwrap().to_string();
     let handle = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
+        let handshake = read_test_packet(&mut stream).await.unwrap();
+        assert_eq!(handshake[0], 0);
+        let request = read_test_packet(&mut stream).await.unwrap();
+        assert_eq!(request, vec![0]);
         let response = status_packet(json!({
             "version": {"name": "1.21.1", "protocol": 767},
             "players": {"online": 3, "max": 20},
