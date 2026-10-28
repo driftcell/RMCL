@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁、HTTP 安全和 GUI 服务设置已实现；GUI 外部变更刷新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；服务器、皮肤和高级内容工作流尚未实现
 
 日期：2026-10-28
 
@@ -90,6 +90,12 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 设置页的 MCP 卡片默认停用，可配置 HTTP 端口并立即启动、停止或重启服务。GUI 内嵌服务固定为 loopback `read_only`，不设置 Bearer token，也不提供无认证写访问；需要写入或其他安全选项时仍使用上述 CLI 参数。配置 schema 6 只保存 `mcp_enabled` 和 `mcp_port`，不保存 token，旧配置默认停用。
 
 `McpHttpService` 由桌面 services 而不是设置页持有，与 GUI 使用同一个 `AppContext` 和 `TaskManager`，因此内嵌客户端能看到 GUI 启动的任务及通知。启停协调串行执行，端口变更先停止旧服务；`HttpServerHandle` 支持请求关闭并等待退出。端口为 0、端口被占用或其他启动失败只写入卡片错误状态，不阻止 GUI 启动，期望的开关与端口仍会保存以便下次重试。CLI 启动不会额外开启 GUI 内嵌服务。
+
+### GUI 外部变更刷新
+
+窗口重新激活时，GUI 会重新扫描实例，并重新读取配置中的账户、服务器收藏和选中版本；打开实例详情且没有内容操作进行中时也会重新扫描本地内容。这覆盖外部 MCP 进程造成的文件和配置变化，不需要常驻文件监听或定时轮询。
+
+刷新只合并当前 MCP 能修改的字段，不替换 MCP 端口输入、账户编辑文本、外观或其他本地设置，也不会把刷新后的内存状态自动保存回文件。配置读取失败时保留当前内存数据并显示警告。独立 stdio 进程仍不共享内存任务状态；只有 GUI 内嵌服务共享上述 TaskManager。
 
 ## 查询与任务工具
 
@@ -259,8 +265,7 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. GUI 外部变更刷新。
-2. 服务器和皮肤接口。
-3. 更完整的内容更新工作流。
+1. 服务器和皮肤接口。
+2. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。
