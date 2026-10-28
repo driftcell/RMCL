@@ -652,6 +652,8 @@ pub struct CreateInstancePlan {
     pub loader: Option<CreateLoaderPlan>,
     pub copy_content_from: Option<String>,
     pub platform: CreatePlatformPlan,
+    pub checks: Vec<PreflightCheck>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
@@ -860,6 +862,73 @@ impl From<&ContentInstallPreflight> for ContentInstallPreflightDto {
 pub enum ContentInstallResult {
     Preflight(Box<ContentInstallPreflightDto>),
     Task(TaskStarted),
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct MinecraftVersionSummary {
+    pub id: String,
+    pub version_type: Option<String>,
+    pub url: String,
+    pub sha1: Option<String>,
+    pub time: Option<String>,
+    pub release_time: Option<String>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct MinecraftVersionList {
+    pub latest_release: Option<String>,
+    pub latest_snapshot: Option<String>,
+    pub items: Vec<MinecraftVersionSummary>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct LoaderVersionInfo {
+    pub version: String,
+    pub installer_version: String,
+    pub stable: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct LoaderVersionList {
+    pub kind: String,
+    pub game_version: String,
+    pub items: Vec<LoaderVersionInfo>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, rmcp::schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PreflightCheckStatus {
+    Passed,
+    Warning,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct PreflightCheck {
+    pub name: String,
+    pub status: PreflightCheckStatus,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct InstanceDeletePlan {
+    pub dry_run: bool,
+    pub instance_id: String,
+    pub version_directory: String,
+    pub deletes_isolated_content: bool,
+    pub preserves_shared_files: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct InstanceDelete {
+    pub deleted: bool,
+    pub instance_id: String,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum InstanceDeleteResult {
+    Plan(InstanceDeletePlan),
+    Deleted(InstanceDelete),
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ pub enum McpServerError {
 pub enum ErrorCode {
     InvalidInput,
     NotFound,
+    AlreadyExists,
     RevisionConflict,
     TaskAlreadyRunning,
     RepositoryBusy,
@@ -76,6 +77,13 @@ pub fn invalid_input(message: impl Into<String>) -> ErrorData {
 
 pub fn not_found(message: impl Into<String>) -> ErrorData {
     invalid_with_details(message, ErrorDetails::new(ErrorCode::NotFound, false))
+}
+
+pub fn already_exists(path: impl Display) -> ErrorData {
+    let path = path.to_string();
+    let mut details = ErrorDetails::new(ErrorCode::AlreadyExists, false);
+    details.path = Some(path.clone());
+    invalid_with_details(format!("target already exists: {path}"), details)
 }
 
 pub fn revision_conflict(expected: &str, actual: &str) -> ErrorData {

@@ -9,14 +9,16 @@ use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
     CreateInstanceRequest, GameLaunchRequest, InstalledVersion, LoaderKind, LoaderSelection,
     RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, TaskId,
-    VanillaInstallRequest, VersionSource, delete_instance_content_with_guard,
-    discover_installed_versions, import_instance_content_with_guard,
-    migrate_instance_to_isolated_with_guard, preflight_content_install, rename_instance_with_guard,
-    scan_installed_mods, set_instance_content_enabled_with_guard, set_instance_java_with_guard,
+    VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
+    delete_instance_content_with_guard, discover_installed_versions,
+    import_instance_content_with_guard, migrate_instance_to_isolated_with_guard,
+    preflight_content_install, rename_instance_with_guard, scan_installed_mods,
+    set_instance_content_enabled_with_guard, set_instance_java_with_guard,
     set_instance_launch_settings_with_guard, try_lock_repository,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::ServerAddress;
+use rmcl_instance::VersionId;
 use rmcl_launch::LaunchAccount;
 use rmcl_store::StoredAccountKind;
 use rmcp::{
@@ -32,14 +34,16 @@ use uuid::Uuid;
 use crate::{
     access::AccessLevel,
     error::{
-        app_error, conflict, internal_error, invalid_input, not_found, permission_denied,
-        revision_conflict,
+        already_exists, app_error, conflict, internal_error, invalid_input, not_found,
+        permission_denied, revision_conflict,
     },
     schema::{
         Capabilities, ContentDelete, ContentInstallResult, ContentList, ContentWrite,
         CreateInstancePlan, CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan,
-        InstanceList, InstanceSummary, JavaFailure, JavaList, LogPage, PathSummary,
-        PlatformSummary, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
+        InstanceDelete, InstanceDeletePlan, InstanceDeleteResult, InstanceList, InstanceSummary,
+        JavaFailure, JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
+        MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
+        PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
         RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, content_entry,
         instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
     },
@@ -107,6 +111,11 @@ struct CreateInstanceParams {
     idempotency_key: Option<String>,
     /// Return the create plan without writing files or starting a task.
     dry_run: Option<bool>,
+}
+
+struct CreatePreflight {
+    checks: Vec<PreflightCheck>,
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -228,6 +237,36 @@ struct ContentVersionsParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct VersionListParams {
+    /// Optional case-insensitive substring filter.
+    query: Option<String>,
+    /// Optional exact Minecraft version type, such as release or snapshot.
+    version_type: Option<String>,
+    /// Maximum results, from 1 to 200; defaults to 50.
+    limit: Option<usize>,
+    /// Refresh the remote manifest instead of using the cache.
+    refresh: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct LoaderVersionsParams {
+    /// Loader family: fabric, quilt, forge, or neoforge.
+    kind: String,
+    /// Minecraft version used to select compatible loader versions.
+    game_version: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct DeleteInstanceParams {
+    /// Stable instance directory ID.
+    instance_id: String,
+    /// Expected revision returned by the previous read; required for deletion.
+    expected_revision: String,
+    /// Return the deletion scope without removing files.
+    dry_run: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ContentInstallParams {
     /// Stable instance directory ID.
     instance_id: String,
@@ -288,6 +327,9 @@ impl McpServer {
                 "instances_update",
                 "instances_repair",
                 "instances_launch",
+                "instances_delete",
+                "versions_list",
+                "loaders_list",
                 "content_list",
                 "content_import",
                 "content_set_enabled",
@@ -342,6 +384,94 @@ impl McpServer {
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
         structured(instance_summary(&instance)?)
+    }
+
+    #[tool(
+        description = "List Minecraft versions from the official catalog with optional filtering",
+        output_schema = schema_for_type::<MinecraftVersionList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn versions_list(
+        &self,
+        Parameters(params): Parameters<VersionListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let manifest = self
+            .context
+            .catalog
+            .manifest(
+                params.refresh.unwrap_or(false),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(app_error)?;
+        let query = params.query.map(|query| query.to_lowercase());
+        let items = manifest
+            .versions
+            .iter()
+            .filter(|version| {
+                query
+                    .as_ref()
+                    .is_none_or(|query| version.id.to_lowercase().contains(query))
+                    && params
+                        .version_type
+                        .as_ref()
+                        .is_none_or(|kind| version.version_type.as_ref() == Some(kind))
+            })
+            .take(params.limit.unwrap_or(50).clamp(1, 200))
+            .map(|version| MinecraftVersionSummary {
+                id: version.id.clone(),
+                version_type: version.version_type.clone(),
+                url: version.url.clone(),
+                sha1: version.sha1.clone(),
+                time: version.time.clone(),
+                release_time: version.release_time.clone(),
+            })
+            .collect();
+        structured(MinecraftVersionList {
+            latest_release: manifest
+                .latest
+                .as_ref()
+                .and_then(|latest| latest.release.clone()),
+            latest_snapshot: manifest
+                .latest
+                .as_ref()
+                .and_then(|latest| latest.snapshot.clone()),
+            items,
+        })
+    }
+
+    #[tool(
+        description = "List compatible loader versions for a Minecraft version",
+        output_schema = schema_for_type::<LoaderVersionList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn loaders_list(
+        &self,
+        Parameters(params): Parameters<LoaderVersionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let kind = parse_loader_kind(&params.kind)?;
+        let versions = self
+            .context
+            .loaders
+            .versions(
+                kind,
+                &params.game_version,
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(app_error)?;
+        structured(LoaderVersionList {
+            kind: kind.as_str().to_owned(),
+            game_version: params.game_version,
+            items: versions
+                .iter()
+                .map(|version| LoaderVersionInfo {
+                    version: version.version.clone(),
+                    installer_version: version.installer_version.clone(),
+                    stable: version.stable,
+                })
+                .collect(),
+        })
     }
 
     #[tool(
@@ -444,6 +574,100 @@ impl McpServer {
         structured(log_page(&logs, params.cursor, params.limit)?)
     }
 
+    async fn prepare_create_instance(
+        &self,
+        request: &CreateInstanceRequest,
+    ) -> Result<CreatePreflight, McpError> {
+        let id = VersionId::new(&request.instance_id)
+            .map_err(|error| invalid_input(error.to_string()))?;
+        let version_dir = self
+            .context
+            .minecraft_root
+            .join("versions")
+            .join(id.as_str());
+        match version_dir.try_exists() {
+            Ok(true) => return Err(already_exists(version_dir.display())),
+            Ok(false) => {}
+            Err(error) => return Err(internal_error(error)),
+        }
+        let mut checks = vec![PreflightCheck {
+            name: "instance_id".to_owned(),
+            status: PreflightCheckStatus::Passed,
+            message: format!("instance ID `{}` is valid and available", id.as_str()),
+        }];
+        let manifest = self
+            .context
+            .catalog
+            .manifest(false, tokio_util::sync::CancellationToken::new())
+            .await
+            .map_err(app_error)?;
+        if manifest.find(&request.base_version_id).is_none() {
+            return Err(not_found(format!(
+                "Minecraft version `{}` was not found in the catalog",
+                request.base_version_id
+            )));
+        }
+        checks.push(PreflightCheck {
+            name: "base_version".to_owned(),
+            status: PreflightCheckStatus::Passed,
+            message: format!("Minecraft {} is available", request.base_version_id),
+        });
+        if let Some(source) = &request.copy_content_from {
+            self.instance(source).await?;
+            checks.push(PreflightCheck {
+                name: "copy_content_from".to_owned(),
+                status: PreflightCheckStatus::Passed,
+                message: format!("content source instance `{source}` exists"),
+            });
+        }
+        let mut warnings = Vec::new();
+        if let Some(loader) = &request.loader {
+            let versions = self
+                .context
+                .loaders
+                .versions(
+                    loader.kind,
+                    &request.base_version_id,
+                    &tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+                .map_err(app_error)?;
+            let Some(selected) = versions.iter().find(|candidate| {
+                candidate.version == loader.version
+                    && candidate.installer_version == loader.installer_version
+            }) else {
+                return Err(not_found(format!(
+                    "loader {} {} was not found for Minecraft {}",
+                    loader.kind.as_str(),
+                    loader.version,
+                    request.base_version_id
+                )));
+            };
+            checks.push(PreflightCheck {
+                name: "loader".to_owned(),
+                status: if selected.stable {
+                    PreflightCheckStatus::Passed
+                } else {
+                    PreflightCheckStatus::Warning
+                },
+                message: format!(
+                    "{} {} is available for Minecraft {}",
+                    loader.kind.as_str(),
+                    loader.version,
+                    request.base_version_id
+                ),
+            });
+            if !selected.stable {
+                warnings.push(format!(
+                    "{} {} is not marked as stable",
+                    loader.kind.as_str(),
+                    loader.version
+                ));
+            }
+        }
+        Ok(CreatePreflight { checks, warnings })
+    }
+
     #[tool(
         description = "Create a Vanilla or mod-loader instance and return its install task",
         output_schema = schema_for_type::<CreateInstanceResult>(),
@@ -479,6 +703,7 @@ impl McpServer {
             loader,
             copy_content_from: params.copy_content_from,
         };
+        let preflight = self.prepare_create_instance(&request).await?;
         if params.dry_run == Some(true) {
             return structured(CreateInstanceResult::Plan(Box::new(CreateInstancePlan {
                 dry_run: true,
@@ -495,6 +720,8 @@ impl McpServer {
                     os: request.platform.os.native_directory_name().to_owned(),
                     architecture: request.platform.arch.as_str().to_owned(),
                 },
+                checks: preflight.checks,
+                warnings: preflight.warnings,
             })));
         }
         let (task, replay) = self
@@ -599,6 +826,41 @@ impl McpServer {
             instance_id: params.instance_id,
         }))
         .await
+    }
+
+    #[tool(
+        description = "Delete an installed instance after checking its expected revision",
+        output_schema = schema_for_type::<InstanceDeleteResult>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
+    async fn instances_delete(
+        &self,
+        Parameters(params): Parameters<DeleteInstanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("instances_delete")?;
+        let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
+        self.expect_revision(&instance, Some(&params.expected_revision))?;
+        if params.dry_run == Some(true) {
+            return structured(InstanceDeleteResult::Plan(InstanceDeletePlan {
+                dry_run: true,
+                instance_id: instance.id.as_str().to_owned(),
+                version_directory: instance.version_dir.display().to_string(),
+                deletes_isolated_content: instance.is_isolated(),
+                preserves_shared_files: true,
+            }));
+        }
+        delete_installed_version_with_guard(
+            &self.context.minecraft_root,
+            &params.instance_id,
+            &repository_guard,
+        )
+        .await
+        .map_err(app_error)?;
+        structured(InstanceDeleteResult::Deleted(InstanceDelete {
+            deleted: true,
+            instance_id: params.instance_id,
+        }))
     }
 
     #[tool(
