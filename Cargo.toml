@@ -20,7 +20,8 @@ default-members = ["apps/rmcl"]
 resolver = "3"
 
 [workspace.package]
-version = "0.8.1"
+# Internal crates are unpublished modules; only apps/rmcl carries the app version.
+version = "0.1.0"
 edition = "2024"
 license = "MIT"
 

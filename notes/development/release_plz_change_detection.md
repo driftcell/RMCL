@@ -68,3 +68,24 @@ release-plz update --manifest-path Cargo.toml --allow-dirty
 - 其他没有相关提交的 crate 不会被单独发布
 
 实际 release PR 和 tag 仍需在配置修复合并后验证。
+
+## 单应用发布模型（2026-10-28）
+
+`v0.8.1` 之后加入 MCP crate 时，`Prepare release PR` 在 #75、#76 和 #77 的 main push 上失败。代表性日志：[40636799363](https://github.com/driftcell/RMCL/actions/runs/40636799363) 与 [40641770051](https://github.com/driftcell/RMCL/actions/runs/40641770051)。
+
+错误为 `cannot find package "rmcl-mcp-cli" in workspace`，移除独立 bin 后变为 `rmcl-mcp`。原因是所有 package 共用应用标签检测版本，release-plz 试图在 `v0.8.1` 的 workspace 中找到当时尚不存在的 package。PAT 校验和 `Tag merged release` 均正常，没有误发新版本。
+
+曾验证给新 package 临时设置 `git_only = false`、`publish = false` 可以绕过首次基线问题，但每次新增 crate 都要添加并在下一次 tag 后删除 override，而且内部 crate 同步应用版本并不符合 RMCL 的模块边界。
+
+进一步验证发现，不能只把内部 crate 固定为 `0.1.0` 并设置 `release = false`：这样会丢失上文所述提交分析。`release_commits` 又只能用于 workspace，release-plz 0.4.2 拒绝 package 级 override，无法让根包和内部 crate 采用不同的提交过滤规则。
+
+最终决定采用纯 release-plz 的单应用发布模型：
+
+- workspace 继承版本固定为 `0.1.0`，只有 `apps/rmcl` 显式保存应用版本。
+- release-plz 只处理 `rmcl` 的版本、release PR 与 tag，内部 crate `release = false`。
+- 不使用 `changelog_include` 自动罗列内部提交。发布负责人根据相邻应用标签的 Git 差异，在 release PR 中人工整理用户可读的功能、修复和升级说明。
+- 保留 release-plz 原生 `release-pr` / `release` workflow，不增加自定义分支或 changelog 脚本。
+
+曾用 git-cliff 2.14.2 验证仓库级 changelog 能完整覆盖 #75、#76、#77 并保留历史 Highlights，但这会引入额外工具、配置和发布分支编排。项目实际只需要人工润色后的用户发布说明，因此不采用这层自动化。
+
+最终配置又使用 release-plz 0.4.2 在同一 worktree 验证：只计算 `rmcl 0.8.1 -> 0.9.0`，所有内部 crate 均为 `0.1.0`，变更仅限根包 manifest、lockfile 和 changelog，不再出现新 package 基线错误。规范流程见 [分支、PR 与发布](../../docs/engineering/RELEASING.md)。

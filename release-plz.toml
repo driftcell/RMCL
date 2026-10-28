@@ -1,20 +1,16 @@
 [workspace]
-# RMCL is a binary application and is not published to crates.io.
-git_only = true
+# Only the rmcl application is released. Internal crates are unpublished
+# modules with a fixed version and are excluded from release-plz.
+release = false
 release_always = false
 release_commits = "^(feat|fix|perf|refactor)"
-# Keep feature releases meaningful during 0.x: 0.4.4 + feat -> 0.5.0,
-# not 0.4.5. Fix-only releases still bump the patch version.
+# Keep feature releases meaningful during 0.x: 0.4.4 + feat -> 0.5.0.
 features_always_increment_minor = true
+git_only = false
+publish = false
 changelog_path = "CHANGELOG.md"
-# NOTE: every workspace package stays release-enabled so release-plz analyzes
-# commits in the library crates. `changelog_include` alone does not add changes
-# of packages excluded with `release = false`.
 changelog_update = false
-# All packages share the application tag for version detection, but only `rmcl`
-# creates the tag; see the package override below.
 git_tag_enable = false
-git_tag_name = "v{{ version }}"
 git_release_enable = false
 semver_check = false
 pr_branch_prefix = "release-plz-"
@@ -35,20 +31,8 @@ commit_parsers = [
 
 [[package]]
 name = "rmcl"
+release = true
+git_only = true
 changelog_update = true
-changelog_include = [
-  "rmcl-app",
-  "rmcl-archive",
-  "rmcl-auth",
-  "rmcl-content",
-  "rmcl-domain",
-  "rmcl-install",
-  "rmcl-instance",
-  "rmcl-java",
-  "rmcl-launch",
-  "rmcl-minecraft",
-  "rmcl-net",
-  "rmcl-platform",
-  "rmcl-store",
-]
 git_tag_enable = true
+git_tag_name = "v{{ version }}"
