@@ -411,7 +411,7 @@ impl LauncherApp {
                                     .when_some(self.update.available.as_ref(), |this, release| {
                                         this.child(
                                             Button::new("settings-update-notes")
-                                                .ghost()
+                                                .link()
                                                 .small()
                                                 .icon(IconName::ExternalLink)
                                                 .label("发布说明")
@@ -483,9 +483,8 @@ impl LauncherApp {
                                     .gap_2()
                                     .child(
                                         Button::new("settings-gpui")
-                                            .ghost()
+                                            .link()
                                             .small()
-                                            .cursor_pointer()
                                             .icon(IconName::ExternalLink)
                                             .label("GPUI Kit 文档")
                                             .on_click(|_, _, cx| {
@@ -496,7 +495,6 @@ impl LauncherApp {
                                         Button::new("settings-folder")
                                             .ghost()
                                             .small()
-                                            .cursor_pointer()
                                             .icon(IconName::FolderOpen)
                                             .label("打开游戏目录")
                                             .on_click(cx.listener(|this, _, window, cx| {

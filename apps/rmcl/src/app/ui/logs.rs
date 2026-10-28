@@ -4,22 +4,17 @@ use gpui_kit::{
         ActiveTheme, Disableable, Icon, Sizable, Size, StyledExt,
         button::{Button, ButtonVariants},
         h_flex,
-        progress::Progress,
         scroll::ScrollableElement,
         switch::Switch,
-        tag::Tag,
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
-use rmcl_app::{TaskSnapshot, TaskStatus};
+use rmcl_app::TaskSnapshot;
 use rmcl_launch::LogStream;
 
-use super::super::{
-    LauncherApp, Page, task_current_item, task_kind_label, task_phase_label, task_progress,
-    task_status_label,
-};
+use super::super::{LauncherApp, Page, task_kind_label};
 use super::common::{card, empty_state, page_header};
 use super::layout;
 
@@ -111,19 +106,7 @@ impl LauncherApp {
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.clear_logs(window, cx)),
                             ),
-                    )
-                    .when(running, |this| {
-                        this.child(
-                            Button::new("logs-stop")
-                                .danger()
-                                .small()
-                                .icon(IconName::Square)
-                                .label("停止")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.cancel(window, cx)),
-                                ),
-                        )
-                    }),
+                    ),
                 cx,
             ))
             .child(match self.log_state.snapshot.clone() {
@@ -250,57 +233,12 @@ impl LauncherApp {
     }
 
     fn render_task_summary(&self, snapshot: &TaskSnapshot, cx: &App) -> impl IntoElement {
-        let (value, loading) = task_progress(Some(snapshot));
-        let current = task_current_item(Some(snapshot));
-        let running = matches!(
-            snapshot.status,
-            TaskStatus::Running | TaskStatus::Cancelling
-        );
         card(cx)
-            .child(
-                h_flex()
-                    .w_full()
-                    .justify_between()
-                    .gap_4()
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(status_tag(snapshot.status))
-                            .child(div().text_lg().font_semibold().child(format!(
-                                "{}任务 #{}",
-                                task_kind_label(snapshot.kind),
-                                snapshot.id.get()
-                            )))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(task_phase_label(Some(snapshot))),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(format!("{} 行日志", snapshot.log_lines)),
-                    ),
-            )
-            .when(running || snapshot.progress.is_some(), |this| {
-                this.child(
-                    Progress::new("task-summary-progress")
-                        .value(value)
-                        .loading(loading)
-                        .w_full(),
-                )
-            })
-            .when(!current.is_empty(), |this| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(current),
-                )
-            })
+            .child(div().text_lg().font_semibold().child(format!(
+                "{}任务 #{}",
+                task_kind_label(snapshot.kind),
+                snapshot.id.get()
+            )))
             .when_some(snapshot.error.clone(), |this, error| {
                 this.child(
                     div()
@@ -324,34 +262,5 @@ impl LauncherApp {
                         }),
                 )
             })
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(task_status_label(Some(snapshot))),
-            )
-    }
-}
-
-fn status_tag(status: TaskStatus) -> Tag {
-    match status {
-        TaskStatus::Running | TaskStatus::Cancelling => {
-            Tag::info().child(status_label(status)).small()
-        }
-        TaskStatus::Completed => Tag::success().child(status_label(status)).small(),
-        TaskStatus::Cancelled => Tag::warning().child(status_label(status)).small(),
-        TaskStatus::Failed => Tag::danger().child(status_label(status)).small(),
-        TaskStatus::Exited => Tag::secondary().child(status_label(status)).small(),
-    }
-}
-
-fn status_label(status: TaskStatus) -> &'static str {
-    match status {
-        TaskStatus::Running => "运行中",
-        TaskStatus::Cancelling => "正在停止",
-        TaskStatus::Completed => "安装完成",
-        TaskStatus::Cancelled => "已取消",
-        TaskStatus::Failed => "任务失败",
-        TaskStatus::Exited => "游戏已退出",
     }
 }
