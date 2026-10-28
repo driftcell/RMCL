@@ -572,6 +572,20 @@ impl TaskStarted {
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct TaskSubscription {
+    pub subscription_id: u64,
+    pub task_id: Option<u64>,
+    pub include_logs: bool,
+    pub items: Vec<TaskSnapshot>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct TaskSubscriptionEnded {
+    pub subscription_id: u64,
+    pub unsubscribed: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GameLogStream {
     Stdout,
@@ -592,6 +606,29 @@ pub fn game_log(log: &GameLog) -> GameLogEntry {
         },
         text: log.text.clone(),
     }
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TaskNotification {
+    Snapshot {
+        subscription_id: u64,
+        task: TaskSnapshot,
+    },
+    Log {
+        subscription_id: u64,
+        task_id: u64,
+        line: u64,
+        log: GameLogEntry,
+    },
+    Dismissed {
+        subscription_id: u64,
+        task_id: u64,
+    },
+    Lagged {
+        subscription_id: u64,
+        missed: u64,
+    },
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]

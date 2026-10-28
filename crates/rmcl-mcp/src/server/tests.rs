@@ -15,6 +15,11 @@ use rmcl_app::{
 };
 use rmcl_net::DownloadConfig;
 use rmcl_store::{ConfigStore, LauncherConfig};
+#[cfg(unix)]
+use rmcp::{
+    ClientHandler, ServiceExt,
+    model::{CallToolRequestParams, ClientConfig, CustomNotification, ProtocolVersion},
+};
 use serde_json::{Value, json};
 use sha1::{Digest, Sha1};
 use tempfile::TempDir;
@@ -41,10 +46,16 @@ fn every_tool_declares_an_output_schema() {
         match tool.name.as_ref() {
             "capabilities" | "instances_list" | "instances_get" | "accounts_list"
             | "content_list" | "content_search" | "content_versions" | "versions_list"
-            | "loaders_list" | "java_list" | "tasks_list" | "tasks_get" | "tasks_logs" => {
+            | "loaders_list" | "java_list" | "tasks_list" | "tasks_get" | "tasks_logs"
+            | "tasks_unsubscribe" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
+            }
+            "tasks_subscribe" => {
+                assert_eq!(annotations.read_only_hint, Some(true));
+                assert_eq!(annotations.destructive_hint, Some(false));
+                assert_eq!(annotations.idempotent_hint, Some(false));
             }
             "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
@@ -93,6 +104,51 @@ fn test_context(temporary: &TempDir, modrinth: ModrinthClient) -> Arc<AppContext
         TaskManager::with_content_and_modrinth(installer, content, modrinth.clone(), 32);
     context.modrinth = modrinth;
     Arc::new(context)
+}
+
+#[cfg(unix)]
+fn java_test_context(temporary: &TempDir) -> Arc<AppContext> {
+    let managed = temporary.path().join("managed");
+    let executable = managed.join("bin/java");
+    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    let os = if cfg!(target_os = "macos") {
+        "Mac OS X"
+    } else {
+        "Linux"
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "amd64"
+    };
+    std::fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\nprintf 'java.version = 21.0.7\\nos.name = {os}\\nos.arch = {arch}\\njava.vendor = TestVendor\\n' >&2\n"
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let context = test_context(temporary, ModrinthClient::official().unwrap());
+    let mut owned_context = match Arc::try_unwrap(context) {
+        Ok(context) => context,
+        Err(_) => panic!("test context should have one owner"),
+    };
+    let mut config = JavaServiceConfig::new(temporary.path().join("java"));
+    config.managed_roots.push(managed);
+    config.include_java_home = false;
+    config.include_path = false;
+    config.auto_install = false;
+    let java = JavaService::new(config).unwrap();
+    owned_context.java = java.clone();
+    owned_context.tasks = TaskManager::with_java(
+        VanillaInstaller::official(DownloadConfig::default()).unwrap(),
+        java,
+        32,
+    );
+    Arc::new(owned_context)
 }
 
 fn shutdown_context(context: Arc<AppContext>) {
@@ -743,47 +799,7 @@ fn account_tools_create_select_launch_and_delete_offline_accounts() {
 #[test]
 fn java_ensure_task_uses_a_managed_runtime_and_completes() {
     let temporary = TempDir::new().unwrap();
-    let managed = temporary.path().join("managed");
-    let executable = managed.join("bin/java");
-    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
-    let os = if cfg!(target_os = "macos") {
-        "Mac OS X"
-    } else {
-        "Linux"
-    };
-    let arch = if cfg!(target_arch = "aarch64") {
-        "aarch64"
-    } else {
-        "amd64"
-    };
-    std::fs::write(
-        &executable,
-        format!(
-            "#!/bin/sh\nprintf 'java.version = 21.0.7\\nos.name = {os}\\nos.arch = {arch}\\njava.vendor = TestVendor\\n' >&2\n"
-        ),
-    )
-    .unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-    let context = test_context(&temporary, ModrinthClient::official().unwrap());
-    let mut owned_context = match Arc::try_unwrap(context) {
-        Ok(context) => context,
-        Err(_) => panic!("test context should have one owner"),
-    };
-    let mut config = JavaServiceConfig::new(temporary.path().join("java"));
-    config.managed_roots.push(managed);
-    config.include_java_home = false;
-    config.include_path = false;
-    config.auto_install = false;
-    let java = JavaService::new(config).unwrap();
-    owned_context.java = java.clone();
-    owned_context.tasks = TaskManager::with_java(
-        VanillaInstaller::official(DownloadConfig::default()).unwrap(),
-        java,
-        32,
-    );
-    let context = Arc::new(owned_context);
+    let context = java_test_context(&temporary);
     let server = McpServer::new(context.clone());
     context.runtime.block_on(async {
         let started = structured(
@@ -820,6 +836,168 @@ fn java_ensure_task_uses_a_managed_runtime_and_completes() {
         .unwrap();
     });
     drop(server);
+    shutdown_context(context);
+}
+
+#[cfg(unix)]
+#[derive(Clone, Default)]
+struct NotificationCollector {
+    items: Arc<Mutex<Vec<CustomNotification>>>,
+}
+
+#[cfg(unix)]
+impl ClientHandler for NotificationCollector {
+    fn get_info(&self) -> ClientConfig {
+        ClientConfig::default().with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE)
+    }
+
+    async fn on_custom_notification(
+        &self,
+        notification: CustomNotification,
+        _context: rmcp::service::NotificationContext<rmcp::RoleClient>,
+    ) {
+        if notification.method == crate::notifications::TASK_NOTIFICATION_METHOD {
+            self.items.lock().await.push(notification);
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_client_task(client: &rmcp::Peer<rmcp::RoleClient>, task_id: u64) -> Value {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let task =
+                structured(
+                    client
+                        .call_tool(CallToolRequestParams::new("tasks_get").with_arguments(
+                            json!({"task_id": task_id}).as_object().unwrap().clone(),
+                        ))
+                        .await
+                        .unwrap(),
+                );
+            match task["status"].as_str().unwrap() {
+                "completed" => return task,
+                "failed" | "cancelled" => panic!("task failed: {task}"),
+                _ => tokio::time::sleep(Duration::from_millis(20)).await,
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[cfg(unix)]
+async fn wait_for_terminal_notification(collector: &NotificationCollector, task_id: u64) -> Value {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let notification = collector
+                .items
+                .lock()
+                .await
+                .iter()
+                .find_map(|notification| {
+                    notification
+                        .params
+                        .as_ref()
+                        .filter(|params| {
+                            params["type"] == "snapshot"
+                                && params["task"]["id"] == task_id
+                                && params["task"]["status"] == "completed"
+                        })
+                        .cloned()
+                });
+            if let Some(params) = notification {
+                return params;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[cfg(unix)]
+async fn start_java_via_client(client: &rmcp::Peer<rmcp::RoleClient>) -> u64 {
+    let started = structured(
+        client
+            .call_tool(
+                CallToolRequestParams::new("java_ensure")
+                    .with_arguments(json!({"major_version": 21}).as_object().unwrap().clone()),
+            )
+            .await
+            .unwrap(),
+    );
+    started["task_id"].as_u64().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn task_notifications_require_subscription_and_stop_after_unsubscribe() {
+    let temporary = TempDir::new().unwrap();
+    let context = java_test_context(&temporary);
+    context.runtime.block_on(async {
+        let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+        let server = McpServer::new(context.clone());
+        let server_handle = tokio::spawn(async move {
+            let running = server.serve(server_transport).await.unwrap();
+            running.waiting().await.unwrap();
+        });
+        let collector = NotificationCollector::default();
+        let client = collector.clone().serve(client_transport).await.unwrap();
+
+        let first = start_java_via_client(&client).await;
+        wait_for_client_task(&client, first).await;
+        assert!(collector.items.lock().await.is_empty());
+
+        let subscription = structured(
+            client
+                .call_tool(
+                    CallToolRequestParams::new("tasks_subscribe").with_arguments(
+                        json!({"include_logs": false}).as_object().unwrap().clone(),
+                    ),
+                )
+                .await
+                .unwrap(),
+        );
+        let subscription_id = subscription["subscription_id"].as_u64().unwrap();
+        assert_eq!(subscription["items"].as_array().unwrap().len(), 1);
+        assert_eq!(subscription["items"][0]["id"], first);
+        assert_eq!(subscription["include_logs"], false);
+
+        let second = start_java_via_client(&client).await;
+        let notification = wait_for_terminal_notification(&collector, second).await;
+        assert_eq!(notification["subscription_id"], subscription_id);
+        assert_eq!(notification["task"]["kind"], "java_install");
+        assert!(collector.items.lock().await.iter().all(|notification| {
+            notification
+                .params
+                .as_ref()
+                .is_some_and(|params| params["type"] == "snapshot")
+        }));
+
+        let stopped = structured(
+            client
+                .call_tool(
+                    CallToolRequestParams::new("tasks_unsubscribe").with_arguments(
+                        json!({"subscription_id": subscription_id})
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_eq!(stopped["unsubscribed"], true);
+        let notification_count = collector.items.lock().await.len();
+        let third = start_java_via_client(&client).await;
+        wait_for_client_task(&client, third).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(collector.items.lock().await.len(), notification_count);
+
+        client.cancel().await.unwrap();
+        server_handle.await.unwrap();
+    });
     shutdown_context(context);
 }
 

@@ -22,7 +22,7 @@ use rmcl_instance::VersionId;
 use rmcl_launch::LaunchAccount;
 use rmcl_store::{LauncherConfig, StoredAccountKind};
 use rmcp::{
-    ErrorData as McpError, ServerHandler,
+    ErrorData as McpError, Peer, RoleServer, ServerHandler,
     handler::server::{tool::schema_for_type, wrapper::Parameters},
     model::CallToolResult,
     schemars, tool, tool_handler, tool_router,
@@ -37,6 +37,7 @@ use crate::{
         already_exists, app_error, conflict, internal_error, invalid_input, not_found,
         permission_denied, revision_conflict,
     },
+    notifications::TaskSubscriptions,
     schema::{
         AccountDelete, AccountKind, AccountList, AccountSummary, AccountWrite, Capabilities,
         ContentDelete, ContentInstallResult, ContentList, ContentWrite, CreateInstancePlan,
@@ -45,8 +46,9 @@ use crate::{
         JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
         MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
         PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
-        RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, content_entry,
-        instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
+        RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, TaskSubscription,
+        TaskSubscriptionEnded, content_entry, instance_revision, instance_summary, java_runtime,
+        log_page, task_snapshot,
     },
 };
 
@@ -54,6 +56,7 @@ use crate::{
 pub struct McpServer {
     context: Arc<AppContext>,
     access: AccessLevel,
+    subscriptions: Arc<TaskSubscriptions>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -102,6 +105,20 @@ struct TaskLogsParams {
     cursor: Option<usize>,
     /// Maximum lines per page, from 1 to 1000; defaults to 200.
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct TaskSubscribeParams {
+    /// Only receive events for this task; omit to subscribe to all tasks.
+    task_id: Option<u64>,
+    /// Also forward redacted game logs; defaults to false.
+    include_logs: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct TaskSubscriptionParams {
+    /// Subscription ID returned by tasks_subscribe.
+    subscription_id: u64,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -326,7 +343,11 @@ impl McpServer {
     }
 
     pub fn with_access(context: Arc<AppContext>, access: AccessLevel) -> Self {
-        Self { context, access }
+        Self {
+            context,
+            access,
+            subscriptions: Arc::new(TaskSubscriptions::default()),
+        }
     }
 
     fn require_write(&self, operation: &str) -> Result<(), McpError> {
@@ -375,6 +396,8 @@ impl McpServer {
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
+                "tasks_subscribe",
+                "tasks_unsubscribe",
                 "tasks_cancel",
             ]
             .map(str::to_owned)
@@ -782,6 +805,44 @@ impl McpServer {
             .await
             .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
         structured(log_page(&logs, params.cursor, params.limit)?)
+    }
+
+    #[tool(
+        description = "Subscribe this MCP session to bounded task snapshot and optional log notifications",
+        output_schema = schema_for_type::<TaskSubscription>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = false)
+    )]
+    async fn tasks_subscribe(
+        &self,
+        Parameters(params): Parameters<TaskSubscribeParams>,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        structured(
+            self.subscriptions
+                .subscribe(
+                    &self.context.tasks,
+                    peer,
+                    params.task_id,
+                    params.include_logs.unwrap_or(false),
+                )
+                .await?,
+        )
+    }
+
+    #[tool(
+        description = "Stop one task notification subscription owned by this MCP session",
+        output_schema = schema_for_type::<TaskSubscriptionEnded>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn tasks_unsubscribe(
+        &self,
+        Parameters(params): Parameters<TaskSubscriptionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        structured(
+            self.subscriptions
+                .unsubscribe(params.subscription_id)
+                .await?,
+        )
     }
 
     async fn prepare_create_instance(
