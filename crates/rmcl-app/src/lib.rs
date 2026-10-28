@@ -87,8 +87,8 @@ pub use skin_source::{
 };
 pub use skins::{SkinCache, SkinError, SkinTexture};
 pub use task::{
-    TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
-    TaskSubject,
+    JavaEnsureRequest, TaskEvent, TaskId, TaskKind, TaskManager, TaskPhase, TaskProgress,
+    TaskSnapshot, TaskStatus, TaskSubject,
 };
 pub use update::{
     UpdateAsset, UpdateClient, UpdateError, UpdatePackage, UpdatePlan, UpdateProgress,

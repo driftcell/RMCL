@@ -197,6 +197,7 @@ pub enum TaskKind {
     InstanceCreate,
     ContentInstall,
     GameLaunch,
+    JavaInstall,
 }
 
 impl From<AppTaskKind> for TaskKind {
@@ -206,6 +207,7 @@ impl From<AppTaskKind> for TaskKind {
             AppTaskKind::InstanceCreate => Self::InstanceCreate,
             AppTaskKind::ContentInstall => Self::ContentInstall,
             AppTaskKind::GameLaunch => Self::GameLaunch,
+            AppTaskKind::JavaInstall => Self::JavaInstall,
         }
     }
 }
@@ -437,6 +439,10 @@ pub enum TaskSubject {
         id: String,
         name: String,
     },
+    Java {
+        major_version: Option<u32>,
+        component: Option<String>,
+    },
 }
 
 impl From<&AppTaskSubject> for TaskSubject {
@@ -455,6 +461,13 @@ impl From<&AppTaskSubject> for TaskSubject {
             AppTaskSubject::Instance { id, name } => Self::Instance {
                 id: id.clone(),
                 name: name.clone(),
+            },
+            AppTaskSubject::Java {
+                major_version,
+                component,
+            } => Self::Java {
+                major_version: *major_version,
+                component: component.clone(),
             },
         }
     }
@@ -929,6 +942,41 @@ pub struct InstanceDelete {
 pub enum InstanceDeleteResult {
     Plan(InstanceDeletePlan),
     Deleted(InstanceDelete),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, rmcp::schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountKind {
+    Offline,
+    Microsoft,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct AccountSummary {
+    pub username: String,
+    pub uuid: String,
+    pub kind: AccountKind,
+    pub skin_url: Option<String>,
+    pub selected: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct AccountList {
+    pub items: Vec<AccountSummary>,
+    pub selected_account: Option<String>,
+    pub selected_account_kind: AccountKind,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct AccountWrite {
+    pub account: AccountSummary,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct AccountDelete {
+    pub deleted: bool,
+    pub username: String,
+    pub kind: AccountKind,
 }
 
 #[cfg(test)]

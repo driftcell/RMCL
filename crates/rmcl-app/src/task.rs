@@ -9,6 +9,7 @@ use std::{
 
 use rmcl_content::ContentKind;
 use rmcl_instance::VersionId;
+use rmcl_java::JavaRequirement;
 use rmcl_launch::{GameExit, GameLog};
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -50,6 +51,7 @@ pub enum TaskKind {
     InstanceCreate,
     ContentInstall,
     GameLaunch,
+    JavaInstall,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +117,10 @@ pub enum TaskSubject {
         id: String,
         name: String,
     },
+    Java {
+        major_version: Option<u32>,
+        component: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +135,12 @@ pub struct TaskSnapshot {
     pub exit: Option<GameExit>,
     pub stop_requested: bool,
     pub log_lines: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct JavaEnsureRequest {
+    pub root: PathBuf,
+    pub requirement: JavaRequirement,
 }
 
 #[derive(Debug, Clone)]
@@ -549,6 +561,41 @@ impl TaskManager {
         Ok(id)
     }
 
+    pub async fn start_java_ensure(&self, request: JavaEnsureRequest) -> Result<TaskId, AppError> {
+        let java = self
+            .inner
+            .game
+            .as_ref()
+            .map(GameLauncher::java_service)
+            .ok_or(AppError::JavaNotConfigured)?;
+        let repository_guard = try_lock_repository(&request.root)?;
+        let key = prepare_java_request(&request)?;
+        self.ensure_available(&key).await?;
+        let subject = TaskSubject::Java {
+            major_version: request.requirement.major_version,
+            component: request.requirement.component.clone(),
+        };
+        let (id, cancellation) = self
+            .register(TaskKind::JavaInstall, key, Some(subject))
+            .await?;
+        let (sender, receiver) = mpsc::channel(16);
+        let manager = self.clone();
+        tokio::spawn(async move {
+            manager
+                .run_java_ensure(
+                    id,
+                    java,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                    repository_guard,
+                )
+                .await;
+        });
+        Ok(id)
+    }
+
     async fn ensure_available(&self, key: &InstallKey) -> Result<(), AppError> {
         let registry = self.inner.registry.lock().await;
         if let Some(existing) = registry
@@ -809,6 +856,58 @@ impl TaskManager {
         let (result, ()) = tokio::join!(run, forward);
         self.finish_launch(id, result).await;
         drop(repository_guard);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_java_ensure(
+        self,
+        id: TaskId,
+        java: crate::JavaService,
+        request: JavaEnsureRequest,
+        cancellation: CancellationToken,
+        sender: mpsc::Sender<JavaEvent>,
+        mut receiver: mpsc::Receiver<JavaEvent>,
+        repository_guard: RepositoryWriteGuard,
+    ) {
+        let ensure = Box::pin(java.ensure(&request.requirement, cancellation, Some(sender)));
+        let forward = async {
+            while let Some(event) = receiver.recv().await {
+                let phase = match event {
+                    JavaEvent::Checking => TaskPhase::CheckingJava,
+                    JavaEvent::Installing => TaskPhase::InstallingJava,
+                };
+                self.update_phase(id, phase).await;
+            }
+        };
+        let (result, ()) = tokio::join!(ensure, forward);
+        self.finish_java(id, result).await;
+        drop(repository_guard);
+    }
+
+    async fn finish_java(self, id: TaskId, result: Result<crate::JavaSelection, AppError>) {
+        let snapshot = {
+            let mut registry = self.inner.registry.lock().await;
+            registry.active_versions.retain(|active| active.id != id);
+            let Some(record) = registry.tasks.get_mut(&id) else {
+                return;
+            };
+            match result {
+                Ok(_) => {
+                    record.snapshot.status = TaskStatus::Completed;
+                    record.snapshot.error = None;
+                }
+                Err(AppError::Cancelled) => {
+                    record.snapshot.status = TaskStatus::Cancelled;
+                    record.snapshot.error = None;
+                }
+                Err(error) => {
+                    record.snapshot.status = TaskStatus::Failed;
+                    record.snapshot.error = Some(format_error(&error));
+                }
+            }
+            record.snapshot.clone()
+        };
+        let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
     }
 
     async fn apply_install_event(&self, id: TaskId, event: InstallEvent) {
@@ -1072,6 +1171,27 @@ impl TaskManager {
         };
         let _ = self.inner.events.send(TaskEvent::Snapshot(snapshot));
     }
+}
+
+fn prepare_java_request(request: &JavaEnsureRequest) -> Result<InstallKey, AppError> {
+    if request.root.as_os_str().is_empty() {
+        return Err(AppError::InvalidRequest(
+            "Java store root cannot be empty".to_owned(),
+        ));
+    }
+    Ok(InstallKey {
+        root: request.root.clone(),
+        version_id: format!(
+            "java-{}-{}-{}",
+            request
+                .requirement
+                .major_version
+                .map(|major| major.to_string())
+                .unwrap_or_else(|| "any".to_owned()),
+            request.requirement.operating_system.as_str(),
+            request.requirement.architecture.as_str()
+        ),
+    })
 }
 
 fn prepare_request(request: &mut VanillaInstallRequest) -> Result<InstallKey, AppError> {

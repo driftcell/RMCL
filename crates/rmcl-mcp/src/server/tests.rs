@@ -10,8 +10,8 @@ use std::{
 
 use axum::{Json, Router, routing::get};
 use rmcl_app::{
-    ContentInstaller, LoaderCatalog, LoaderCatalogConfig, ModrinthClient, ModrinthConfig,
-    TaskManager, VanillaInstaller, VanillaSources, VersionCatalog,
+    ContentInstaller, JavaService, JavaServiceConfig, LoaderCatalog, LoaderCatalogConfig,
+    ModrinthClient, ModrinthConfig, TaskManager, VanillaInstaller, VanillaSources, VersionCatalog,
 };
 use rmcl_net::DownloadConfig;
 use rmcl_store::{ConfigStore, LauncherConfig};
@@ -39,14 +39,14 @@ fn every_tool_declares_an_output_schema() {
         );
         let annotations = tool.annotations.as_ref().unwrap();
         match tool.name.as_ref() {
-            "capabilities" | "instances_list" | "instances_get" | "content_list"
-            | "content_search" | "content_versions" | "versions_list" | "loaders_list"
-            | "java_list" | "tasks_list" | "tasks_get" | "tasks_logs" => {
+            "capabilities" | "instances_list" | "instances_get" | "accounts_list"
+            | "content_list" | "content_search" | "content_versions" | "versions_list"
+            | "loaders_list" | "java_list" | "tasks_list" | "tasks_get" | "tasks_logs" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
             }
-            "content_delete" | "tasks_cancel" | "instances_delete" => {
+            "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(true));
             }
@@ -658,6 +658,168 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
     });
     drop(server);
     catalog_handle.abort();
+    shutdown_context(context);
+}
+
+#[test]
+fn account_tools_create_select_launch_and_delete_offline_accounts() {
+    let temporary = TempDir::new().unwrap();
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let server = McpServer::new(context.clone());
+    context.runtime.block_on(async {
+        let alex = structured(
+            server
+                .accounts_create_offline(Parameters(CreateOfflineAccountParams {
+                    username: "Alex".to_owned(),
+                    uuid: Some("00000000-0000-0000-0000-000000000001".to_owned()),
+                    make_current: Some(true),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(alex["account"]["selected"], true);
+        let steve = structured(
+            server
+                .accounts_create_offline(Parameters(CreateOfflineAccountParams {
+                    username: "Steve".to_owned(),
+                    uuid: None,
+                    make_current: Some(false),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(steve["account"]["selected"], false);
+        let selected = structured(
+            server
+                .accounts_select(Parameters(AccountSelectorParams {
+                    username: "Steve".to_owned(),
+                    kind: "offline".to_owned(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(selected["account"]["selected"], true);
+
+        let launch = server
+            .launch_account(Some(&AccountSelectorParams {
+                username: "Alex".to_owned(),
+                kind: "offline".to_owned(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(launch.username, "Alex");
+        let accounts = structured(server.accounts_list().await.unwrap());
+        assert_eq!(accounts["selected_account"], "Steve");
+        assert_eq!(accounts["selected_account_kind"], "offline");
+        assert_eq!(accounts["items"].as_array().unwrap().len(), 2);
+
+        let deleted = structured(
+            server
+                .accounts_delete(Parameters(AccountSelectorParams {
+                    username: "Steve".to_owned(),
+                    kind: "offline".to_owned(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(deleted["deleted"], true);
+        let accounts = structured(server.accounts_list().await.unwrap());
+        assert_eq!(accounts["selected_account"], "Alex");
+        assert_eq!(accounts["items"].as_array().unwrap().len(), 1);
+        let missing = server
+            .accounts_delete(Parameters(AccountSelectorParams {
+                username: "Steve".to_owned(),
+                kind: "offline".to_owned(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
+    });
+    drop(server);
+    shutdown_context(context);
+}
+
+#[cfg(unix)]
+#[test]
+fn java_ensure_task_uses_a_managed_runtime_and_completes() {
+    let temporary = TempDir::new().unwrap();
+    let managed = temporary.path().join("managed");
+    let executable = managed.join("bin/java");
+    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    let os = if cfg!(target_os = "macos") {
+        "Mac OS X"
+    } else {
+        "Linux"
+    };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "amd64"
+    };
+    std::fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\nprintf 'java.version = 21.0.7\\nos.name = {os}\\nos.arch = {arch}\\njava.vendor = TestVendor\\n' >&2\n"
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let mut owned_context = match Arc::try_unwrap(context) {
+        Ok(context) => context,
+        Err(_) => panic!("test context should have one owner"),
+    };
+    let mut config = JavaServiceConfig::new(temporary.path().join("java"));
+    config.managed_roots.push(managed);
+    config.include_java_home = false;
+    config.include_path = false;
+    config.auto_install = false;
+    let java = JavaService::new(config).unwrap();
+    owned_context.java = java.clone();
+    owned_context.tasks = TaskManager::with_java(
+        VanillaInstaller::official(DownloadConfig::default()).unwrap(),
+        java,
+        32,
+    );
+    let context = Arc::new(owned_context);
+    let server = McpServer::new(context.clone());
+    context.runtime.block_on(async {
+        let started = structured(
+            server
+                .java_ensure(Parameters(JavaEnsureParams {
+                    major_version: Some(21),
+                    component: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        let task_id = started["task_id"].as_u64().unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let task = structured(
+                    server
+                        .tasks_get(Parameters(TaskIdParams { task_id }))
+                        .await
+                        .unwrap(),
+                );
+                match task["status"].as_str().unwrap() {
+                    "completed" => {
+                        assert_eq!(task["kind"], "java_install");
+                        assert_eq!(task["subject"]["type"], "java");
+                        assert_eq!(task["subject"]["major_version"], 21);
+                        break;
+                    }
+                    "failed" | "cancelled" => panic!("Java task failed: {task}"),
+                    _ => tokio::time::sleep(Duration::from_millis(20)).await,
+                }
+            }
+        })
+        .await
+        .unwrap();
+    });
+    drop(server);
     shutdown_context(context);
 }
 

@@ -62,6 +62,10 @@ pub struct GameLauncher {
 }
 
 impl GameLauncher {
+    pub(crate) fn java_service(&self) -> JavaService {
+        self.java.clone()
+    }
+
     pub fn new(installer: VanillaInstaller, java: JavaService) -> Self {
         Self { installer, java }
     }

@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页和 GUI 外部变更刷新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页、GUI 外部变更刷新和任务通知尚未实现
 
 日期：2026-10-28
 
@@ -57,10 +57,12 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `instances_get` | 按稳定目录 ID 查询一个实例 |
 | `versions_list` | 官方 Minecraft 目录，支持刷新、ID 子串、类型过滤和数量上限 |
 | `loaders_list` | 按 Minecraft 版本查询兼容的 Fabric/Quilt/Forge/NeoForge 版本 |
+| `accounts_list` | 离线与 Microsoft 账户元数据，不包含令牌或凭据 |
+| `java_list` | managed、JAVA_HOME、PATH runtime 与逐候选探测失败 |
+| `java_ensure` | 确保兼容 Java runtime，返回安装/复用任务 |
 | `content_list` | 实例的 Mod、资源包和光影及扫描警告，可按 kind 过滤 |
 | `content_search` | 按 kind、查询词、游戏版本、loader、排序和分页搜索 Modrinth |
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
-| `java_list` | managed、JAVA_HOME、PATH runtime 与逐候选探测失败 |
 | `tasks_list` | 当前与保留的最近任务快照 |
 | `tasks_get` | 按 `TaskId` 查询任务快照 |
 | `tasks_logs` | 按 cursor 分页读取脱敏日志，单页默认 200、最多 1000 行 |
@@ -122,6 +124,18 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 `instances_create` 的 `dry_run` 与实际创建共用预检：校验实例 ID 和目标目录，解析官方基础版本，检查复制源，并按 Minecraft 版本精确匹配 loader 与 installer 版本。响应包含逐项 checks 和非稳定版本 warnings；不会创建目录或任务。`instances_delete` 强制要求匹配的 revision，实际删除只移除 `versions/<id>`，保留共享 libraries 和 assets。
 
+## 账户与 Java
+
+| 工具 | 语义 |
+| --- | --- |
+| `accounts_select` | 选择已有离线或 Microsoft 账户并保存选择 |
+| `accounts_create_offline` | 创建或更新离线账户，可选显式 UUID 和设为当前账户 |
+| `accounts_delete` | 删除离线或 Microsoft 账户；Microsoft 先删除系统凭据再更新配置 |
+
+`instances_launch` 额外接受可选 `account { username, kind }`，只影响本次启动，不修改保存的当前账户。Microsoft 登录仍使用现有设备代码流程，MCP 不把 refresh token、access token 或其他凭据放入响应。
+
+`java_ensure` 接受可选 `major_version` 和 Mojang `component`，使用当前平台生成 `JavaRequirement`，返回 `JavaInstall` 任务。任务复用 JavaService 的检测、选择、下载、校验和取消流程，并持有 Java store 自己的 `.rmcl.lock`，直到终态写入后释放。可通过 `tasks_get` 观察阶段，再通过 `java_list` 查看结果。
+
 ## 内容写操作
 
 | 工具 | 语义 |
@@ -137,7 +151,7 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 ## 跨进程写锁
 
-每个 Minecraft 仓库根目录使用一个 `.rmcl.lock` 文件和标准库文件锁。GUI 与 MCP 共享 `rmcl-app` 的锁实现：安装、实例创建、内容安装和游戏任务从注册前持锁到终态写入后，本地内容修改和实例配置修改在整个短操作期间持锁。不同仓库可以使用不同锁文件并行工作。
+每个 Minecraft 仓库根目录使用一个 `.rmcl.lock` 文件和标准库文件锁。GUI 与 MCP 共享 `rmcl-app` 的锁实现：安装、实例创建、内容安装和游戏任务从注册前持锁到终态写入后，本地内容修改和实例配置修改在整个短操作期间持锁。Java ensure 使用 Java store 根目录下的同名锁，避免并发安装 runtime。不同仓库和 Java store 可以使用不同锁文件并行工作。
 
 锁是非等待式获取；另一个进程已经持锁时返回 `repository_busy`，调用方可以稍后重试。进程内活动任务仍优先返回 `task_already_running`，`register` 在锁内再次检查以保留竞态保护。
 
@@ -156,8 +170,8 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 ## 后续阶段
 
-1. 设置页开关、端口和 GUI 外部变更刷新。
-2. 离线账户、服务器和皮肤接口。
+1. 任务 notifications、设置页开关、端口和 GUI 外部变更刷新。
+2. 服务器和皮肤接口。
 3. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。
