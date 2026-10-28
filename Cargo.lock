@@ -5760,19 +5760,26 @@ name = "rmcl-mcp"
 version = "0.8.1"
 dependencies = [
  "axum",
+ "hex",
  "rmcl-app",
  "rmcl-auth",
  "rmcl-domain",
  "rmcl-launch",
+ "rmcl-net",
  "rmcl-store",
  "rmcp",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
+ "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tower",
+ "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]

@@ -1,11 +1,12 @@
 use rmcl_app::{InstalledVersion, JavaRuntime, LocalContent, TaskSnapshot, TaskStatus};
 use rmcl_launch::{GameLog, LogStream};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::error::invalid_input;
 
-pub fn instance_summary(version: &InstalledVersion) -> Value {
-    json!({
+pub fn instance_summary(version: &InstalledVersion) -> Result<Value, rmcp::ErrorData> {
+    Ok(json!({
         "id": version.id.as_str(),
         "name": version.display_name(),
         "minecraft_version": version.minecraft_version.clone(),
@@ -27,7 +28,26 @@ pub fn instance_summary(version: &InstalledVersion) -> Value {
         "manifest_present": version.manifest_present,
         "manifest_error": version.manifest_error.clone(),
         "client_jar_present": version.client_jar_present,
-    })
+        "revision": instance_revision(version)?,
+    }))
+}
+
+pub fn instance_revision(version: &InstalledVersion) -> Result<String, rmcp::ErrorData> {
+    let json_path = version
+        .version_dir
+        .join(format!("{}.json", version.id.as_str()));
+    let manifest_path = version.version_dir.join("rmcl.instance.toml");
+    let mut hasher = Sha256::new();
+    hasher.update(std::fs::read(json_path).map_err(crate::error::internal_error)?);
+    match std::fs::read(manifest_path) {
+        Ok(manifest) => {
+            hasher.update([0]);
+            hasher.update(manifest);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(crate::error::internal_error(error)),
+    }
+    Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
 }
 
 pub fn content_entry(item: &LocalContent) -> Value {
@@ -111,6 +131,36 @@ pub fn log_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instance_revision_covers_version_json_and_manifest() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path().join("minecraft");
+        let version_dir = root.join("versions/example");
+        std::fs::create_dir_all(&version_dir).unwrap();
+        let json_path = version_dir.join("example.json");
+        let manifest_path = version_dir.join("rmcl.instance.toml");
+        std::fs::write(&json_path, br#"{"id":"example","type":"release"}"#).unwrap();
+        let instance = rmcl_app::discover_installed_versions(&root)
+            .unwrap()
+            .remove(0);
+
+        let without_manifest = instance_revision(&instance).unwrap();
+        std::fs::write(&manifest_path, b"name = \"Example\"\n").unwrap();
+        let with_manifest = instance_revision(&instance).unwrap();
+        assert_ne!(without_manifest, with_manifest);
+
+        std::fs::write(&manifest_path, b"name = \"Renamed\"\n").unwrap();
+        let renamed = instance_revision(&instance).unwrap();
+        assert_ne!(with_manifest, renamed);
+
+        std::fs::write(
+            &json_path,
+            br#"{"id":"example","type":"release","releaseTime":"2026-01-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_ne!(renamed, instance_revision(&instance).unwrap());
+    }
 
     #[test]
     fn log_pages_are_bounded_and_report_the_next_cursor() {
