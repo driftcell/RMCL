@@ -2,7 +2,7 @@
 
 状态：index、组件选择、raw 安装与复用已实现
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## 官方索引
 
@@ -66,8 +66,8 @@ Linux ARM64 不映射到 x86_64 的 `linux`；其他未知架构直接报 `Unsup
 4. 校验所有条目路径、重复/冲突和 link 目标，生成 raw 下载请求。
 5. 使用 `rmcl-net` 并发下载并校验 raw SHA-1/size。
 6. 创建目录、合法相对 link 和文件权限，再审计完整文件树。
-7. 对最终 Java 可执行文件做真实 probe，验证 OS、架构和版本。
-8. 发布 staging，最后以临时文件 + sync + persist 写入 marker。
+7. 对 staging 中的 Java 可执行文件做真实 probe，验证 OS、架构和版本。
+8. 在 staging 内以临时文件 + sync + persist 写入 marker，再通过一次 rename 同时发布 runtime 文件树和 marker。
 
 `raw` 是首版唯一支持的压缩形式；lzma-only 条目返回 `MissingRawDownload`，不会静默跳过或留下不完整 runtime。远程 manifest 与 index 都限制为 1 MiB，并要求 manifest 的 SHA-1 和 size。
 
@@ -81,7 +81,7 @@ Linux ARM64 不映射到 x86_64 的 `linux`；其他未知架构直接报 `Unsup
 
 ## Marker 与复用
 
-`<platform>/<component>.json` 使用 schema 版本 1，记录来源、平台、component、目标 major、manifest 信息、可执行文件、实际 probe 版本/vendor 和所有文件类型、SHA-1、size、link target。
+`<platform>/<component>/.rmcl-runtime.json` 使用 schema 版本 1，记录来源、平台、component、目标 major、manifest 信息、可执行文件、实际 probe 版本/vendor 和所有文件类型、SHA-1、size、link target。marker 位于 runtime 目录内，与文件树作为同一个发布单元。
 
 复用必须同时满足：
 
@@ -89,9 +89,9 @@ Linux ARM64 不映射到 x86_64 的 `linux`；其他未知架构直接报 `Unsup
 - 所有文件存在且类型正确，SHA-1/size 匹配，link 目标仍合法。
 - 可执行文件存在，真实 probe 成功，版本与 marker 一致并满足当前 requirement。
 
-目录存在或 marker 存在本身都不算已安装。损坏或来源不明的 runtime 返回 `ExistingRuntimeInvalid`，不会被静默覆盖或当成有效 runtime。
+目录存在或 marker 存在本身都不算已安装。损坏或来源不明的 runtime 不会被当成有效 runtime；安装器先将整个旧目录移动到带时间戳的 quarantine，再执行全新安装，缺失 marker 或文件被修改后可以自动恢复。quarantine 保留用于诊断，不静默覆盖原目录内容。
 
-同一组件使用 `.locks` 下的 create-new 锁防止并发安装；锁在任务结束或失败后释放。锁文件异常残留时不会自动删除，以免误删活跃安装。
+同一组件使用 `.locks` 下持久存在的锁文件和标准库 OS 文件锁防止并发安装。锁状态不属于文件是否存在；文件句柄在任务结束、失败或进程被强制终止后关闭，OS 自动释放锁，后续安装可以立即继续。
 
 ## 真实验证
 

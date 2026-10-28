@@ -254,7 +254,7 @@ async fn automatic_install_is_detected_and_reused_without_network() {
     assert!(
         temporary
             .path()
-            .join("store/linux/java-runtime-delta.json")
+            .join("store/linux/java-runtime-delta/.rmcl-runtime.json")
             .is_file()
     );
     assert_eq!(

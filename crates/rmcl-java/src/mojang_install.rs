@@ -25,6 +25,7 @@ use crate::{
 };
 
 const MAX_MANIFEST_SIZE: usize = 1024 * 1024;
+const MARKER_FILE_NAME: &str = ".rmcl-runtime.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UrlPolicy {
@@ -97,8 +98,13 @@ impl MojangRuntimeInstaller {
         let _lock = RuntimeInstallLock::acquire(&self.store_root, platform, &components.join("-"))?;
 
         for component in &components {
-            if let Some(runtime) = self.try_reuse(requirement, component).await? {
-                return Ok(runtime);
+            match self.try_reuse(requirement, component).await {
+                Ok(Some(runtime)) => return Ok(runtime),
+                Ok(None) => {}
+                Err(JavaError::ExistingRuntimeInvalid { .. }) => {
+                    self.quarantine_runtime(platform, component).await?;
+                }
+                Err(error) => return Err(error),
             }
         }
 
@@ -162,6 +168,24 @@ impl MojangRuntimeInstaller {
         Ok(Some(runtime))
     }
 
+    async fn quarantine_runtime(&self, platform: &str, component: &str) -> Result<(), JavaError> {
+        let runtime_dir = self.runtime_dir(platform, component);
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let quarantine = self.store_root.join(platform).join(format!(
+            ".{component}.invalid-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::rename(&runtime_dir, &quarantine)
+            .await
+            .map_err(|source| JavaError::Publish {
+                path: quarantine.display().to_string(),
+                source,
+            })
+    }
+
     async fn install_entry(
         &self,
         requirement: &JavaRequirement,
@@ -185,7 +209,7 @@ impl MojangRuntimeInstaller {
             .await
             .map_err(|source| io_error(&staging_root, source))?;
         let runtime_dir = self.runtime_dir(platform, &component);
-        let marker_path = self.marker_path(platform, &component);
+        let marker_path = staging_root.join(MARKER_FILE_NAME);
 
         let mut registry = PathRegistry::default();
         let mut requests = Vec::new();
@@ -303,6 +327,7 @@ impl MojangRuntimeInstaller {
                 "refusing to replace an existing runtime",
             ));
         }
+        marker.write(&marker_path).await?;
         fs::rename(&staging_root, &runtime_dir)
             .await
             .map_err(|source| JavaError::Publish {
@@ -310,7 +335,6 @@ impl MojangRuntimeInstaller {
                 source,
             })?;
         drop(staging);
-        marker.write(&marker_path).await?;
         Ok(JavaRuntime {
             executable: executable.to_path(&runtime_dir),
             ..runtime
@@ -536,15 +560,14 @@ impl MojangRuntimeInstaller {
     }
 
     fn marker_path(&self, platform: &str, component: &str) -> PathBuf {
-        self.store_root
-            .join(platform)
-            .join(format!("{component}.json"))
+        self.runtime_dir(platform, component).join(MARKER_FILE_NAME)
     }
 }
 
 #[derive(Debug)]
 pub struct RuntimeInstallLock {
     path: PathBuf,
+    _file: std::fs::File,
 }
 
 impl RuntimeInstallLock {
@@ -555,16 +578,22 @@ impl RuntimeInstallLock {
             source,
         })?;
         let path = directory.join(format!("{platform}-{component}.lock"));
-        match std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
+            .read(true)
             .write(true)
-            .create_new(true)
+            .create(true)
+            .truncate(false)
             .open(&path)
-        {
-            Ok(_) => Ok(Self { path }),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            .map_err(|source| JavaError::Publish {
+                path: path.display().to_string(),
+                source,
+            })?;
+        match file.try_lock() {
+            Ok(()) => Ok(Self { path, _file: file }),
+            Err(std::fs::TryLockError::WouldBlock) => {
                 Err(JavaError::AlreadyInstalling(path.display().to_string()))
             }
-            Err(source) => Err(JavaError::Publish {
+            Err(std::fs::TryLockError::Error(source)) => Err(JavaError::Publish {
                 path: path.display().to_string(),
                 source,
             }),
@@ -578,7 +607,7 @@ impl RuntimeInstallLock {
 
 impl Drop for RuntimeInstallLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        let _ = self._file.unlock();
     }
 }
 
