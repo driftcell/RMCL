@@ -1,8 +1,8 @@
 # 服务器列表、状态与一键进服
 
-状态：服务器收藏、Java Edition Server List Ping、MOTD/人数/延迟、图标缓存、Quick Play/legacy 进服、精选服务器发现、直接进服和首页快速连接已实现；SRV、Bedrock、动态服务器目录和 `servers.dat` 导入导出尚未实现
+状态：服务器收藏、Java Edition Server List Ping、MOTD/人数/延迟、图标缓存、Quick Play/legacy 进服、精选服务器发现、直接进服、首页快速连接和 MCP 收藏/状态接口已实现；SRV、Bedrock、动态服务器目录和 `servers.dat` 导入导出尚未实现
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## 边界
 
@@ -12,7 +12,7 @@
 
 ## 配置
 
-`rmcl-store` schema 3 新增服务器收藏（当前 schema 4 继续保留）：
+`rmcl-store` schema 3 新增服务器收藏（当前 schema 6 继续保留）：
 
 ```toml
 [[servers]]
@@ -26,7 +26,7 @@ address = "play.example.com:25565"
 - `address` 保留原始 `host[:port]` 字符串。单条地址无效不会阻止整个配置读取；界面在加载后解析并显示“地址无效”。
 - 状态、MOTD、在线人数、延迟和图标路径都是瞬态数据，不写入配置。
 
-读取 schema 1/2/3 时在内存中升级到 4，`servers` 默认空；更高 schema 继续拒绝，避免旧版本静默丢弃新字段。图标缓存位于配置文件同目录的 `cache/servers/`，文件名为 PNG 内容的 SHA-1。
+读取 schema 1/2/3/4/5 时在内存中升级到 6，早期缺失的 `servers` 默认空；更高 schema 继续拒绝，避免旧版本静默丢弃新字段。图标缓存位于配置文件同目录的 `cache/servers/`，文件名为 PNG 内容的 SHA-1。
 
 ## 地址解析
 
@@ -57,6 +57,10 @@ address = "play.example.com:25565"
 - `players`、`version` 缺失时显示“人数未知/版本未知”，不伪造数据。
 
 `favicon` 只接受 `data:image/png;base64,`，校验 64×64 PNG 头，限制 256 KiB，并按 SHA-1 原子写入缓存；UI 用普通图片元素显示，不执行远程 HTML 或脚本。
+
+## MCP 收藏与状态
+
+`servers_list` 只读取收藏，不产生网络请求。`servers_upsert` 和 `servers_delete` 与 GUI 调用相同的 `rmcl-app` 书签函数，在仓库写锁内更新配置，不触碰 `servers.dat`；无 ID 创建使用新 UUID，不声明无条件幂等。`servers_ping` 按收藏 ID 或临时地址复用上述 SLP 和图标缓存，瞬态状态不写配置。详见 [MCP 服务器收藏与状态](MCP.md#服务器收藏与状态)。
 
 ## 一键进服
 
@@ -138,5 +142,6 @@ Sidebar“游戏”组新增“联机”页，页面内分为“收藏 / 发现�
 - `rmcl-app` 假 JVM 集成测试验证服务器目标进入真实进程参数。
 - `rmcl-store` 覆盖 schema 2/3 升级、服务器列表往返和无效地址仍可读取。
 - `rmcl-app` 覆盖精选服务器清单解析、地址/可选官网 URL/版本/重复 ID 校验和 Mod 标记。
+- `rmcl-mcp` 使用本地 SLP mock 覆盖收藏创建、列表、更新、ping、删除和错误路径；read_only 写操作被拒绝。
 - 真实窗口中的收藏/发现切换、精选状态刷新和直接进服仍需在 macOS、Windows、Linux 逐平台验收。
 - 真实窗口中的添加/编辑/删除、图标显示、自动刷新和 1.20+/旧版实际进服仍需在 macOS、Windows、Linux 逐平台验收。

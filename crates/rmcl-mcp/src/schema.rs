@@ -1016,6 +1016,53 @@ pub struct AccountDelete {
     pub kind: AccountKind,
 }
 
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ServerBookmark {
+    pub id: String,
+    pub name: String,
+    pub address: String,
+}
+
+impl From<&rmcl_store::StoredServer> for ServerBookmark {
+    fn from(server: &rmcl_store::StoredServer) -> Self {
+        Self {
+            id: server.id.clone(),
+            name: server.name.clone(),
+            address: server.address.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ServerList {
+    pub items: Vec<ServerBookmark>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ServerWrite {
+    pub server: ServerBookmark,
+    pub created: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ServerDelete {
+    pub deleted: bool,
+    pub server_id: String,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ServerPingResult {
+    pub server_id: Option<String>,
+    pub address: String,
+    pub motd: String,
+    pub online_players: Option<u32>,
+    pub max_players: Option<u32>,
+    pub version_name: Option<String>,
+    pub protocol: Option<i32>,
+    pub latency_ms: u64,
+    pub icon_path: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use rmcl_app::{TaskId, TaskProgress as AppTaskProgress};

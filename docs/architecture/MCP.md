@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；服务器、皮肤和高级内容工作流尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；皮肤和高级内容工作流尚未实现
 
 日期：2026-10-28
 
@@ -109,6 +109,8 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `accounts_list` | 离线与 Microsoft 账户元数据，不包含令牌或凭据 |
 | `java_list` | managed、JAVA_HOME、PATH runtime 与逐候选探测失败 |
 | `java_ensure` | 确保兼容 Java runtime，返回安装/复用任务 |
+| `servers_list` | 服务器收藏元数据，不发起网络请求 |
+| `servers_ping` | 按收藏 ID 或临时地址执行 Java Edition SLP，返回 MOTD、人数、延迟和图标缓存路径 |
 | `content_list` | 实例的 Mod、资源包和光影及扫描警告，可按 kind 过滤 |
 | `content_search` | 按 kind、查询词、游戏版本、loader、排序和分页搜索 Modrinth |
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
@@ -231,6 +233,18 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 `java_ensure` 接受可选 `major_version` 和 Mojang `component`，使用当前平台生成 `JavaRequirement`，返回 `JavaInstall` 任务。任务复用 JavaService 的检测、选择、下载、校验和取消流程，并持有 Java store 自己的 `.rmcl.lock`，直到终态写入后释放。可通过 `tasks_get` 观察阶段，再通过 `java_list` 查看结果。
 
+## 服务器收藏与状态
+
+| 工具 | 语义 |
+| --- | --- |
+| `servers_upsert` | 创建或按 ID 更新服务器收藏，使用与 GUI 相同的地址校验和默认显示名 |
+| `servers_delete` | 按 ID 删除收藏，不读取或修改游戏内 `servers.dat` |
+| `servers_ping` | 按收藏 ID 或临时地址执行状态查询，不保存临时地址 |
+
+`servers_list` 只返回 `id`、`name` 和 `address`，不进行 DNS 或网络访问。`servers_ping` 要求 `server_id` 与 `address` 恰好提供一个，复用现有 SLP 的超时、响应上限、MOTD 扁平化、人数/版本解析和 favicon 校验；图标按内容 SHA-1 写入现有缓存，响应只返回本地路径。MOTD、人数、延迟、版本和图标路径都是瞬态数据，不写入配置。
+
+无 ID 的 `servers_upsert` 每次都会创建新 UUID，因此该工具不声明无条件 `idempotentHint`；带 ID 更新使用同一书签。GUI 与 MCP 共用 `upsert_server_bookmark` / `remove_server_bookmark`，并在窗口重新激活时刷新外部收藏变化。
+
 ## 内容写操作
 
 | 工具 | 语义 |
@@ -265,7 +279,7 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. 服务器和皮肤接口。
+1. 皮肤接口。
 2. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。

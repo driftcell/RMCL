@@ -46,8 +46,8 @@ fn every_tool_declares_an_output_schema() {
         match tool.name.as_ref() {
             "capabilities" | "instances_list" | "instances_get" | "accounts_list"
             | "content_list" | "content_search" | "content_versions" | "versions_list"
-            | "loaders_list" | "java_list" | "tasks_list" | "tasks_get" | "tasks_logs"
-            | "tasks_unsubscribe" => {
+            | "loaders_list" | "java_list" | "servers_list" | "servers_ping" | "tasks_list"
+            | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
@@ -57,7 +57,13 @@ fn every_tool_declares_an_output_schema() {
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
-            "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete" => {
+            "servers_upsert" => {
+                assert_eq!(annotations.read_only_hint, Some(false));
+                assert_eq!(annotations.destructive_hint, Some(false));
+                assert_eq!(annotations.idempotent_hint, Some(false));
+            }
+            "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete"
+            | "servers_delete" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(true));
             }
@@ -156,6 +162,50 @@ fn shutdown_context(context: Arc<AppContext>) {
         Ok(context) => context.runtime.shutdown_background(),
         Err(_) => panic!("app context should have no remaining owners"),
     }
+}
+
+fn push_varint(output: &mut Vec<u8>, value: i32) {
+    let mut value = value as u32;
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        output.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
+fn status_packet(status: Value) -> Vec<u8> {
+    let json = status.to_string();
+    let mut payload = vec![0];
+    push_varint(&mut payload, json.len() as i32);
+    payload.extend_from_slice(json.as_bytes());
+    let mut packet = Vec::new();
+    push_varint(&mut packet, payload.len() as i32);
+    packet.extend_from_slice(&payload);
+    packet
+}
+
+async fn ping_server() -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::AsyncWriteExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let handle = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let response = status_packet(json!({
+            "version": {"name": "1.21.1", "protocol": 767},
+            "players": {"online": 3, "max": 20},
+            "description": {"text": "Test ", "extra": [{"text": "Server"}]},
+        }));
+        stream.write_all(&response).await.unwrap();
+        stream.shutdown().await.unwrap();
+    });
+    (address, handle)
 }
 
 async fn catalog_server() -> (Url, tokio::task::JoinHandle<()>) {
@@ -703,6 +753,18 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
             .await
             .unwrap_err();
         assert_eq!(delete.data.as_ref().unwrap()["code"], "permission_denied");
+        let server_write = server
+            .servers_upsert(Parameters(ServerUpsertParams {
+                server_id: None,
+                name: "Blocked".to_owned(),
+                address: "localhost".to_owned(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            server_write.data.as_ref().unwrap()["code"],
+            "permission_denied"
+        );
         assert!(!temporary.path().join("minecraft/versions/blocked").exists());
         assert_eq!(
             structured(server.tasks_list().await.unwrap())["items"]
@@ -714,6 +776,99 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
     });
     drop(server);
     catalog_handle.abort();
+    shutdown_context(context);
+}
+
+#[test]
+fn server_bookmarks_and_ping_use_shared_services() {
+    let temporary = TempDir::new().unwrap();
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let (address, ping_handle) = context.runtime.block_on(ping_server());
+    let server = McpServer::new(context.clone());
+    context.runtime.block_on(async {
+        assert!(
+            structured(server.servers_list().await.unwrap())["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let created = structured(
+            server
+                .servers_upsert(Parameters(ServerUpsertParams {
+                    server_id: None,
+                    name: String::new(),
+                    address: address.clone(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(created["created"], true);
+        assert_eq!(created["server"]["name"], address);
+        let server_id = created["server"]["id"].as_str().unwrap().to_owned();
+
+        let ping = structured(
+            server
+                .servers_ping(Parameters(ServerPingParams {
+                    server_id: Some(server_id.clone()),
+                    address: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(ping["server_id"], server_id);
+        assert_eq!(ping["motd"], "Test Server");
+        assert_eq!(ping["online_players"], 3);
+        assert_eq!(ping["max_players"], 20);
+        assert_eq!(ping["version_name"], "1.21.1");
+        assert_eq!(ping["protocol"], 767);
+        assert!(ping["latency_ms"].is_number());
+        assert_eq!(ping["icon_path"], Value::Null);
+        ping_handle.await.unwrap();
+
+        let updated = structured(
+            server
+                .servers_upsert(Parameters(ServerUpsertParams {
+                    server_id: Some(server_id.clone()),
+                    name: "Renamed".to_owned(),
+                    address: address.clone(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(updated["created"], false);
+        assert_eq!(updated["server"]["name"], "Renamed");
+        let invalid = server
+            .servers_upsert(Parameters(ServerUpsertParams {
+                server_id: None,
+                name: "Invalid".to_owned(),
+                address: "https://example.com".to_owned(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(invalid.data.as_ref().unwrap()["code"], "invalid_input");
+
+        let deleted = structured(
+            server
+                .servers_delete(Parameters(ServerIdParams {
+                    server_id: server_id.clone(),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(deleted["deleted"], true);
+        assert!(
+            structured(server.servers_list().await.unwrap())["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let missing = server
+            .servers_delete(Parameters(ServerIdParams { server_id }))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
+    });
+    drop(server);
     shutdown_context(context);
 }
 

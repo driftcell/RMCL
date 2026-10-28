@@ -38,9 +38,10 @@ use rmcl_app::{
     TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
     VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
     discover_installed_versions, featured_servers, import_instance_content,
-    migrate_instance_to_isolated, preflight_content_install, recommended_version, rename_instance,
-    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
-    set_instance_launch_settings, spawn_apply_helper,
+    migrate_instance_to_isolated, preflight_content_install, recommended_version,
+    remove_server_bookmark, rename_instance, scan_installed_mods, scan_instance_content,
+    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
+    spawn_apply_helper, upsert_server_bookmark,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
@@ -49,7 +50,7 @@ use rmcl_mcp::McpHttpStatus;
 use rmcl_net::{MirrorHealth, MirrorPreference, MirrorProbe};
 use rmcl_store::{
     AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LauncherConfig,
-    LauncherVisibility, StoredAccountKind, StoredServer, ThemePreference,
+    LauncherVisibility, StoredAccountKind, ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
@@ -1926,11 +1927,18 @@ impl LauncherApp {
             window.push_notification(Notification::info("已取消收藏。").title("服务器"), cx);
             return;
         }
-        self.config.servers.push(StoredServer {
-            id: Uuid::new_v4().to_string(),
-            name: server.name,
-            address: server.address.to_string(),
-        });
+        if let Err(error) = upsert_server_bookmark(
+            &mut self.config,
+            None,
+            &server.name,
+            &server.address.to_string(),
+        ) {
+            window.push_notification(
+                Notification::error(error.to_string()).title("无法收藏服务器"),
+                cx,
+            );
+            return;
+        }
         self.save_config();
         cx.notify();
         window.push_notification(
@@ -2084,52 +2092,12 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let address = address.trim();
-        if address.is_empty() {
+        if let Err(error) = upsert_server_bookmark(&mut self.config, id, &name, &address) {
             window.push_notification(
-                Notification::error("服务器地址不能为空。").title("无法保存服务器"),
+                Notification::error(error.to_string()).title("无法保存服务器"),
                 cx,
             );
             return false;
-        }
-        let parsed = match ServerAddress::parse(address) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                window.push_notification(
-                    Notification::error(error.to_string()).title("无法保存服务器"),
-                    cx,
-                );
-                return false;
-            }
-        };
-        let name = name.trim();
-        let name = if name.is_empty() {
-            parsed.to_string()
-        } else {
-            name.to_owned()
-        };
-        match id {
-            Some(id) => {
-                let Some(server) = self
-                    .config
-                    .servers
-                    .iter_mut()
-                    .find(|server| server.id == id)
-                else {
-                    window.push_notification(
-                        Notification::error("服务器不存在或已被删除。").title("无法保存服务器"),
-                        cx,
-                    );
-                    return false;
-                };
-                server.name = name;
-                server.address = address.to_owned();
-            }
-            None => self.config.servers.push(StoredServer {
-                id: Uuid::new_v4().to_string(),
-                name,
-                address: address.to_owned(),
-            }),
         }
         self.cancel_server_refresh();
         self.save_config();
@@ -2179,8 +2147,10 @@ impl LauncherApp {
     }
 
     fn delete_server(&mut self, server_id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if remove_server_bookmark(&mut self.config, &server_id).is_err() {
+            return;
+        }
         self.cancel_server_refresh();
-        self.config.servers.retain(|server| server.id != server_id);
         self.servers.statuses.remove(&server_id);
         self.save_config();
         self.refresh_servers(window, cx);
