@@ -62,6 +62,7 @@
 - 当前活动使用 `Marker`：运行中 `loading(true)` + `MarkerLoadingStyle::Shimmer`，完成显示绿色 `CircleCheck`，失败显示红色 `CircleX`，跳过显示 `CircleStop`。
 - 同一位置原地切换活动内容，不做反复淡入淡出；并行工具调用可同时列出多个步骤。
 - 已完成步骤折叠为“已完成 N 个步骤 · 时长”，位于该回合最终回复上方；失败时自动展开。
+- 展开/收起步骤会 remeasure 当前行；回合结束后先 append 再观察 `TextViewState`，并在下一帧 remeasure 最后一行，避免虚拟列表高度过期导致滚轮停不到底部。
 - 有 `task_id` 时直接读取同一 `TaskManager` 快照显示进度条，不让模型轮询进度。
 - 输入使用 `Textarea`（`auto_grow(1, 8)`、`submit_on_enter`）；运行时发送按钮变为停止。
 - 会话只保存在内存；提供清空和停止。停止只丢弃当前 Agent 回合，不自动取消已启动的 RMCL 任务。
