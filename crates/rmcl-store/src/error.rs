@@ -4,6 +4,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("could not determine the {directory} directory for this platform")]
+    DirectoryUnavailable { directory: &'static str },
     #[error("failed to {operation} `{path}`: {source}")]
     Io {
         operation: &'static str,
