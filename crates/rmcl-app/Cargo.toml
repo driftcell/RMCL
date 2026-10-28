@@ -30,6 +30,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net"] }
 tokio-util.workspace = true
 url.workspace = true
+uuid.workspace = true
 reqwest.workspace = true
 hex.workspace = true
 image.workspace = true
@@ -40,5 +41,4 @@ zip.workspace = true
 [dev-dependencies]
 axum.workspace = true
 tokio = { workspace = true, features = ["net"] }
-uuid.workspace = true
 zip.workspace = true

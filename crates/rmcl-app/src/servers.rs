@@ -11,7 +11,8 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use rmcl_domain::ServerAddress;
+use rmcl_domain::{ServerAddress, ServerAddressError};
+use rmcl_store::{LauncherConfig, StoredServer};
 use serde::Deserialize;
 use serde_json::Value;
 use sha1::{Digest, Sha1};
@@ -22,6 +23,7 @@ use tokio::{
     net::{TcpStream, lookup_host},
 };
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -40,6 +42,64 @@ pub struct ServerStatus {
     pub protocol: Option<i32>,
     pub latency: Duration,
     pub icon_png: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Error)]
+pub enum ServerBookmarkError {
+    #[error(transparent)]
+    Address(#[from] ServerAddressError),
+    #[error("server `{0}` was not found")]
+    NotFound(String),
+}
+
+/// Creates or updates one launcher-owned server bookmark without persisting it.
+/// The caller decides when to save the enclosing configuration.
+pub fn upsert_server_bookmark(
+    config: &mut LauncherConfig,
+    id: Option<String>,
+    name: &str,
+    address: &str,
+) -> Result<StoredServer, ServerBookmarkError> {
+    let address = address.trim();
+    let parsed = ServerAddress::parse(address)?;
+    let name = match name.trim() {
+        "" => parsed.to_string(),
+        name => name.to_owned(),
+    };
+    match id {
+        Some(id) => {
+            let server = config
+                .servers
+                .iter_mut()
+                .find(|server| server.id == id)
+                .ok_or(ServerBookmarkError::NotFound(id))?;
+            server.name = name;
+            server.address = address.to_owned();
+            Ok(server.clone())
+        }
+        None => {
+            let server = StoredServer {
+                id: Uuid::new_v4().to_string(),
+                name,
+                address: address.to_owned(),
+            };
+            config.servers.push(server.clone());
+            Ok(server)
+        }
+    }
+}
+
+/// Removes one launcher-owned server bookmark without persisting the change.
+pub fn remove_server_bookmark(
+    config: &mut LauncherConfig,
+    id: &str,
+) -> Result<StoredServer, ServerBookmarkError> {
+    let index = config
+        .servers
+        .iter()
+        .position(|server| server.id == id)
+        .ok_or_else(|| ServerBookmarkError::NotFound(id.to_owned()))?;
+    Ok(config.servers.remove(index))
 }
 
 #[derive(Debug, Clone)]
@@ -512,6 +572,40 @@ mod tests {
         let mut packet = vec![0; length as usize];
         stream.read_exact(&mut packet).await.unwrap();
         packet
+    }
+
+    #[test]
+    fn bookmarks_create_update_and_remove_with_shared_semantics() {
+        let mut config = LauncherConfig::default();
+        let created =
+            upsert_server_bookmark(&mut config, None, "  ", " play.example.com:25566 ").unwrap();
+        assert_eq!(created.name, "play.example.com:25566");
+        assert_eq!(config.servers.len(), 1);
+
+        let updated = upsert_server_bookmark(
+            &mut config,
+            Some(created.id.clone()),
+            " Survival ",
+            "play.example.com",
+        )
+        .unwrap();
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.name, "Survival");
+        assert_eq!(updated.address, "play.example.com");
+        assert_eq!(config.servers.len(), 1);
+
+        assert!(matches!(
+            upsert_server_bookmark(&mut config, Some("missing".to_owned()), "x", "localhost"),
+            Err(ServerBookmarkError::NotFound(_))
+        ));
+        assert!(upsert_server_bookmark(&mut config, None, "x", "https://example.com").is_err());
+        let removed = remove_server_bookmark(&mut config, &created.id).unwrap();
+        assert_eq!(removed.id, created.id);
+        assert!(config.servers.is_empty());
+        assert!(matches!(
+            remove_server_bookmark(&mut config, &created.id),
+            Err(ServerBookmarkError::NotFound(_))
+        ));
     }
 
     #[test]

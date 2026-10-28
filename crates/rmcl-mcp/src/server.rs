@@ -8,13 +8,14 @@ use std::{
 use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
     CreateInstanceRequest, GameLaunchRequest, InstalledVersion, JavaEnsureRequest, LoaderKind,
-    LoaderSelection, RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, TaskId,
-    VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
-    delete_instance_content_with_guard, discover_installed_versions,
-    import_instance_content_with_guard, migrate_instance_to_isolated_with_guard,
-    preflight_content_install, rename_instance_with_guard, scan_installed_mods,
-    set_instance_content_enabled_with_guard, set_instance_java_with_guard,
-    set_instance_launch_settings_with_guard, try_lock_repository,
+    LoaderSelection, RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard,
+    ServerBookmarkError, TaskId, VanillaInstallRequest, VersionSource,
+    delete_installed_version_with_guard, delete_instance_content_with_guard,
+    discover_installed_versions, import_instance_content_with_guard,
+    migrate_instance_to_isolated_with_guard, preflight_content_install, remove_server_bookmark,
+    rename_instance_with_guard, scan_installed_mods, set_instance_content_enabled_with_guard,
+    set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
+    upsert_server_bookmark,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::ServerAddress;
@@ -46,9 +47,9 @@ use crate::{
         JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
         MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
         PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
-        RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, TaskSubscription,
-        TaskSubscriptionEnded, content_entry, instance_revision, instance_summary, java_runtime,
-        log_page, task_snapshot,
+        RemoteVersionSummary, ServerBookmark, ServerDelete, ServerList, ServerPingResult,
+        ServerWrite, TaskList, TaskSnapshot, TaskStarted, TaskSubscription, TaskSubscriptionEnded,
+        content_entry, instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
     },
 };
 
@@ -71,6 +72,30 @@ struct AccountSelectorParams {
     username: String,
     /// Account kind: offline or microsoft.
     kind: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ServerUpsertParams {
+    /// Existing bookmark ID to update; omit to create a bookmark.
+    server_id: Option<String>,
+    /// Display name; blank uses the normalized server address.
+    name: String,
+    /// Java Edition host, host:port, [IPv6], or [IPv6]:port.
+    address: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ServerIdParams {
+    /// Stable bookmark ID.
+    server_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ServerPingParams {
+    /// Bookmark ID to ping; exactly one of server_id or address is required.
+    server_id: Option<String>,
+    /// Address to ping without saving it; exactly one of server_id or address is required.
+    address: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -393,6 +418,10 @@ impl McpServer {
                 "accounts_select",
                 "accounts_create_offline",
                 "accounts_delete",
+                "servers_list",
+                "servers_upsert",
+                "servers_delete",
+                "servers_ping",
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
@@ -756,6 +785,126 @@ impl McpServer {
             deleted: true,
             username: params.username,
             kind: account_kind(kind),
+        })
+    }
+
+    #[tool(
+        description = "List launcher-owned Java Edition server bookmarks without network access",
+        output_schema = schema_for_type::<ServerList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn servers_list(&self) -> Result<CallToolResult, McpError> {
+        let config = self.context.config_store.load().map_err(internal_error)?;
+        structured(ServerList {
+            items: config.servers.iter().map(ServerBookmark::from).collect(),
+        })
+    }
+
+    #[tool(
+        description = "Create or update a Java Edition server bookmark",
+        output_schema = schema_for_type::<ServerWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
+    async fn servers_upsert(
+        &self,
+        Parameters(params): Parameters<ServerUpsertParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("servers_upsert")?;
+        let _repository_guard = self.lock_repository()?;
+        let created = params.server_id.is_none();
+        let mut config = self.context.config_store.load().map_err(internal_error)?;
+        let server =
+            upsert_server_bookmark(&mut config, params.server_id, &params.name, &params.address)
+                .map_err(server_bookmark_error)?;
+        self.context
+            .config_store
+            .save(&config)
+            .map_err(internal_error)?;
+        structured(ServerWrite {
+            server: ServerBookmark::from(&server),
+            created,
+        })
+    }
+
+    #[tool(
+        description = "Delete a launcher-owned server bookmark without changing servers.dat",
+        output_schema = schema_for_type::<ServerDelete>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
+    async fn servers_delete(
+        &self,
+        Parameters(params): Parameters<ServerIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("servers_delete")?;
+        let _repository_guard = self.lock_repository()?;
+        let mut config = self.context.config_store.load().map_err(internal_error)?;
+        remove_server_bookmark(&mut config, &params.server_id).map_err(server_bookmark_error)?;
+        self.context
+            .config_store
+            .save(&config)
+            .map_err(internal_error)?;
+        structured(ServerDelete {
+            deleted: true,
+            server_id: params.server_id,
+        })
+    }
+
+    #[tool(
+        description = "Ping one Java Edition server and return MOTD, players, latency, and cached icon",
+        output_schema = schema_for_type::<ServerPingResult>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn servers_ping(
+        &self,
+        Parameters(params): Parameters<ServerPingParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let (server_id, raw_address) = match (params.server_id, params.address) {
+            (Some(server_id), None) => {
+                let config = self.context.config_store.load().map_err(internal_error)?;
+                let server = config
+                    .servers
+                    .iter()
+                    .find(|server| server.id == server_id)
+                    .ok_or_else(|| not_found(format!("server `{server_id}` was not found")))?;
+                (Some(server_id), server.address.clone())
+            }
+            (None, Some(address)) => (None, address),
+            _ => {
+                return Err(invalid_input(
+                    "exactly one of server_id or address is required",
+                ));
+            }
+        };
+        let address =
+            ServerAddress::parse(&raw_address).map_err(|error| invalid_input(error.to_string()))?;
+        let status = self
+            .context
+            .servers
+            .ping(&address, &tokio_util::sync::CancellationToken::new())
+            .await
+            .map_err(internal_error)?;
+        let icon_path = match status.icon_png.as_deref() {
+            Some(png) => Some(
+                self.context
+                    .server_icons
+                    .ensure(png)
+                    .await
+                    .map_err(internal_error)?
+                    .display()
+                    .to_string(),
+            ),
+            None => None,
+        };
+        structured(ServerPingResult {
+            server_id,
+            address: address.to_string(),
+            motd: status.motd,
+            online_players: status.online_players,
+            max_players: status.max_players,
+            version_name: status.version_name,
+            protocol: status.protocol,
+            latency_ms: u64::try_from(status.latency.as_millis()).unwrap_or(u64::MAX),
+            icon_path,
         })
     }
 
@@ -1629,6 +1778,13 @@ fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
 
 fn task_started(task: TaskId, replay: bool) -> TaskStarted {
     TaskStarted::new(task.get(), replay)
+}
+
+fn server_bookmark_error(error: ServerBookmarkError) -> McpError {
+    match error {
+        ServerBookmarkError::Address(error) => invalid_input(error.to_string()),
+        ServerBookmarkError::NotFound(id) => not_found(format!("server `{id}` was not found")),
+    }
 }
 
 fn account_kind(kind: StoredAccountKind) -> AccountKind {

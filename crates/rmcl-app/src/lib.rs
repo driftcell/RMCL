@@ -77,7 +77,10 @@ pub use rmcl_instance::{
 pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
-pub use servers::{ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient};
+pub use servers::{
+    ServerBookmarkError, ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient,
+    remove_server_bookmark, upsert_server_bookmark,
+};
 pub use services::AppContext;
 pub use skin_library::{SkinLibrary, SkinLibraryEntry, SkinLibraryError};
 pub use skin_preview::SkinPreviewRenderer;
