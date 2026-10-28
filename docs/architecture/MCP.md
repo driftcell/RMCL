@@ -26,6 +26,43 @@ rmcl mcp --stdio --config /path/to/config.toml
 
 stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_background` 关闭应用内 Tokio runtime，EOF 不会触发 runtime drop panic。Windows 构建使用控制台子系统以保留 MCP stdio；不带 MCP 子命令的 GUI 启动会调用 `FreeConsole` 释放启动控制台，避免常驻额外控制台窗口。
 
+### 客户端接入
+
+支持 `mcpServers` 配置的客户端可以直接启动同一个 `rmcl` 可执行文件，不需要 `rmcl-mcp` 或额外 shim：
+
+```json
+{
+  "mcpServers": {
+    "rmcl": {
+      "command": "/absolute/path/to/rmcl",
+      "args": ["mcp", "--stdio"]
+    }
+  }
+}
+```
+
+省略 `--config` 时使用[平台默认配置路径](CONFIGURATION.md#路径)。需要隔离测试配置时，将绝对路径加入 `args`：`["mcp", "--stdio", "--config", "/absolute/path/to/config.toml"]`。不同客户端的顶层设置键可能不同，但 `command` 和 `args` 应保持上述直接进程形式，客户端还需支持 MCP stdio 的换行分隔 JSON-RPC 帧。
+
+Windows 示例（路径按实际安装位置和用户目录修改）：
+
+```json
+{
+  "mcpServers": {
+    "rmcl": {
+      "command": "C:\\Tools\\RMCL\\rmcl.exe",
+      "args": [
+        "mcp",
+        "--stdio",
+        "--config",
+        "C:\\Users\\example\\AppData\\Roaming\\rmcl\\config.toml"
+      ]
+    }
+  }
+}
+```
+
+Windows 客户端应直接创建 `rmcl.exe` 子进程并继承 stdin/stdout 管道，不要通过 `cmd /c start`、快捷方式或其他会分离进程的方式启动。MCP 子命令不会进入 GPUI 初始化，也不会调用 `FreeConsole`；关闭 stdin 后进程应正常退出。`apps/rmcl/tests/mcp_stdio.rs` 在 Windows、Linux 和 macOS CI 中启动真实二进制，覆盖握手、工具元数据、订阅/退订和 EOF。GUI 启动后没有常驻控制台则仍需使用 Windows 发布包手工验收，stdio smoke 不替代该项图形检查。
+
 ### Streamable HTTP
 
 ```bash
