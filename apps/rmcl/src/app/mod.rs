@@ -1,3 +1,4 @@
+mod external;
 mod skin_service;
 mod skin_viewer;
 mod ui;
@@ -65,6 +66,7 @@ use crate::{
 };
 
 use self::{
+    external::merge_external_config,
     skin_service::{SkinService, SkinServiceEvent},
     skin_viewer::SkinViewer,
     ui::{
@@ -521,6 +523,7 @@ pub struct LauncherApp {
     _account_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
     _appearance_subscription: Subscription,
+    _activation_subscription: Subscription,
 }
 
 impl LauncherApp {
@@ -841,6 +844,11 @@ impl LauncherApp {
                 }
             });
         });
+        let activation_subscription = cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active() {
+                this.refresh_external_state(window, cx);
+            }
+        });
 
         let mut app = Self {
             services: services.clone(),
@@ -954,6 +962,7 @@ impl LauncherApp {
             _account_task: None,
             _subscriptions: subscriptions,
             _appearance_subscription: appearance_subscription,
+            _activation_subscription: activation_subscription,
         };
         app.refresh_account_heads(window, cx);
         app.refresh_microsoft_profiles(window, cx);
@@ -1581,6 +1590,51 @@ impl LauncherApp {
         self.installed_versions
             .iter()
             .find(|version| version.id.as_str() == selected)
+    }
+
+    fn refresh_external_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.services.config_store.load() {
+            Ok(external) => {
+                self.config_warning = None;
+                if merge_external_config(&mut self.config, external) {
+                    self.accounts = self
+                        .config
+                        .accounts
+                        .iter()
+                        .filter_map(load_account)
+                        .map(Account::Offline)
+                        .chain(
+                            self.config
+                                .microsoft_accounts
+                                .iter()
+                                .filter_map(load_microsoft_account)
+                                .map(Account::Microsoft),
+                        )
+                        .collect::<Vec<_>>();
+                    let selected_exists = self.accounts.iter().any(|account| {
+                        self.config.selected_account.as_deref() == Some(account.username())
+                            && stored_account_kind(account) == self.config.selected_account_kind
+                    });
+                    if !selected_exists {
+                        self.config.selected_account = self
+                            .accounts
+                            .first()
+                            .map(|account| account.username().to_owned());
+                        self.config.selected_account_kind = self
+                            .accounts
+                            .first()
+                            .map(stored_account_kind)
+                            .unwrap_or(StoredAccountKind::Offline);
+                    }
+                    self.refresh_account_heads(window, cx);
+                }
+            }
+            Err(error) => self.config_warning = Some(error.to_string()),
+        }
+        self.reload_versions(window, cx);
+        if self.page == Page::Instance && !self.content_operations_pending() {
+            self.load_instance_content(window, cx);
+        }
     }
 
     fn selected_account(&self) -> Option<&Account> {

@@ -179,6 +179,8 @@ Java store 仍使用 `~/.rmcl/java`，日志位于配置目录下的 `logs/`。R
 - 一个 `McpHttpService`，按设置启停 loopback 只读 HTTP，和 GUI 共用任务与通知状态。
 - 当前目标 `Platform`，供每个请求克隆使用。
 
+窗口重新激活时会重扫实例，并只合并外部配置中的账户、服务器收藏和选中版本；实例详情在空闲时同步重扫内容。该刷新不替换端口输入、账户编辑文本或其他本地设置，不自动写回配置，也不依赖常驻文件监听。
+
 GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spawn` 调用 `start_install`、`start_launch` 或 `cancel`，并在 GPUI foreground task 中 await 返回的 `JoinHandle`。传给 Tokio 的数据必须是 owned `Send` 数据，不捕获 GPUI Context 或 Window。
 
 `TaskManager` 的广播接收器直接移入一个持久保存的 GPUI foreground task。该 task 只处理事件和短 Entity 更新，不拥有安装或游戏 future。后台任务不依赖 View 是否正在显示日志。
