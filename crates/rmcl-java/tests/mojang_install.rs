@@ -60,7 +60,6 @@ impl MockData {
 
 struct MockServer {
     base: Url,
-    #[cfg_attr(not(unix), allow(dead_code))]
     hits: Arc<AtomicUsize>,
     handle: tokio::task::JoinHandle<()>,
 }
@@ -129,6 +128,21 @@ async fn serve(data: MockData) -> MockServer {
             }),
         )
         .route(
+            "/bin/java.exe",
+            get({
+                let data = data.clone();
+                let hits = hits.clone();
+                move || {
+                    let data = data.clone();
+                    let hits = hits.clone();
+                    async move {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        data.java.into_response()
+                    }
+                }
+            }),
+        )
+        .route(
             "/jre.bundle/Contents/Home/bin/java",
             get({
                 let data = data.clone();
@@ -167,7 +181,24 @@ async fn serve(data: MockData) -> MockServer {
 }
 
 fn mock_data() -> MockData {
-    mock_data_with("linux", "java-runtime-delta", "21.0.7", "Linux", "amd64")
+    #[cfg(windows)]
+    {
+        let mut data = mock_data_with(
+            "windows-x64",
+            "java-runtime-delta",
+            "21.0.7",
+            "Windows 11",
+            "amd64",
+        );
+        let java = data.manifest.files.remove("bin/java").unwrap();
+        data.manifest.files.insert("bin/java.exe".to_owned(), java);
+        data.manifest.files.remove("legal/readme");
+        data
+    }
+    #[cfg(not(windows))]
+    {
+        mock_data_with("linux", "java-runtime-delta", "21.0.7", "Linux", "amd64")
+    }
 }
 
 fn mock_data_with(
@@ -177,10 +208,7 @@ fn mock_data_with(
     os_name: &str,
     arch: &str,
 ) -> MockData {
-    let java = format!(
-        "#!/bin/sh\nprintf 'java.version = {version}\nos.name = {os_name}\nos.arch = {arch}\njava.vendor = TestVendor\n' >&2\n"
-    )
-    .into_bytes();
+    let java = fake_java_binary(version, os_name, arch);
     let example = b"hello".to_vec();
     let manifest = MojangRuntimeManifest {
         files: BTreeMap::from([
@@ -252,6 +280,44 @@ fn mock_data_with(
     }
 }
 
+fn fake_java_binary(version: &str, os_name: &str, arch: &str) -> Vec<u8> {
+    use std::sync::{Mutex, OnceLock};
+
+    type CacheKey = (String, String, String);
+    static CACHE: OnceLock<Mutex<BTreeMap<CacheKey, Vec<u8>>>> = OnceLock::new();
+
+    let key = (version.to_owned(), os_name.to_owned(), arch.to_owned());
+    let cache = CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+    if let Some(bytes) = cache.lock().unwrap().get(&key).cloned() {
+        return bytes;
+    }
+
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("fake_java.rs");
+    let output = temporary
+        .path()
+        .join(format!("java{}", std::env::consts::EXE_SUFFIX));
+    std::fs::write(
+        &source,
+        format!(
+            "fn main() {{ eprintln!(\"java.version = {version}\"); eprintln!(\"os.name = {os_name}\"); eprintln!(\"os.arch = {arch}\"); eprintln!(\"java.vendor = TestVendor\"); }}"
+        ),
+    )
+    .unwrap();
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let status = std::process::Command::new(rustc)
+        .arg(&source)
+        .arg("-O")
+        .arg("-o")
+        .arg(&output)
+        .status()
+        .unwrap();
+    assert!(status.success(), "failed to compile fake Java");
+    let bytes = std::fs::read(output).unwrap();
+    cache.lock().unwrap().insert(key, bytes.clone());
+    bytes
+}
+
 fn download(data: &[u8]) -> MojangDownload {
     MojangDownload {
         url: String::new(),
@@ -272,8 +338,28 @@ fn requirement() -> JavaRequirement {
         component: None,
         major_version: Some(21),
         maximum_major: None,
-        operating_system: OperatingSystem::Linux,
+        operating_system: if cfg!(windows) {
+            OperatingSystem::Windows
+        } else {
+            OperatingSystem::Linux
+        },
         architecture: Architecture::X86_64,
+    }
+}
+
+fn platform_key() -> &'static str {
+    if cfg!(windows) {
+        "windows-x64"
+    } else {
+        "linux"
+    }
+}
+
+fn java_manifest_key() -> &'static str {
+    if cfg!(windows) {
+        "bin/java.exe"
+    } else {
+        "bin/java"
     }
 }
 
@@ -284,7 +370,6 @@ fn installer(server: &MockServer, store: &TempDir) -> MojangRuntimeInstaller {
         .with_url_policy(UrlPolicy::AnyHttp)
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn installs_and_reuses_a_verified_runtime() {
     let server = serve(mock_data()).await;
@@ -297,22 +382,32 @@ async fn installs_and_reuses_a_verified_runtime() {
         .unwrap();
 
     assert_eq!(runtime.major_version, 21);
-    assert_eq!(runtime.operating_system, OperatingSystem::Linux);
-    assert!(runtime.executable.ends_with("bin/java"));
+    assert_eq!(runtime.operating_system, requirement().operating_system);
+    assert!(runtime.executable.ends_with(if cfg!(windows) {
+        "bin/java.exe"
+    } else {
+        "bin/java"
+    }));
     assert!(
         store
             .path()
-            .join("store/linux/java-runtime-delta.json")
+            .join(format!(
+                "store/{}/java-runtime-delta/.rmcl-runtime.json",
+                platform_key()
+            ))
             .is_file()
     );
-    let link = store
-        .path()
-        .join("store/linux/java-runtime-delta/legal/readme");
-    assert!(link.is_symlink());
-    assert_eq!(
-        std::fs::read_link(link).unwrap().to_string_lossy(),
-        "../lib/example.txt"
-    );
+    #[cfg(unix)]
+    {
+        let link = store
+            .path()
+            .join("store/linux/java-runtime-delta/legal/readme");
+        assert!(link.is_symlink());
+        assert_eq!(
+            std::fs::read_link(link).unwrap().to_string_lossy(),
+            "../lib/example.txt"
+        );
+    }
     let hits = server.hits.load(Ordering::SeqCst);
     assert_eq!(hits, 4);
 
@@ -325,9 +420,8 @@ async fn installs_and_reuses_a_verified_runtime() {
     assert_eq!(server.hits.load(Ordering::SeqCst), hits);
 }
 
-#[cfg(unix)]
 #[tokio::test]
-async fn rejects_modified_installed_files_instead_of_reusing_them() {
+async fn reinstalls_modified_installed_files() {
     let server = serve(mock_data()).await;
     let store = TempDir::new().unwrap();
     let installer = installer(&server, &store);
@@ -342,14 +436,32 @@ async fn rejects_modified_installed_files_instead_of_reusing_them() {
         .parent()
         .unwrap()
         .join("lib/example.txt");
-    std::fs::write(modified, b"corrupted").unwrap();
+    std::fs::write(&modified, b"corrupted").unwrap();
 
-    let error = installer
+    installer
         .install(&requirement(), CancellationToken::new())
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(error, JavaError::ExistingRuntimeInvalid { .. }));
+    assert_eq!(std::fs::read(modified).unwrap(), b"hello");
+}
+
+#[tokio::test]
+async fn reinstalls_a_runtime_missing_its_marker() {
+    let server = serve(mock_data()).await;
+    let store = TempDir::new().unwrap();
+    let runtime_dir = store
+        .path()
+        .join(format!("store/{}/java-runtime-delta", platform_key()));
+    std::fs::create_dir_all(&runtime_dir).unwrap();
+
+    let runtime = installer(&server, &store)
+        .install(&requirement(), CancellationToken::new())
+        .await
+        .unwrap();
+
+    assert!(runtime.executable.is_file());
+    assert!(runtime_dir.join(".rmcl-runtime.json").is_file());
 }
 
 #[tokio::test]
@@ -428,7 +540,12 @@ async fn rejects_raw_hash_mismatch() {
         .unwrap_err();
 
     assert!(matches!(error, JavaError::DownloadFailures { .. }));
-    assert!(!store.path().join("store/linux/java-runtime-delta").exists());
+    assert!(
+        !store
+            .path()
+            .join(format!("store/{}/java-runtime-delta", platform_key()))
+            .exists()
+    );
 }
 
 #[tokio::test]
@@ -450,12 +567,15 @@ async fn rejects_manifest_hash_mismatch() {
     assert!(matches!(error, JavaError::ManifestHashMismatch { .. }));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn rejects_a_runtime_that_fails_probe() {
     let mut data = mock_data();
-    data.java = b"#!/bin/sh\nexit 1\n".to_vec();
-    data.manifest.files.get_mut("bin/java").unwrap().downloads = Some(MojangFileDownloads {
+    data.java = b"not a runnable runtime".to_vec();
+    data.manifest
+        .files
+        .get_mut(java_manifest_key())
+        .unwrap()
+        .downloads = Some(MojangFileDownloads {
         raw: Some(download(&data.java)),
         lzma: None,
     });
@@ -468,7 +588,12 @@ async fn rejects_a_runtime_that_fails_probe() {
         .unwrap_err();
 
     assert!(matches!(error, JavaError::ProbeRejected { .. }));
-    assert!(!store.path().join("store/linux/java-runtime-delta").exists());
+    assert!(
+        !store
+            .path()
+            .join(format!("store/{}/java-runtime-delta", platform_key()))
+            .exists()
+    );
 }
 
 #[cfg(unix)]
@@ -510,7 +635,7 @@ async fn installs_macos_bundle_layout() {
     assert!(
         store
             .path()
-            .join("store/mac-os-arm64/java-runtime-delta.json")
+            .join("store/mac-os-arm64/java-runtime-delta/.rmcl-runtime.json")
             .is_file()
     );
 }
@@ -526,6 +651,47 @@ fn install_lock_is_exclusive_and_released() {
     drop(first);
     let second = RuntimeInstallLock::acquire(store.path(), "linux", "java-runtime-delta").unwrap();
     assert!(second.path().is_file());
+}
+
+#[test]
+fn install_lock_is_released_when_the_holder_is_killed() {
+    const HOLDER_ENV: &str = "RMCL_TEST_LOCK_HOLDER";
+    if let Some(root) = std::env::var_os(HOLDER_ENV) {
+        let _lock =
+            RuntimeInstallLock::acquire(std::path::Path::new(&root), "linux", "java-runtime-delta")
+                .unwrap();
+        std::fs::write(std::path::Path::new(&root).join("ready"), b"").unwrap();
+        std::thread::park();
+    }
+
+    let store = TempDir::new().unwrap();
+    let ready = store.path().join("ready");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "install_lock_is_released_when_the_holder_is_killed",
+            "--nocapture",
+        ])
+        .env(HOLDER_ENV, store.path())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if ready.exists() {
+            break;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("lock holder exited before readiness: {status}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(ready.exists(), "lock holder did not become ready");
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let lock = RuntimeInstallLock::acquire(store.path(), "linux", "java-runtime-delta").unwrap();
+    assert!(lock.path().is_file());
 }
 
 #[test]
