@@ -555,6 +555,14 @@ pub struct TaskList {
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct TaskWaitResult {
+    pub task: TaskSnapshot,
+    pub timed_out: bool,
+    /// The last redacted lines, included only when the task failed.
+    pub logs: Vec<GameLogEntry>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
 pub struct TaskStarted {
     pub task_id: u64,
     pub status: TaskStatus,

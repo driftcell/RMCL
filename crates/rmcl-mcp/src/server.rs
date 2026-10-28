@@ -3,6 +3,7 @@ use std::{
     future::Future,
     path::PathBuf,
     sync::{Arc, OnceLock},
+    time::Duration,
 };
 
 use rmcl_app::{
@@ -10,13 +11,14 @@ use rmcl_app::{
     ContentPreflightStatus, CreateInstanceRequest, GameLaunchRequest, InstalledVersion,
     JavaEnsureRequest, LoaderKind, LoaderSelection, MicrosoftAccountServiceError, PreparedSkin,
     RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, ServerBookmarkError,
-    SkinLibraryEntry, SkinLibraryError, SkinSourceError, TaskId, VanillaInstallRequest,
-    VersionSource, delete_installed_version_with_guard, delete_instance_content_with_guard,
-    discover_installed_versions, import_instance_content_with_guard, load_skin_file,
-    migrate_instance_to_isolated_with_guard, preflight_content_install, remove_server_bookmark,
-    rename_instance_with_guard, scan_installed_mods, scan_instance_content,
-    set_instance_content_enabled_with_guard, set_instance_java_with_guard,
-    set_instance_launch_settings_with_guard, try_lock_repository, upsert_server_bookmark,
+    SkinLibraryEntry, SkinLibraryError, SkinSourceError, TaskEvent, TaskId, TaskPhase, TaskStatus,
+    VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
+    delete_instance_content_with_guard, discover_installed_versions,
+    import_instance_content_with_guard, load_skin_file, migrate_instance_to_isolated_with_guard,
+    preflight_content_install, remove_server_bookmark, rename_instance_with_guard,
+    scan_installed_mods, scan_instance_content, set_instance_content_enabled_with_guard,
+    set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
+    upsert_server_bookmark,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount, SkinVariant};
 use rmcl_domain::ServerAddress;
@@ -52,7 +54,8 @@ use crate::{
         RemoteVersionList, RemoteVersionSummary, ServerBookmark, ServerDelete, ServerList,
         ServerPingResult, ServerWrite, SkinApplyResult, SkinDelete, SkinEntry, SkinList, SkinWrite,
         TaskList, TaskSnapshot, TaskStarted, TaskSubscription, TaskSubscriptionEnded,
-        content_entry, instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
+        TaskWaitResult, content_entry, game_log, instance_revision, instance_summary, java_runtime,
+        log_page, task_snapshot,
     },
 };
 
@@ -67,6 +70,14 @@ pub struct McpServer {
 struct InstanceIdParams {
     /// Stable instance directory ID.
     instance_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct TaskWaitParams {
+    /// Stable task ID returned by another tool.
+    task_id: u64,
+    /// Maximum seconds to wait; defaults to 120 and is capped at 600.
+    timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -500,6 +511,7 @@ impl McpServer {
                 "skins_reset",
                 "tasks_list",
                 "tasks_get",
+                "tasks_wait",
                 "tasks_logs",
                 "tasks_subscribe",
                 "tasks_unsubscribe",
@@ -1230,6 +1242,53 @@ impl McpServer {
             .await
             .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
         structured(task_snapshot(&snapshot))
+    }
+
+    #[tool(
+        description = "Wait for a task to finish, or for a launched game to start running, returning its current state on timeout",
+        output_schema = schema_for_type::<TaskWaitResult>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn tasks_wait(
+        &self,
+        Parameters(params): Parameters<TaskWaitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let task_id = TaskId::from_raw(params.task_id);
+        let timeout = Duration::from_secs(params.timeout_seconds.unwrap_or(120).clamp(1, 600));
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut events = self.context.tasks.subscribe();
+        let mut snapshot = self
+            .context
+            .tasks
+            .snapshot(task_id)
+            .await
+            .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
+        loop {
+            if task_wait_satisfied(&snapshot) {
+                return task_wait_result(&self.context, snapshot, false).await;
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return task_wait_result(&self.context, snapshot, true).await;
+            }
+            match tokio::time::timeout(remaining, events.recv()).await {
+                Ok(Ok(TaskEvent::Snapshot(next))) if next.id == task_id => snapshot = next,
+                Ok(Ok(TaskEvent::Dismissed(id))) if id == task_id => {
+                    return Err(not_found(format!("unknown task ID {}", params.task_id)));
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    snapshot =
+                        self.context.tasks.snapshot(task_id).await.ok_or_else(|| {
+                            not_found(format!("unknown task ID {}", params.task_id))
+                        })?;
+                }
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
+                    return task_wait_result(&self.context, snapshot, true).await;
+                }
+                Err(_) => return task_wait_result(&self.context, snapshot, true).await,
+            }
+        }
     }
 
     #[tool(
@@ -2277,6 +2336,41 @@ fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
 
 fn task_started(task: TaskId, replay: bool) -> TaskStarted {
     TaskStarted::new(task.get(), replay)
+}
+
+fn task_wait_satisfied(snapshot: &rmcl_app::TaskSnapshot) -> bool {
+    snapshot.status.is_terminal()
+        || (snapshot.kind == rmcl_app::TaskKind::GameLaunch
+            && snapshot.phase == Some(TaskPhase::RunningGame))
+}
+
+async fn task_wait_result(
+    context: &AppContext,
+    snapshot: rmcl_app::TaskSnapshot,
+    timed_out: bool,
+) -> Result<CallToolResult, McpError> {
+    let logs = if snapshot.status == TaskStatus::Failed {
+        context
+            .tasks
+            .logs(snapshot.id)
+            .await
+            .map(|logs| {
+                logs.iter()
+                    .rev()
+                    .take(20)
+                    .rev()
+                    .map(game_log)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    structured(TaskWaitResult {
+        task: task_snapshot(&snapshot),
+        timed_out,
+        logs,
+    })
 }
 
 fn parse_skin_variant(value: &str) -> Result<SkinVariant, McpError> {

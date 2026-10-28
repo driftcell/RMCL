@@ -118,6 +118,7 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
 | `tasks_list` | 当前与保留的最近任务快照 |
 | `tasks_get` | 按 `TaskId` 查询任务快照 |
+| `tasks_wait` | 等待任务进入终态；游戏启动任务在进入 `RunningGame` 时返回。默认 120 秒，最长 600 秒，超时返回当前快照并标记 `timed_out`；失败时附最后 20 行脱敏日志 |
 | `tasks_logs` | 按 cursor 分页读取脱敏日志，单页默认 200、最多 1000 行 |
 | `tasks_subscribe` | 当前 MCP session 显式订阅任务事件，可按 task 过滤并选择是否包含日志 |
 | `tasks_unsubscribe` | 取消当前 session 的一个订阅并等待转发器停止 |
