@@ -52,6 +52,43 @@ rmcl mcp --http --port 39271
 
 错误使用 JSON-RPC invalid params 或 internal error；未知实例和未知任务不会被伪装成空结果。结构化响应使用 `structuredContent`，同时保留 rmcp 生成的文本内容。
 
+## 协议 DTO 与错误
+
+所有工具都在 `tools/list` 中声明 `outputSchema`。只读操作、删除/取消和幂等设置操作还分别声明 `readOnlyHint`、`destructiveHint` 和 `idempotentHint`；带 idempotency key 的可选能力不因此被标记为无条件幂等。
+
+任务快照不再使用 Rust `Debug` 字符串。`kind`、`status` 使用 snake_case；`subject` 以 `type` 区分 version、content 和 instance；`phase` 使用 `kind` 和 `name`；下载、内容、processor 和 native 进度使用带 `type` 的独立结构；游戏退出状态包含 `code`、`signal` 和 `success`。例如：
+
+```json
+{
+  "kind": "content_install",
+  "phase": { "kind": "content", "name": "downloading" },
+  "progress": {
+    "type": "content",
+    "stage": "downloading",
+    "current": "mods/example.jar",
+    "completed_files": 1,
+    "total_files": 2,
+    "downloaded_bytes": 50,
+    "total_bytes": 100
+  }
+}
+```
+
+旧版调试字符串已由这些 DTO 替代，不维护额外兼容别名；调用方应以当前 `tools/list` 的 schema 为准。
+
+JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误和冲突使用 invalid params，服务内部错误使用 internal error。当前错误码包括：
+
+| code | 用途与附加字段 |
+| --- | --- |
+| `invalid_input` | 输入不满足工具约束 |
+| `not_found` | 未知实例或任务 |
+| `revision_conflict` | revision 不匹配，附 `expected_revision`、`actual_revision` |
+| `task_already_running` | 同类任务已运行，附现有 `task_id` |
+| `conflict` | 安装不完整、incompatible 等状态冲突 |
+| `cancelled` | 操作已取消，可按工作流决定是否重试 |
+| `unavailable` | 所需应用服务未配置 |
+| `internal_error` | 其他内部失败；默认不建议盲目重试 |
+
 ## 实例写操作
 
 | 工具 | 语义 |

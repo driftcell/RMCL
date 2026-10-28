@@ -24,6 +24,37 @@ fn structured(result: CallToolResult) -> Value {
     result.structured_content.unwrap()
 }
 
+#[test]
+fn every_tool_declares_an_output_schema() {
+    let tools = McpServer::tool_router().list_all();
+    assert!(!tools.is_empty());
+    for tool in tools {
+        assert!(
+            tool.output_schema.is_some(),
+            "tool {} has no output schema",
+            tool.name
+        );
+        let annotations = tool.annotations.as_ref().unwrap();
+        match tool.name.as_ref() {
+            "capabilities" | "instances_list" | "instances_get" | "content_list"
+            | "content_search" | "content_versions" | "java_list" | "tasks_list" | "tasks_get"
+            | "tasks_logs" => {
+                assert_eq!(annotations.read_only_hint, Some(true));
+                assert_eq!(annotations.destructive_hint, Some(false));
+                assert_eq!(annotations.idempotent_hint, Some(true));
+            }
+            "content_delete" | "tasks_cancel" => {
+                assert_eq!(annotations.read_only_hint, Some(false));
+                assert_eq!(annotations.destructive_hint, Some(true));
+            }
+            _ => {
+                assert_eq!(annotations.read_only_hint, Some(false));
+                assert_eq!(annotations.destructive_hint, Some(false));
+            }
+        }
+    }
+}
+
 fn write_instance(root: &Path, id: &str) {
     let directory = root.join("versions").join(id);
     std::fs::create_dir_all(&directory).unwrap();

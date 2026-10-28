@@ -6,11 +6,10 @@ use std::{
 };
 
 use rmcl_app::{
-    AppContext, AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight,
-    ContentKind, ContentPreflightItem, ContentPreflightStatus, CreateInstanceRequest,
-    GameLaunchRequest, InstalledVersion, LoaderKind, LoaderSelection, RemoteProject,
-    RemoteSearchQuery, RemoteSort, RemoteVersion, RepositoryPath, TaskId, VanillaInstallRequest,
-    VersionSource, delete_instance_content, discover_installed_versions, import_instance_content,
+    AppContext, AppError, ConflictPolicy, ContentGraphInstallRequest, ContentKind,
+    CreateInstanceRequest, GameLaunchRequest, InstalledVersion, LoaderKind, LoaderSelection,
+    RemoteSearchQuery, RemoteSort, RepositoryPath, TaskId, VanillaInstallRequest, VersionSource,
+    delete_instance_content, discover_installed_versions, import_instance_content,
     migrate_instance_to_isolated, preflight_content_install, rename_instance, scan_installed_mods,
     set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
 };
@@ -19,18 +18,24 @@ use rmcl_domain::ServerAddress;
 use rmcl_launch::LaunchAccount;
 use rmcl_store::StoredAccountKind;
 use rmcp::{
-    ErrorData as McpError, ServerHandler, handler::server::wrapper::Parameters,
-    model::CallToolResult, schemars, tool, tool_handler, tool_router,
+    ErrorData as McpError, ServerHandler,
+    handler::server::{tool::schema_for_type, wrapper::Parameters},
+    model::CallToolResult,
+    schemars, tool, tool_handler, tool_router,
 };
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    error::{internal_error, invalid_input},
+    error::{app_error, conflict, internal_error, invalid_input, not_found, revision_conflict},
     schema::{
-        content_entry, instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
+        Capabilities, ContentDelete, ContentInstallResult, ContentList, ContentWrite,
+        CreateInstancePlan, CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan,
+        InstanceList, InstanceSummary, JavaFailure, JavaList, LogPage, PathSummary,
+        PlatformSummary, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
+        RemoteVersionSummary, TaskList, TaskSnapshot, TaskStarted, content_entry,
+        instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
     },
 };
 
@@ -239,14 +244,18 @@ impl McpServer {
         Self { context }
     }
 
-    #[tool(description = "Describe RMCL capabilities, paths, and available MCP tools")]
+    #[tool(
+        description = "Describe RMCL capabilities, paths, and available MCP tools",
+        output_schema = schema_for_type::<Capabilities>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn capabilities(&self) -> Result<CallToolResult, McpError> {
-        Ok(CallToolResult::structured(json!({
-            "name": "rmcl",
-            "version": env!("CARGO_PKG_VERSION"),
-            "access": "read_write",
-            "transports": ["stdio", "streamable-http"],
-            "tools": [
+        structured(Capabilities {
+            name: "rmcl".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            access: "read_write".to_owned(),
+            transports: vec!["stdio".to_owned(), "streamable-http".to_owned()],
+            tools: [
                 "capabilities",
                 "instances_list",
                 "instances_get",
@@ -266,38 +275,55 @@ impl McpServer {
                 "tasks_get",
                 "tasks_logs",
                 "tasks_cancel",
-            ],
-            "platform": {
-                "os": self.context.platform.os.native_directory_name(),
-                "os_version": self.context.platform.os_version,
-                "architecture": self.context.platform.arch.as_str(),
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+            platform: PlatformSummary {
+                os: self.context.platform.os.native_directory_name().to_owned(),
+                os_version: self.context.platform.os_version.clone(),
+                architecture: self.context.platform.arch.as_str().to_owned(),
             },
-            "paths": {
-                "config_file": self.context.config_store.path().display().to_string(),
-                "minecraft_root": self.context.minecraft_root.display().to_string(),
-                "java_store": self.context.java_store.display().to_string(),
-            }
-        })))
+            paths: PathSummary {
+                config_file: self.context.config_store.path().display().to_string(),
+                minecraft_root: self.context.minecraft_root.display().to_string(),
+                java_store: self.context.java_store.display().to_string(),
+            },
+        })
     }
 
-    #[tool(description = "List installed Minecraft instances and their configuration")]
+    #[tool(
+        description = "List installed Minecraft instances and their configuration",
+        output_schema = schema_for_type::<InstanceList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn instances_list(&self) -> Result<CallToolResult, McpError> {
         let instances = self.installed_versions().await?;
-        Ok(CallToolResult::structured(json!({
-            "items": instances.iter().map(instance_summary).collect::<Result<Vec<_>, _>>()?
-        })))
+        structured(InstanceList {
+            items: instances
+                .iter()
+                .map(instance_summary)
+                .collect::<Result<Vec<_>, _>>()?,
+        })
     }
 
-    #[tool(description = "Get one installed Minecraft instance by ID")]
+    #[tool(
+        description = "Get one installed Minecraft instance by ID",
+        output_schema = schema_for_type::<InstanceSummary>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn instances_get(
         &self,
         Parameters(params): Parameters<InstanceIdParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
-        Ok(CallToolResult::structured(instance_summary(&instance)?))
+        structured(instance_summary(&instance)?)
     }
 
-    #[tool(description = "List local mods, resource packs, and shader packs of an instance")]
+    #[tool(
+        description = "List local mods, resource packs, and shader packs of an instance",
+        output_schema = schema_for_type::<ContentList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn content_list(
         &self,
         Parameters(params): Parameters<ContentListParams>,
@@ -314,34 +340,54 @@ impl McpServer {
             .filter(|item| kind.is_none_or(|kind| item.kind == kind))
             .map(content_entry)
             .collect::<Vec<_>>();
-        Ok(CallToolResult::structured(json!({
-            "instance_id": instance.id.as_str(),
-            "items": items,
-            "warnings": library.warnings.iter().map(|warning| warning.message()).collect::<Vec<_>>(),
-        })))
+        structured(ContentList {
+            instance_id: instance.id.as_str().to_owned(),
+            items,
+            warnings: library
+                .warnings
+                .iter()
+                .map(|warning| warning.message())
+                .collect(),
+        })
     }
 
-    #[tool(description = "Probe managed, JAVA_HOME, and PATH Java runtimes")]
+    #[tool(
+        description = "Probe managed, JAVA_HOME, and PATH Java runtimes",
+        output_schema = schema_for_type::<JavaList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn java_list(&self) -> Result<CallToolResult, McpError> {
         let discovery = self.context.java.discover().await;
-        Ok(CallToolResult::structured(json!({
-            "items": discovery.runtimes.iter().map(java_runtime).collect::<Vec<_>>(),
-            "failures": discovery.failures.iter().map(|failure| json!({
-                "executable": failure.executable.display().to_string(),
-                "error": failure.error.to_string(),
-            })).collect::<Vec<_>>(),
-        })))
+        structured(JavaList {
+            items: discovery.runtimes.iter().map(java_runtime).collect(),
+            failures: discovery
+                .failures
+                .iter()
+                .map(|failure| JavaFailure {
+                    executable: failure.executable.display().to_string(),
+                    error: failure.error.to_string(),
+                })
+                .collect(),
+        })
     }
 
-    #[tool(description = "List current and recently completed RMCL tasks")]
+    #[tool(
+        description = "List current and recently completed RMCL tasks",
+        output_schema = schema_for_type::<TaskList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn tasks_list(&self) -> Result<CallToolResult, McpError> {
         let snapshots = self.context.tasks.snapshots().await;
-        Ok(CallToolResult::structured(json!({
-            "items": snapshots.iter().map(task_snapshot).collect::<Vec<_>>()
-        })))
+        structured(TaskList {
+            items: snapshots.iter().map(task_snapshot).collect(),
+        })
     }
 
-    #[tool(description = "Get one RMCL task by ID")]
+    #[tool(
+        description = "Get one RMCL task by ID",
+        output_schema = schema_for_type::<TaskSnapshot>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn tasks_get(
         &self,
         Parameters(params): Parameters<TaskIdParams>,
@@ -351,11 +397,15 @@ impl McpServer {
             .tasks
             .snapshot(TaskId::from_raw(params.task_id))
             .await
-            .ok_or_else(|| invalid_input(format!("unknown task ID {}", params.task_id)))?;
-        Ok(CallToolResult::structured(task_snapshot(&snapshot)))
+            .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
+        structured(task_snapshot(&snapshot))
     }
 
-    #[tool(description = "Read a bounded page of redacted logs for an RMCL task")]
+    #[tool(
+        description = "Read a bounded page of redacted logs for an RMCL task",
+        output_schema = schema_for_type::<LogPage>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn tasks_logs(
         &self,
         Parameters(params): Parameters<TaskLogsParams>,
@@ -365,12 +415,15 @@ impl McpServer {
             .tasks
             .logs(TaskId::from_raw(params.task_id))
             .await
-            .ok_or_else(|| invalid_input(format!("unknown task ID {}", params.task_id)))?;
-        let page = log_page(&logs, params.cursor, params.limit)?;
-        Ok(CallToolResult::structured(page))
+            .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
+        structured(log_page(&logs, params.cursor, params.limit)?)
     }
 
-    #[tool(description = "Create a Vanilla or mod-loader instance and return its install task")]
+    #[tool(
+        description = "Create a Vanilla or mod-loader instance and return its install task",
+        output_schema = schema_for_type::<CreateInstanceResult>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
     async fn instances_create(
         &self,
         Parameters(params): Parameters<CreateInstanceParams>,
@@ -399,21 +452,21 @@ impl McpServer {
             copy_content_from: params.copy_content_from,
         };
         if params.dry_run == Some(true) {
-            return Ok(CallToolResult::structured(json!({
-                "dry_run": true,
-                "instance_id": request.instance_id,
-                "name": request.name,
-                "base_version_id": request.base_version_id,
-                "loader": request.loader.as_ref().map(|loader| json!({
-                    "kind": loader.kind.as_str(),
-                    "version": loader.version,
-                    "installer_version": loader.installer_version,
-                })),
-                "copy_content_from": request.copy_content_from,
-                "platform": {
-                    "os": request.platform.os.native_directory_name(),
-                    "architecture": request.platform.arch.as_str(),
-                }
+            return structured(CreateInstanceResult::Plan(Box::new(CreateInstancePlan {
+                dry_run: true,
+                instance_id: request.instance_id,
+                name: request.name,
+                base_version_id: request.base_version_id,
+                loader: request.loader.as_ref().map(|loader| CreateLoaderPlan {
+                    kind: loader.kind.as_str().to_owned(),
+                    version: loader.version.clone(),
+                    installer_version: loader.installer_version.clone(),
+                }),
+                copy_content_from: request.copy_content_from,
+                platform: CreatePlatformPlan {
+                    os: request.platform.os.native_directory_name().to_owned(),
+                    architecture: request.platform.arch.as_str().to_owned(),
+                },
             })));
         }
         let (task, replay) = self
@@ -421,11 +474,13 @@ impl McpServer {
                 self.context.tasks.start_create_instance(request)
             })
             .await?;
-        Ok(task_started(task, replay))
+        structured(CreateInstanceResult::Task(task_started(task, replay)))
     }
 
     #[tool(
-        description = "Rename an instance and update Java, memory, window, and isolation settings"
+        description = "Rename an instance and update Java, memory, window, and isolation settings",
+        output_schema = schema_for_type::<InstanceSummary>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
     )]
     async fn instances_update(
         &self,
@@ -502,7 +557,11 @@ impl McpServer {
         .await
     }
 
-    #[tool(description = "Check and repair an installed instance and return the repair task")]
+    #[tool(
+        description = "Check and repair an installed instance and return the repair task",
+        output_schema = schema_for_type::<TaskStarted>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
     async fn instances_repair(
         &self,
         Parameters(params): Parameters<RepairInstanceParams>,
@@ -521,10 +580,14 @@ impl McpServer {
             .start_install(request)
             .await
             .map_err(internal_error)?;
-        Ok(task_started(task, false))
+        structured(task_started(task, false))
     }
 
-    #[tool(description = "Launch an installed instance and return the game task")]
+    #[tool(
+        description = "Launch an installed instance and return the game task",
+        output_schema = schema_for_type::<TaskStarted>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
     async fn instances_launch(
         &self,
         Parameters(params): Parameters<LaunchInstanceParams>,
@@ -559,10 +622,14 @@ impl McpServer {
             self.context.tasks.start_launch_installed(request).await
         }
         .map_err(internal_error)?;
-        Ok(task_started(task, false))
+        structured(task_started(task, false))
     }
 
-    #[tool(description = "Cooperatively cancel a running RMCL task")]
+    #[tool(
+        description = "Cooperatively cancel a running RMCL task",
+        output_schema = schema_for_type::<TaskSnapshot>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
     async fn tasks_cancel(
         &self,
         Parameters(params): Parameters<TaskIdParams>,
@@ -583,11 +650,15 @@ impl McpServer {
             .tasks
             .snapshot(TaskId::from_raw(params.task_id))
             .await
-            .ok_or_else(|| invalid_input(format!("unknown task ID {}", params.task_id)))?;
-        Ok(CallToolResult::structured(task_snapshot(&snapshot)))
+            .ok_or_else(|| not_found(format!("unknown task ID {}", params.task_id)))?;
+        structured(task_snapshot(&snapshot))
     }
 
-    #[tool(description = "Import a local mod, resource pack, or shader pack into an instance")]
+    #[tool(
+        description = "Import a local mod, resource pack, or shader pack into an instance",
+        output_schema = schema_for_type::<ContentWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
     async fn content_import(
         &self,
         Parameters(params): Parameters<ContentImportParams>,
@@ -600,13 +671,17 @@ impl McpServer {
         let content = import_instance_content(layout, kind, PathBuf::from(params.source), conflict)
             .await
             .map_err(internal_error)?;
-        Ok(CallToolResult::structured(json!({
-            "content": content_entry(&content),
-            "revision": instance_revision(&instance)?,
-        })))
+        structured(ContentWrite {
+            content: content_entry(&content),
+            revision: instance_revision(&instance)?,
+        })
     }
 
-    #[tool(description = "Enable or disable a local mod or resource pack")]
+    #[tool(
+        description = "Enable or disable a local mod or resource pack",
+        output_schema = schema_for_type::<ContentWrite>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn content_set_enabled(
         &self,
         Parameters(params): Parameters<ContentSetEnabledParams>,
@@ -619,13 +694,17 @@ impl McpServer {
         let content = set_instance_content_enabled(layout, kind, relative, params.enabled)
             .await
             .map_err(internal_error)?;
-        Ok(CallToolResult::structured(json!({
-            "content": content_entry(&content),
-            "revision": instance_revision(&instance)?,
-        })))
+        structured(ContentWrite {
+            content: content_entry(&content),
+            revision: instance_revision(&instance)?,
+        })
     }
 
-    #[tool(description = "Delete a local content entry after checking its expected revision")]
+    #[tool(
+        description = "Delete a local content entry after checking its expected revision",
+        output_schema = schema_for_type::<ContentDelete>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
     async fn content_delete(
         &self,
         Parameters(params): Parameters<ContentDeleteParams>,
@@ -638,13 +717,17 @@ impl McpServer {
         delete_instance_content(layout, kind, relative)
             .await
             .map_err(internal_error)?;
-        Ok(CallToolResult::structured(json!({
-            "deleted": true,
-            "revision": instance_revision(&instance)?,
-        })))
+        structured(ContentDelete {
+            deleted: true,
+            revision: instance_revision(&instance)?,
+        })
     }
 
-    #[tool(description = "Search Modrinth for content to install")]
+    #[tool(
+        description = "Search Modrinth for content to install",
+        output_schema = schema_for_type::<RemoteSearchPage>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn content_search(
         &self,
         Parameters(params): Parameters<ContentSearchParams>,
@@ -663,15 +746,23 @@ impl McpServer {
             .search(&query, &tokio_util::sync::CancellationToken::new())
             .await
             .map_err(internal_error)?;
-        Ok(CallToolResult::structured(json!({
-            "total_hits": page.total_hits,
-            "offset": page.offset,
-            "limit": page.limit,
-            "items": page.projects.iter().map(remote_project_summary).collect::<Vec<_>>(),
-        })))
+        structured(RemoteSearchPage {
+            total_hits: page.total_hits,
+            offset: page.offset,
+            limit: page.limit,
+            items: page
+                .projects
+                .iter()
+                .map(RemoteProjectSummary::from)
+                .collect(),
+        })
     }
 
-    #[tool(description = "List installable Modrinth versions for a project")]
+    #[tool(
+        description = "List installable Modrinth versions for a project",
+        output_schema = schema_for_type::<RemoteVersionList>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
     async fn content_versions(
         &self,
         Parameters(params): Parameters<ContentVersionsParams>,
@@ -687,13 +778,15 @@ impl McpServer {
             )
             .await
             .map_err(internal_error)?;
-        Ok(CallToolResult::structured(json!({
-            "items": versions.iter().map(remote_version_summary).collect::<Vec<_>>()
-        })))
+        structured(RemoteVersionList {
+            items: versions.iter().map(RemoteVersionSummary::from).collect(),
+        })
     }
 
     #[tool(
-        description = "Install a Modrinth version with dependencies, or return preflight when dry_run is true"
+        description = "Install a Modrinth version with dependencies, or return preflight when dry_run is true",
+        output_schema = schema_for_type::<ContentInstallResult>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
     )]
     async fn content_install(
         &self,
@@ -740,7 +833,9 @@ impl McpServer {
         .await
         .map_err(internal_error)?;
         if params.dry_run == Some(true) {
-            return Ok(CallToolResult::structured(preflight_json(&preflight)));
+            return structured(ContentInstallResult::Preflight(Box::new(
+                (&preflight).into(),
+            )));
         }
         if !preflight.incompatible.is_empty() {
             let conflicts = preflight
@@ -749,7 +844,7 @@ impl McpServer {
                 .map(|item| item.title.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err(invalid_input(format!(
+            return Err(conflict(format!(
                 "content install blocked by incompatible installed mods: {conflicts}"
             )));
         }
@@ -761,7 +856,7 @@ impl McpServer {
                     .start_content_install_with_dependencies(request)
             })
             .await?;
-        Ok(task_started(task, replay))
+        structured(ContentInstallResult::Task(task_started(task, replay)))
     }
 
     async fn launch_account(&self) -> Result<LaunchAccount, McpError> {
@@ -822,9 +917,7 @@ impl McpServer {
         }
         let actual = instance_revision(instance)?;
         if actual != expected {
-            return Err(invalid_input(format!(
-                "instance revision conflict; expected {expected}, actual {actual}"
-            )));
+            return Err(revision_conflict(expected, &actual));
         }
         Ok(())
     }
@@ -839,7 +932,7 @@ impl McpServer {
         F: Future<Output = Result<TaskId, AppError>>,
     {
         let Some(key) = key else {
-            return Ok((start().await.map_err(internal_error)?, false));
+            return Ok((start().await.map_err(app_error)?, false));
         };
         if key.trim().is_empty() {
             return Err(invalid_input("idempotency_key cannot be blank"));
@@ -855,7 +948,7 @@ impl McpServer {
         }
         // Keep the registry locked while registering the task so concurrent
         // retries cannot both pass the initial lookup and start duplicate work.
-        let task = start().await.map_err(internal_error)?;
+        let task = start().await.map_err(app_error)?;
         tasks.insert(key, task);
         Ok((task, false))
     }
@@ -873,7 +966,7 @@ impl McpServer {
             .await?
             .into_iter()
             .find(|instance| instance.id.as_str() == id)
-            .ok_or_else(|| invalid_input(format!("unknown instance ID `{id}`")))
+            .ok_or_else(|| not_found(format!("unknown instance ID `{id}`")))
     }
 }
 
@@ -885,93 +978,14 @@ impl ServerHandler for McpServer {}
 
 static IDEMPOTENCY_TASKS: OnceLock<Mutex<BTreeMap<String, TaskId>>> = OnceLock::new();
 
-fn task_started(task: TaskId, replay: bool) -> CallToolResult {
-    CallToolResult::structured(json!({
-        "task_id": task.get(),
-        "status": "running",
-        "idempotent_replay": replay,
-    }))
+fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
+    serde_json::to_value(value)
+        .map(CallToolResult::structured)
+        .map_err(internal_error)
 }
 
-fn remote_project_summary(project: &RemoteProject) -> serde_json::Value {
-    json!({
-        "id": project.id,
-        "slug": project.slug,
-        "title": project.title,
-        "description": project.description,
-        "author": project.author,
-        "downloads": project.downloads,
-        "follows": project.follows,
-        "categories": project.categories,
-        "game_versions": project.game_versions,
-        "loaders": project.loaders,
-        "project_type": project.project_type,
-        "updated": project.updated,
-        "page_url": project.page_url(),
-    })
-}
-
-fn remote_version_summary(version: &RemoteVersion) -> serde_json::Value {
-    json!({
-        "id": version.id,
-        "project_id": version.project_id,
-        "name": version.name,
-        "version_number": version.version_number,
-        "version_type": version.version_type,
-        "published": version.published,
-        "game_versions": version.game_versions,
-        "loaders": version.loaders,
-        "files": version.files.iter().map(|file| json!({
-            "filename": file.filename,
-            "url": file.url.to_string(),
-            "size": file.size,
-            "sha1": file.sha1.map(|sha1| sha1.to_string()),
-            "primary": file.primary,
-        })).collect::<Vec<_>>(),
-        "dependencies": version.dependencies.iter().map(|dependency| json!({
-            "version_id": dependency.version_id,
-            "project_id": dependency.project_id,
-            "file_name": dependency.file_name,
-            "kind": format!("{:?}", dependency.kind).to_lowercase(),
-        })).collect::<Vec<_>>(),
-    })
-}
-
-fn preflight_json(preflight: &ContentInstallPreflight) -> serde_json::Value {
-    json!({
-        "dry_run": true,
-        "main": preflight_item_json(&preflight.main),
-        "dependencies": preflight.dependencies.iter().map(preflight_item_json).collect::<Vec<_>>(),
-        "incompatible": preflight.incompatible.iter().map(preflight_item_json).collect::<Vec<_>>(),
-        "optional_count": preflight.optional_count,
-        "warnings": preflight.warnings.clone(),
-        "skip_version_ids": preflight.skip_version_ids,
-    })
-}
-
-fn preflight_item_json(item: &ContentPreflightItem) -> serde_json::Value {
-    let status = match &item.status {
-        ContentPreflightStatus::AlreadyInstalled { enabled } => json!({
-            "state": "already_installed",
-            "enabled": enabled,
-        }),
-        ContentPreflightStatus::InstalledDifferentVersion { version, enabled } => json!({
-            "state": "installed_different_version",
-            "version": version,
-            "enabled": enabled,
-        }),
-        ContentPreflightStatus::WillInstall => json!({ "state": "will_install" }),
-        ContentPreflightStatus::Conflict => json!({ "state": "conflict" }),
-    };
-    json!({
-        "project_id": item.project_id,
-        "project_slug": item.project_slug,
-        "title": item.title,
-        "version_id": item.version_id,
-        "version_number": item.version_number,
-        "file_name": item.file_name,
-        "status": status,
-    })
+fn task_started(task: TaskId, replay: bool) -> TaskStarted {
+    TaskStarted::new(task.get(), replay)
 }
 
 fn parse_conflict_policy(value: Option<&str>) -> Result<ConflictPolicy, McpError> {
