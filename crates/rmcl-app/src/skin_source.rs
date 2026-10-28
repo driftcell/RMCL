@@ -346,7 +346,7 @@ fn normalized_file_name(value: &str) -> String {
     }
 }
 
-fn is_blocked_address(address: IpAddr) -> bool {
+pub(crate) fn is_blocked_address(address: IpAddr) -> bool {
     match address {
         IpAddr::V4(address) => is_blocked_ipv4(address),
         IpAddr::V6(address) => is_blocked_ipv6(address),

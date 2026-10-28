@@ -12,8 +12,8 @@ use tokio::runtime::{Builder, Runtime};
 use crate::{
     AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
     LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
-    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, SkinLibrary, SkinUrlClient,
-    TaskManager, UpdateClient, VanillaInstaller, VersionCatalog,
+    ModrinthClient, RemoteIconCache, ServerIconCache, ServerStatusClient, SkinCache, SkinLibrary,
+    SkinUrlClient, TaskManager, UpdateClient, VanillaInstaller, VersionCatalog,
 };
 
 /// Shared headless services used by the desktop UI and external protocols.
@@ -34,6 +34,7 @@ pub struct AppContext {
     pub skin_urls: SkinUrlClient,
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
+    pub remote_icons: RemoteIconCache,
     pub mod_metadata: ModMetadataCache,
     pub updates: UpdateClient,
     pub mirror: Arc<MirrorHealth>,
@@ -100,6 +101,7 @@ impl AppContext {
         let skin_library = SkinLibrary::new(config_dir.join("skins").join("library"));
         let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
         let server_icon_cache_dir = config_dir.join("cache").join("servers");
+        let remote_icon_cache_dir = config_dir.join("cache").join("remote-icons");
         let mod_metadata_cache_dir = config_dir.join("cache").join("mod-metadata");
         let mod_metadata =
             ModMetadataCache::new(DownloadConfig::default(), mod_metadata_cache_dir)?;
@@ -122,6 +124,7 @@ impl AppContext {
             skin_urls,
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
+            remote_icons: RemoteIconCache::new(remote_icon_cache_dir)?,
             mod_metadata,
             updates,
             mirror,

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use gpui_kit::{
     assets::IconName,
     component::{
@@ -76,6 +78,10 @@ impl LauncherApp {
         };
         let refresh = project.clone();
         let refresh_versions = project.is_some();
+        let project_icon = project
+            .as_ref()
+            .and_then(|project| self.content_browser.project_icons.get(&project.id))
+            .and_then(|path| path.as_deref());
         v_flex()
             .flex_1()
             .min_h_0()
@@ -96,7 +102,7 @@ impl LauncherApp {
                                 this.back_to_instance_detail(window, cx)
                             })),
                     )
-                    .child(version_tile(IconName::Globe, cx.theme().primary, cx))
+                    .child(project_tile(project_icon, kind, cx))
                     .child(
                         v_flex()
                             .flex_1()
@@ -325,6 +331,11 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let project_for_click = project.clone();
+        let icon_path = self
+            .content_browser
+            .project_icons
+            .get(&project.id)
+            .and_then(|path| path.as_deref());
         let categories = project
             .categories
             .iter()
@@ -340,7 +351,7 @@ impl LauncherApp {
             .border_color(cx.theme().border)
             .bg(cx.theme().background.opacity(0.35))
             .p_3()
-            .child(version_tile(content_icon(kind), cx.theme().primary, cx))
+            .child(project_tile(icon_path, kind, cx))
             .child(
                 v_flex()
                     .flex_1()
@@ -627,6 +638,24 @@ fn remote_sort_index(sort: RemoteSort) -> usize {
         .iter()
         .position(|candidate| *candidate == sort)
         .unwrap_or(0)
+}
+
+fn project_tile(path: Option<&Path>, kind: ContentKind, cx: &App) -> AnyElement {
+    let Some(path) = path else {
+        return version_tile(content_icon(kind), cx.theme().primary, cx).into_any_element();
+    };
+    div()
+        .size_11()
+        .flex_shrink_0()
+        .rounded(cx.theme().radius_tokens().xl)
+        .overflow_hidden()
+        .bg(cx.theme().primary.opacity(0.12))
+        .child(
+            img(path.to_path_buf())
+                .size_full()
+                .object_fit(ObjectFit::Cover),
+        )
+        .into_any_element()
 }
 
 fn content_icon(kind: ContentKind) -> IconName {
