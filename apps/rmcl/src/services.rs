@@ -9,7 +9,7 @@ use rmcl_store::{
 };
 use uuid::Uuid;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(name = "rmcl", about = "A cross-platform Minecraft launcher")]
 pub(crate) struct LauncherArgs {
     #[arg(long, value_name = "PLAN", hide = true)]
@@ -33,13 +33,13 @@ pub(crate) struct LauncherArgs {
     player: Option<String>,
 }
 
-#[derive(Debug, Clone, Subcommand)]
+#[derive(Clone, Subcommand)]
 pub(crate) enum LauncherCommand {
     /// Expose RMCL instances, content, and tasks over MCP.
     Mcp(McpArgs),
 }
 
-#[derive(Debug, Clone, Args)]
+#[derive(Clone, Args)]
 #[command(group = ArgGroup::new("transport").required(true).args(["stdio", "http"]))]
 pub(crate) struct McpArgs {
     /// Serve MCP over standard input and output.
@@ -51,6 +51,15 @@ pub(crate) struct McpArgs {
     /// Loopback TCP port for the HTTP transport.
     #[arg(long, default_value_t = 39271, requires = "http")]
     pub(crate) port: u16,
+    /// HTTP access level: read_only or read_write.
+    #[arg(long, default_value = "read_only", value_parser = ["read_only", "read_write"], requires = "http")]
+    pub(crate) access: String,
+    /// Bearer token for HTTP clients; RMCL_MCP_TOKEN is preferred for secrets.
+    #[arg(long, value_name = "TOKEN", requires = "http")]
+    pub(crate) token: Option<String>,
+    /// Allowed browser Origin; repeat for multiple origins.
+    #[arg(long = "origin", value_name = "ORIGIN", requires = "http")]
+    pub(crate) allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +226,10 @@ mod tests {
     fn cli_help_documents_all_overrides() {
         use clap::error::ErrorKind;
 
-        let error = LauncherArgs::try_parse_from(["rmcl", "--help"]).unwrap_err();
+        let error = match LauncherArgs::try_parse_from(["rmcl", "--help"]) {
+            Err(error) => error,
+            Ok(_) => panic!("--help should return a clap display error"),
+        };
         assert_eq!(error.kind(), ErrorKind::DisplayHelp);
         let help = error.to_string();
         for option in [
@@ -247,14 +259,37 @@ mod tests {
         };
         assert!(mcp.stdio);
         assert!(!mcp.http);
+        assert_eq!(mcp.access, "read_only");
+        assert!(mcp.token.is_none());
+        assert!(mcp.allowed_origins.is_empty());
 
-        let arguments =
-            LauncherArgs::try_parse_from(["rmcl", "mcp", "--http", "--port", "40000"]).unwrap();
+        let arguments = LauncherArgs::try_parse_from([
+            "rmcl",
+            "mcp",
+            "--http",
+            "--port",
+            "40000",
+            "--access",
+            "read_write",
+            "--token",
+            "test-token",
+            "--origin",
+            "https://agent.example",
+            "--origin",
+            "https://other.example",
+        ])
+        .unwrap();
         let Some(LauncherCommand::Mcp(mcp)) = arguments.command else {
             panic!("expected MCP subcommand");
         };
         assert!(mcp.http);
         assert_eq!(mcp.port, 40000);
+        assert_eq!(mcp.access, "read_write");
+        assert_eq!(mcp.token.as_deref(), Some("test-token"));
+        assert_eq!(
+            mcp.allowed_origins,
+            ["https://agent.example", "https://other.example"]
+        );
 
         assert!(LauncherArgs::try_parse_from(["rmcl", "mcp"]).is_err());
         assert!(LauncherArgs::try_parse_from(["rmcl", "mcp", "--stdio", "--http"]).is_err());
@@ -300,7 +335,10 @@ mod tests {
 
     #[test]
     fn cli_reports_missing_values_with_help() {
-        let error = LauncherArgs::try_parse_from(["rmcl", "--config"]).unwrap_err();
+        let error = match LauncherArgs::try_parse_from(["rmcl", "--config"]) {
+            Err(error) => error,
+            Ok(_) => panic!("missing --config value should be rejected"),
+        };
         let message = error.to_string();
         assert!(message.contains("a value is required"));
         assert!(message.contains("try '--help'"));

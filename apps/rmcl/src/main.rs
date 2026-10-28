@@ -9,7 +9,7 @@ use app::LauncherApp;
 use clap::Parser;
 use gpui_kit::component::TitleBar;
 use gpui_kit::*;
-use services::{Bootstrap, LauncherArgs, LauncherCommand, Services};
+use services::{Bootstrap, LauncherArgs, LauncherCommand, McpArgs, Services};
 
 fn main() {
     let arguments = LauncherArgs::parse();
@@ -82,31 +82,50 @@ fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), Stri
     let runtime = services.runtime.handle().clone();
     let result = if arguments.http && arguments.port == 0 {
         Err("MCP port must be between 1 and 65535".to_owned())
-    } else {
+    } else if arguments.stdio {
         runtime.block_on(async {
-            if arguments.stdio {
-                rmcl_mcp::serve_stdio(services.clone())
-                    .await
-                    .map_err(|error| error.to_string())
-            } else {
+            rmcl_mcp::serve_stdio(services.clone())
+                .await
+                .map_err(|error| error.to_string())
+        })
+    } else {
+        match http_config(&arguments) {
+            Ok(config) => runtime.block_on(async {
                 eprintln!(
                     "RMCL MCP listening on http://127.0.0.1:{}/mcp",
                     arguments.port
                 );
                 rmcl_mcp::serve_http(
                     services.clone(),
-                    arguments.port,
+                    config,
                     tokio_util::sync::CancellationToken::new(),
                 )
                 .await
                 .map_err(|error| error.to_string())
-            }
-        })
+            }),
+            Err(error) => Err(error),
+        }
     };
     if let Ok(services) = Arc::try_unwrap(services) {
         services.runtime.shutdown_background();
     }
     result
+}
+
+fn http_config(arguments: &McpArgs) -> Result<rmcl_mcp::HttpServerConfig, String> {
+    let access = match arguments.access.as_str() {
+        "read_only" => rmcl_mcp::AccessLevel::ReadOnly,
+        "read_write" => rmcl_mcp::AccessLevel::ReadWrite,
+        other => return Err(format!("unsupported MCP access level `{other}`")),
+    };
+    let mut config = rmcl_mcp::HttpServerConfig::new(arguments.port);
+    config.access = access;
+    config.bearer_token = arguments
+        .token
+        .clone()
+        .or_else(|| std::env::var("RMCL_MCP_TOKEN").ok());
+    config.allowed_origins = arguments.allowed_origins.iter().cloned().collect();
+    Ok(config)
 }
 
 #[cfg(windows)]
