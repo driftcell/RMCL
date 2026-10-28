@@ -25,6 +25,7 @@ use rmcl_store::DownloadSourcePreference;
 
 impl LauncherApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let agent_keyless = !self.agent.provider(cx).requires_key();
         let auto_java_view = cx.entity().downgrade();
         let auto_update_view = cx.entity().downgrade();
         let mcp_view = cx.entity().downgrade();
@@ -277,7 +278,7 @@ impl LauncherApp {
                         card(cx)
                             .child(section_title(
                                 "AI 助手",
-                                "使用自己的 API Key 连接主流模型服务商。Key 只保存在系统钥匙串。",
+                                "可使用 Kilo 免费模型，无需 API Key；也可填写自己的 API Key。Key 只保存在系统钥匙串。",
                                 cx,
                             ))
                             .child(
@@ -320,61 +321,99 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("API Key"))
-                                            .child(match &self.agent.settings.key {
-                                                AgentKeyState::Saved => h_flex()
+                                            .child(field_label(if agent_keyless {
+                                                "免费通道"
+                                            } else {
+                                                "API Key"
+                                            }))
+                                            .child(if agent_keyless {
+                                                h_flex()
                                                     .gap_2()
-                                                    .child(help("已保存在系统钥匙串。", cx))
+                                                    .items_center()
                                                     .child(
-                                                        Button::new("settings-agent-remove-key")
+                                                        Tag::success()
+                                                            .small()
+                                                            .child("无需 Key"),
+                                                    )
+                                                    .child(help(
+                                                        "免费模型可能记录对话，请勿发送敏感信息。",
+                                                        cx,
+                                                    ))
+                                                    .into_any_element()
+                                            } else {
+                                                match &self.agent.settings.key {
+                                                    AgentKeyState::Saved => h_flex()
+                                                        .gap_2()
+                                                        .child(help("已保存在系统钥匙串。", cx))
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-remove-key",
+                                                            )
                                                             .ghost()
                                                             .small()
                                                             .label("移除")
-                                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                                this.remove_agent_key(cx)
-                                                            })),
-                                                    )
-                                                    .into_any_element(),
-                                                AgentKeyState::Unknown | AgentKeyState::Missing => h_flex()
-                                                    .gap_2()
-                                                    .child(
-                                                        Input::new(&self.agent.settings.key_input)
+                                                            .on_click(cx.listener(
+                                                                |this, _, _, cx| {
+                                                                    this.remove_agent_key(cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                    AgentKeyState::Unknown
+                                                    | AgentKeyState::Missing
+                                                    | AgentKeyState::Free => h_flex()
+                                                        .gap_2()
+                                                        .child(
+                                                            Input::new(
+                                                                &self.agent.settings.key_input,
+                                                            )
                                                             .mask_toggle()
                                                             .w_full(),
-                                                    )
-                                                    .child(
-                                                        Button::new("settings-agent-save-key")
+                                                        )
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-save-key",
+                                                            )
                                                             .outline()
                                                             .small()
                                                             .label("保存")
-                                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                                this.save_agent_key(window, cx)
-                                                            })),
-                                                    )
-                                                    .into_any_element(),
-                                                AgentKeyState::Error(error) => v_flex()
-                                                    .gap_1()
-                                                    .child(
-                                                        Input::new(&self.agent.settings.key_input)
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.save_agent_key(window, cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                    AgentKeyState::Error(error) => v_flex()
+                                                        .gap_1()
+                                                        .child(
+                                                            Input::new(
+                                                                &self.agent.settings.key_input,
+                                                            )
                                                             .mask_toggle()
                                                             .w_full(),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(cx.theme().danger)
-                                                            .child(error.clone()),
-                                                    )
-                                                    .child(
-                                                        Button::new("settings-agent-save-key")
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(cx.theme().danger)
+                                                                .child(error.clone()),
+                                                        )
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-save-key",
+                                                            )
                                                             .outline()
                                                             .small()
                                                             .label("保存")
-                                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                                this.save_agent_key(window, cx)
-                                                            })),
-                                                    )
-                                                    .into_any_element(),
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.save_agent_key(window, cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                }
                                             }),
                                     ),
                             )

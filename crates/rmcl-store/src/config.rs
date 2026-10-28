@@ -56,7 +56,7 @@ impl Default for LauncherConfig {
             launcher_visibility: LauncherVisibility::default(),
             mcp_enabled: false,
             mcp_port: DEFAULT_MCP_PORT,
-            agent_provider: "openai".to_owned(),
+            agent_provider: "kilo".to_owned(),
             agent_model: String::new(),
             agent_base_url: None,
             agent_proxy: None,
@@ -523,7 +523,7 @@ mcp_port = 40000
         let config = store.load().unwrap();
 
         assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
-        assert_eq!(config.agent_provider, "openai");
+        assert_eq!(config.agent_provider, "kilo");
         assert!(config.agent_model.is_empty());
         assert_eq!(config.agent_base_url, None);
         assert_eq!(config.agent_proxy, None);

@@ -1,6 +1,6 @@
 # 内置 AI 助手
 
-状态：BYOK 服务商配置、系统钥匙串、进程内 MCP、工具权限确认、AI 页面、活动卡、任务进度和 `tasks_wait` 已实现；对话仅保存在内存，重启后清空。
+状态：Kilo 免费通道、BYOK 服务商配置、系统钥匙串、进程内 MCP、工具权限确认、AI 页面、活动卡、任务进度和 `tasks_wait` 已实现；对话仅保存在内存，重启后清空。
 
 日期：2026-10-29
 
@@ -14,12 +14,16 @@
 - 模型关闭思考过程输出。中间文字不进入聊天；只有不再调用工具的最终回合通过 `TextViewState` 渲染 Markdown。
 - 会话历史和长任务都由应用层持有，页面只消费事件和快照。
 
-## BYOK 与服务商
+## 免费通道与 BYOK 服务商
 
-第一版支持 OpenAI、Anthropic、Google Gemini、DeepSeek、OpenRouter、通义千问、Kimi、智谱 GLM 和自定义 OpenAI-compatible 服务商。每个服务商有默认 Base URL 和默认模型，模型 ID 可在设置中编辑；默认模型必须支持工具调用。
+默认服务商是 **Kilo 免费模型**（`kilo`）。它通过 Kilo AI Gateway 的匿名免费池调用 `kilo-auto/free`，不需要 API Key；Rig 在 Key 为空时不会发送 `Authorization` 头。
 
+- Kilo Base URL：`https://ai-gateway.kilo.ai/api/v1`；默认模型 `kilo-auto/free` 会自动选择当前可用的免费模型。
+- 免费池的模型、限额和隐私策略由 Kilo 控制，可能轮换；免费模型可能记录对话，设置卡片会提示不要发送敏感信息。
+- 免费通道遇到 429 时显示“请求过多，请稍后再试或配置自己的 Key”，不暴露原始 HTTP 错误。
+- BYOK 仍支持 OpenAI、Anthropic、Google Gemini、DeepSeek、OpenRouter、通义千问、Kimi、智谱 GLM 和自定义 OpenAI-compatible 服务商。
 - Provider 配置写入 `config.toml`（schema 7）：`agent_provider`、`agent_model`、`agent_base_url`、`agent_proxy`。
-- API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。
+- API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。Kilo 不使用 Keyring。
 - 已保存的 Key 不回填输入框，只显示“已保存在系统钥匙串”和移除按钮。
 - 保存时不自动发起模型请求；首次发送消息时验证服务商与 Key。
 - 代理支持 HTTP(S)、SOCKS5 和 SOCKS5H；留空时跟随系统/环境代理。代理只影响 AI 请求，不改变全局网络设置。
@@ -77,7 +81,7 @@ Agent 写工具成功后主动刷新一次版本、当前实例内容和外部�
 
 ## 验证
 
-- `rmcl-agent` 覆盖 Provider 预设、Base URL/代理校验、Keyring 版本化 JSON、模型构建和系统提示占位符。
+- `rmcl-agent` 覆盖 Provider 预设、Kilo 无 Key 模型构建、Base URL/代理校验、Keyring 版本化 JSON、模型构建和系统提示占位符。
 - `rmcl-mcp` 覆盖 `tasks_wait` 的终态/运行游戏边界；已有任务通知和只读权限测试继续运行。
 - `rmcl-store` 覆盖 schema 6 → 7 默认值和往返。
 - AI 页面、确认卡、IME 回车、真实服务商工具调用和多平台窗口仍需人工验收。

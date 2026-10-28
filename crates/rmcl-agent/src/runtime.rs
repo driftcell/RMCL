@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    AgentError, AgentKeyStore, AgentSettings,
+    AgentError, AgentKeyStore, AgentProvider, AgentSettings,
     events::{
         AgentEvent, AgentTurn, ConfirmationBroker, ConfirmationDecision, ConfirmationRequest,
     },
@@ -73,11 +73,17 @@ impl AgentService {
         input: String,
         turn_context: AgentTurnContext,
     ) -> Result<AgentTurn, AgentError> {
-        let key = self
-            .keys
-            .load(settings.provider)?
-            .ok_or(AgentError::MissingKey(settings.provider))?;
+        let key = if settings.provider.requires_key() {
+            self.keys
+                .load(settings.provider)?
+                .ok_or(AgentError::MissingKey(settings.provider))?
+        } else {
+            // Kilo's anonymous free pool accepts unauthenticated requests. Rig
+            // omits the Authorization header when the API key is empty.
+            String::new()
+        };
         let model = build_model(&settings, &key)?;
+        let provider = settings.provider;
         let history = self.history.lock().await.clone();
         let (event_sender, events) = mpsc::unbounded_channel();
         let confirmations = ConfirmationBroker::default();
@@ -89,6 +95,7 @@ impl AgentService {
             service
                 .run(
                     model,
+                    provider,
                     input,
                     history,
                     turn_context,
@@ -109,6 +116,7 @@ impl AgentService {
     async fn run(
         &self,
         model: DynModel<rig::operation::Completion>,
+        provider: AgentProvider,
         input: String,
         history: Vec<Message>,
         turn_context: AgentTurnContext,
@@ -172,12 +180,30 @@ impl AgentService {
             }
             Err(error) => {
                 let _ = events.send(AgentEvent::Failed {
-                    message: error.to_string(),
+                    message: friendly_error(provider, &error.to_string()),
                 });
             }
         }
         drop(mcp);
     }
+}
+
+/// Turns provider-specific free-tier failures into actionable UI text. Paid
+/// providers keep their original error because the message often contains the
+/// exact quota or billing detail the user needs.
+fn friendly_error(provider: AgentProvider, error: &str) -> String {
+    if provider != AgentProvider::Kilo {
+        return error.to_owned();
+    }
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("429") || lower.contains("rate limit") || lower.contains("too many requests")
+    {
+        return "Kilo 免费通道当前请求过多，请稍后再试，或在设置中配置自己的 API Key。".to_owned();
+    }
+    if lower.contains("401") || lower.contains("invalid_token") {
+        return "Kilo 免费通道暂时不可用，请稍后重试，或在设置中改用其他服务商。".to_owned();
+    }
+    error.to_owned()
 }
 
 fn dynamic_tools(mcp: &AgentMcp) -> Result<Vec<DynamicTool>, AgentError> {
@@ -456,5 +482,12 @@ mod tests {
             "sodium"
         );
         assert!(tool_label("tasks_wait").contains("等待"));
+    }
+
+    #[test]
+    fn free_tier_errors_are_actionable() {
+        let error = "CompletionError: HttpError: 429 Too Many Requests";
+        assert!(friendly_error(AgentProvider::Kilo, error).contains("免费通道"));
+        assert_eq!(friendly_error(AgentProvider::OpenAi, error), error);
     }
 }

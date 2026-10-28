@@ -208,6 +208,8 @@ pub enum AgentKeyState {
     Unknown,
     Missing,
     Saved,
+    /// The selected provider is a built-in keyless free channel.
+    Free,
     Error(String),
 }
 
@@ -249,10 +251,13 @@ impl super::LauncherApp {
         if input.is_empty() {
             return;
         }
-        if matches!(
-            self.agent.settings.key,
-            AgentKeyState::Unknown | AgentKeyState::Missing | AgentKeyState::Error(_)
-        ) {
+        let provider = self.agent.provider(cx);
+        if provider.requires_key()
+            && matches!(
+                self.agent.settings.key,
+                AgentKeyState::Unknown | AgentKeyState::Missing | AgentKeyState::Error(_)
+            )
+        {
             self.agent.settings.error = Some("请先在设置中保存所选服务商的 API Key。".to_owned());
             cx.notify();
             return;
@@ -322,7 +327,7 @@ impl super::LauncherApp {
                 );
                 let keep_running = this
                     .update_in(cx, |view, window, cx| {
-                        let keep_running = view.agent.handle_event(event, cx);
+                        let keep_running = view.agent.handle_event(event, window, cx);
                         if refresh {
                             view.refresh_after_agent_write(window, cx);
                         }
@@ -349,10 +354,14 @@ impl super::LauncherApp {
 
     pub fn refresh_agent_key_state(&mut self, cx: &mut Context<Self>) {
         let provider = self.agent.provider(cx);
-        self.agent.settings.key = match self.services.agent.key_store().has_key(provider) {
-            Ok(true) => AgentKeyState::Saved,
-            Ok(false) => AgentKeyState::Missing,
-            Err(error) => AgentKeyState::Error(error.to_string()),
+        self.agent.settings.key = if provider.requires_key() {
+            match self.services.agent.key_store().has_key(provider) {
+                Ok(true) => AgentKeyState::Saved,
+                Ok(false) => AgentKeyState::Missing,
+                Err(error) => AgentKeyState::Error(error.to_string()),
+            }
+        } else {
+            AgentKeyState::Free
         };
         cx.notify();
     }
@@ -371,10 +380,14 @@ impl super::LauncherApp {
         self.agent.settings.base_url_input.update(cx, |state, cx| {
             state.set_value(provider.default_base_url().unwrap_or_default(), window, cx)
         });
-        self.agent.settings.key = match self.services.agent.key_store().has_key(provider) {
-            Ok(true) => AgentKeyState::Saved,
-            Ok(false) => AgentKeyState::Missing,
-            Err(error) => AgentKeyState::Error(error.to_string()),
+        self.agent.settings.key = if provider.requires_key() {
+            match self.services.agent.key_store().has_key(provider) {
+                Ok(true) => AgentKeyState::Saved,
+                Ok(false) => AgentKeyState::Missing,
+                Err(error) => AgentKeyState::Error(error.to_string()),
+            }
+        } else {
+            AgentKeyState::Free
         };
         self.config.agent_provider = provider.id().to_owned();
         cx.notify();
@@ -436,9 +449,13 @@ impl super::LauncherApp {
 
     pub fn remove_agent_key(&mut self, cx: &mut Context<Self>) {
         let provider = self.agent.provider(cx);
-        match self.services.agent.key_store().delete(provider) {
-            Ok(()) => self.agent.settings.key = AgentKeyState::Missing,
-            Err(error) => self.agent.settings.key = AgentKeyState::Error(error.to_string()),
+        if !provider.requires_key() {
+            self.agent.settings.key = AgentKeyState::Free;
+        } else {
+            match self.services.agent.key_store().delete(provider) {
+                Ok(()) => self.agent.settings.key = AgentKeyState::Missing,
+                Err(error) => self.agent.settings.key = AgentKeyState::Error(error.to_string()),
+            }
         }
         cx.notify();
     }
@@ -599,6 +616,7 @@ impl AgentState {
     pub fn handle_event(
         &mut self,
         event: AgentEvent,
+        window: &mut Window,
         cx: &mut Context<super::LauncherApp>,
     ) -> bool {
         match event {
@@ -706,7 +724,29 @@ impl AgentState {
                     .unwrap_or_default();
                 let state = cx.new(|cx| TextViewState::markdown(&markdown, cx));
                 let index = self.conversation.messages.len();
-                let observed = state.clone();
+                self.finish_turn(cx);
+                self.conversation
+                    .messages
+                    .push(AgentMessage::Assistant(AgentReply {
+                        text: state.clone(),
+                        steps,
+                        elapsed,
+                        history_open: false,
+                    }));
+                // Append first, then observe. The text view notifies while it
+                // settles its final layout; observing before the row exists
+                // makes `remeasure_items` reject the range and leaves the last
+                // row measured too short.
+                let scroller = self.conversation.scroller.clone();
+                let following = scroller.read(cx).is_following_tail();
+                scroller.update(cx, |scroller, cx| {
+                    scroller.append(1, cx);
+                    let _ = scroller.remeasure_items(index..index + 1, cx);
+                    if following {
+                        scroller.scroll_to_end(cx);
+                    }
+                });
+                let observed = state;
                 cx.observe(&observed, move |this, _, cx| {
                     let scroller = this.agent.conversation.scroller.clone();
                     let following = scroller.read(cx).is_following_tail();
@@ -719,18 +759,25 @@ impl AgentState {
                     cx.notify();
                 })
                 .detach();
-                self.finish_turn(cx);
-                self.conversation
-                    .messages
-                    .push(AgentMessage::Assistant(AgentReply {
-                        text: state,
-                        steps,
-                        elapsed,
-                        history_open: false,
-                    }));
-                self.conversation
-                    .scroller
-                    .update(cx, |state, cx| state.append(1, cx));
+                // The run state changes from Working to Idle above, so the
+                // activity row disappears in the same frame. Remeasure once
+                // more after that layout settles; otherwise the list can keep
+                // the viewport height from the previous frame and clamp the
+                // wheel at an offset above the real end.
+                let view = cx.entity().downgrade();
+                window.on_next_frame(move |_, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        let scroller = this.agent.conversation.scroller.clone();
+                        let following = scroller.read(cx).is_following_tail();
+                        scroller.update(cx, |scroller, cx| {
+                            let _ = scroller.remeasure_items(index..index + 1, cx);
+                            if following {
+                                scroller.scroll_to_end(cx);
+                            }
+                        });
+                        cx.notify();
+                    });
+                });
             }
             AgentEvent::Failed { message } => {
                 self.finish_turn(cx);

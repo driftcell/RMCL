@@ -35,7 +35,8 @@ use super::common::{card, error_banner, page_header, section_title};
 
 impl LauncherApp {
     pub fn render_agent(&self, cx: &mut Context<Self>) -> AnyElement {
-        let key_missing = !matches!(self.agent.settings.key, AgentKeyState::Saved);
+        let keyless = !self.agent.provider(cx).requires_key();
+        let key_missing = !keyless && !matches!(self.agent.settings.key, AgentKeyState::Saved);
         let messages = Rc::new(self.agent.conversation.messages.clone());
         let progress = self.agent.task_progress(self.log_state.snapshot.as_ref());
         let activity = self.render_agent_activity(progress, cx);
@@ -127,6 +128,14 @@ impl LauncherApp {
                                                     "Agent 可以查询版本、创建实例、搜索并安装内容，也可以启动游戏。破坏性操作会先询问你。",
                                                 ),
                                         )
+                                        .when(keyless, |this| {
+                                            this.child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child("当前使用 Kilo 免费模型，无需 API Key"),
+                                            )
+                                        })
                                         .child(
                                             h_flex()
                                                 .gap_2()
@@ -409,10 +418,26 @@ fn render_agent_reply(
             )
             .on_click(move |_, _, cx| {
                 let _ = view.update(cx, |this, cx| {
+                    let mut toggled = false;
                     if let Some(AgentMessage::Assistant(reply)) =
                         this.agent.conversation.messages.get_mut(index)
                     {
                         reply.history_open = !reply.history_open;
+                        toggled = true;
+                    }
+                    if toggled {
+                        // Expanding or collapsing history changes this row's
+                        // height. Without a remeasure the virtual list keeps
+                        // the old extent and the wheel stops above the real
+                        // end of the transcript.
+                        let scroller = this.agent.conversation.scroller.clone();
+                        let following = scroller.read(cx).is_following_tail();
+                        scroller.update(cx, |scroller, cx| {
+                            let _ = scroller.remeasure_items(index..index + 1, cx);
+                            if following {
+                                scroller.scroll_to_end(cx);
+                            }
+                        });
                     }
                     cx.notify();
                 });

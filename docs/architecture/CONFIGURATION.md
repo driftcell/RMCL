@@ -49,7 +49,7 @@ download_source = "auto"
 launcher_visibility = "keep_visible"
 mcp_enabled = false
 mcp_port = 39271
-agent_provider = "openai"
+agent_provider = "kilo"
 agent_model = ""
 agent_base_url = ""
 agent_proxy = ""
@@ -90,11 +90,11 @@ accent = "emerald"
 - `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时隐藏启动器（macOS 隐藏应用，其他平台最小化窗口），任务终态恢复。
 - `mcp_enabled`：是否在 GUI 内启动 loopback、只读 MCP HTTP 服务，默认 `false`。启用或修改端口后立即协调启停，绑定失败只显示错误，不阻止 GUI 启动。
 - `mcp_port`：内嵌 MCP HTTP 端口，默认 `39271`，必须是 1–65535。配置不保存 Bearer token；GUI 不提供无认证写访问。
-- `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。
+- `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `kilo`、`openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。`kilo` 使用无需 Key 的免费通道，其余服务商需要 API Key。
 - `agent_model`：模型 ID；空字符串表示使用所选服务商的默认模型。模型必须支持工具调用。
 - `agent_base_url`：可选的 OpenAI-compatible 或原生服务商 Base URL；空字符串表示使用服务商默认值。`custom` 模式必须填写。
 - `agent_proxy`：可选的 AI 请求代理，支持 `http://`、`https://`、`socks5://` 和 `socks5h://`；空字符串表示跟随系统/环境代理。
-- AI API Key 不写入 `config.toml`，保存在系统凭据存储，服务名为 `com.rmcl.launcher`，键为 `agent:<provider>`，值为 `{ "version": 1, "api_key": "..." }`。
+- AI API Key 不写入 `config.toml`，保存在系统凭据存储，服务名为 `com.rmcl.launcher`，键为 `agent:<provider>`，值为 `{ "version": 1, "api_key": "..." }`。`kilo` 免费通道不使用 Keyring。
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
@@ -162,9 +162,9 @@ Schema 5 → 6 已在读取时实现：
 
 Schema 6 → 7 已在读取时实现：
 
-- `agent_provider` 默认为 `"openai"`。
+- `agent_provider` 默认为 `"kilo"`。
 - `agent_model`、`agent_base_url`、`agent_proxy` 默认为空，由所选服务商的预设补全。
-- AI API Key 不迁移、不写入配置文件；用户需要重新在设置中保存。
+- AI API Key 不迁移、不写入配置文件；需要 BYOK 的用户重新在设置中保存。Kilo 免费通道不需要 Key。
 - 其余字段原样保留。
 - 内存中的版本升级为 7；只有用户主动修改设置时才写回文件。
 

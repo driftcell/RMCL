@@ -39,7 +39,8 @@ pub fn build_model(
             .connect(http)
             .completion(model)
             .erase(),
-        AgentProvider::OpenAi
+        AgentProvider::Kilo
+        | AgentProvider::OpenAi
         | AgentProvider::DeepSeek
         | AgentProvider::OpenRouter
         | AgentProvider::Qwen
@@ -77,6 +78,9 @@ mod tests {
 
         let gemini = AgentSettings::from_config("gemini", "", None, None);
         assert!(build_model(&gemini, "sk-test").is_ok());
+
+        let kilo = AgentSettings::from_config("kilo", "", None, None);
+        assert!(build_model(&kilo, "").is_ok());
 
         let custom = AgentSettings::from_config("custom", "model", None, None);
         assert!(build_model(&custom, "sk-test").is_err());

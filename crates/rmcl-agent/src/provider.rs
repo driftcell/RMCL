@@ -13,7 +13,10 @@ pub const AGENT_KEYRING_SERVICE: &str = "com.rmcl.launcher";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentProvider {
+    /// Kilo AI Gateway's anonymous free pool. This provider deliberately has
+    /// no API key: Rig omits the Authorization header when the key is empty.
     #[default]
+    Kilo,
     OpenAi,
     Anthropic,
     Gemini,
@@ -26,7 +29,8 @@ pub enum AgentProvider {
 }
 
 impl AgentProvider {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
+        Self::Kilo,
         Self::OpenAi,
         Self::Anthropic,
         Self::Gemini,
@@ -40,6 +44,7 @@ impl AgentProvider {
 
     pub const fn id(self) -> &'static str {
         match self {
+            Self::Kilo => "kilo",
             Self::OpenAi => "openai",
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
@@ -54,6 +59,7 @@ impl AgentProvider {
 
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Kilo => "Kilo 免费模型",
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
             Self::Gemini => "Google Gemini",
@@ -68,6 +74,7 @@ impl AgentProvider {
 
     pub const fn default_base_url(self) -> Option<&'static str> {
         match self {
+            Self::Kilo => Some("https://ai-gateway.kilo.ai/api/v1"),
             Self::OpenAi => Some("https://api.openai.com/v1"),
             Self::Anthropic => Some("https://api.anthropic.com"),
             Self::Gemini => Some("https://generativelanguage.googleapis.com/v1beta"),
@@ -82,6 +89,7 @@ impl AgentProvider {
 
     pub const fn default_model(self) -> &'static str {
         match self {
+            Self::Kilo => "kilo-auto/free",
             Self::OpenAi => "gpt-5.6",
             Self::Anthropic => "claude-sonnet-5-5",
             Self::Gemini => "gemini-3.8-flash",
@@ -92,6 +100,12 @@ impl AgentProvider {
             Self::Zhipu => "glm-4.6",
             Self::Custom => "",
         }
+    }
+
+    /// Kilo's anonymous free pool is the only keyless preset. Other presets
+    /// must have a key stored in the system credential store.
+    pub const fn requires_key(self) -> bool {
+        !matches!(self, Self::Kilo)
     }
 
     pub const fn is_openai_compatible(self) -> bool {
@@ -310,10 +324,18 @@ mod tests {
             AgentProvider::from_id("OPENAI"),
             Some(AgentProvider::OpenAi)
         );
+        assert_eq!(AgentProvider::from_id("kilo"), Some(AgentProvider::Kilo));
         assert!(AgentProvider::Custom.default_model().is_empty());
         assert!(AgentProvider::Anthropic.default_base_url().is_some());
         assert!(AgentProvider::Gemini.default_base_url().is_some());
         assert!(AgentProvider::DeepSeek.is_openai_compatible());
+        assert_eq!(AgentProvider::Kilo.default_model(), "kilo-auto/free");
+        assert_eq!(
+            AgentProvider::Kilo.default_base_url(),
+            Some("https://ai-gateway.kilo.ai/api/v1")
+        );
+        assert!(!AgentProvider::Kilo.requires_key());
+        assert!(AgentProvider::OpenAi.requires_key());
     }
 
     #[test]
