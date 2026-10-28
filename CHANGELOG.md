@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/driftcell/RMCL/compare/v0.8.0...v0.8.1) - 2026-10-28
+
+### Changed
+
+- *(ui)* remove duplicate task feedback ([#74](https://github.com/driftcell/RMCL/pull/74))
+- *(app)* use open for system paths ([#70](https://github.com/driftcell/RMCL/pull/70))
+- *(cli)* parse launcher arguments with clap ([#69](https://github.com/driftcell/RMCL/pull/69))
+- *(store)* use dirs for platform paths ([#67](https://github.com/driftcell/RMCL/pull/67))
+
+### Fixed
+
+- *(store)* use platform Minecraft directories ([#71](https://github.com/driftcell/RMCL/pull/71))
+- *(java)* make runtime installation recoverable ([#73](https://github.com/driftcell/RMCL/pull/73))
+- *(domain)* enforce portable path rules ([#72](https://github.com/driftcell/RMCL/pull/72))
+
 ## [0.8.0](https://github.com/driftcell/RMCL/compare/v0.7.1...v0.8.0) - 2026-10-27
 
 ### Highlights
