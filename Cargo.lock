@@ -5581,6 +5581,7 @@ dependencies = [
  "rmcl-auth",
  "rmcl-domain",
  "rmcl-launch",
+ "rmcl-mcp",
  "rmcl-net",
  "rmcl-platform",
  "rmcl-store",
@@ -5760,29 +5761,26 @@ name = "rmcl-mcp"
 version = "0.8.1"
 dependencies = [
  "axum",
+ "hex",
  "rmcl-app",
  "rmcl-auth",
  "rmcl-domain",
  "rmcl-launch",
+ "rmcl-net",
  "rmcl-store",
  "rmcp",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
+ "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tower",
+ "url",
  "uuid",
-]
-
-[[package]]
-name = "rmcl-mcp-cli"
-version = "0.8.1"
-dependencies = [
- "clap",
- "rmcl-app",
- "rmcl-mcp",
- "tokio-util",
+ "zip",
 ]
 
 [[package]]

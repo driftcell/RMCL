@@ -14,8 +14,17 @@ rmcl-store.workspace = true
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tower.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+rmcl-net.workspace = true
+sha1.workspace = true
+tempfile.workspace = true
+url.workspace = true
+zip.workspace = true
