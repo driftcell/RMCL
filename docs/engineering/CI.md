@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-27
+日期：2026-10-28
 
 ## 工作流
 
@@ -64,6 +64,8 @@ cargo nextest run --workspace --locked --profile ci --test-threads num-cpus --no
 平台矩阵设置 `fail-fast: false`，一个平台失败不会取消其他平台。nextest 的 `ci` profile 同样关闭测试级 fail-fast，确保一次运行报告全部失败测试。
 
 `--test-threads num-cpus` 明确按可用并行度并发执行测试。`--no-tests=fail` 防止未来因 target 配置错误而出现“没有测试但 CI 成功”。
+
+三个平台都执行 `apps/rmcl/tests/mcp_stdio.rs`：测试启动 Cargo 构建的真实 `rmcl` 子进程，通过 stdio 完成 MCP initialize、`tools/list`、`capabilities`、任务订阅/退订和 EOF 关闭，不需要显示服务器、网络、真实账号或 Java。Windows 使用同一入口验证 MCP 不会进入 GUI 初始化或释放 inherited stdio；普通 GUI 的控制台释放和实际窗口行为仍按平台手工验收。
 
 ### `web`
 
