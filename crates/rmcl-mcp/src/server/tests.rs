@@ -65,7 +65,7 @@ fn every_tool_declares_an_output_schema() {
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
             "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete"
-            | "servers_delete" | "skins_delete" | "skins_reset" => {
+            | "servers_delete" | "skins_delete" | "skins_reset" | "content_update" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(true));
             }
@@ -509,7 +509,11 @@ fn project_json(id: &str, slug: &str) -> Value {
     })
 }
 
-async fn remote_server(main: Vec<u8>, dependency: Vec<u8>) -> (Url, tokio::task::JoinHandle<()>) {
+async fn remote_server(
+    main: Vec<u8>,
+    dependency: Vec<u8>,
+    update: Vec<u8>,
+) -> (Url, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
     let main_version = version_json(
@@ -528,6 +532,16 @@ async fn remote_server(main: Vec<u8>, dependency: Vec<u8>) -> (Url, tokio::task:
         base.join("files/main.jar").unwrap(),
         json!([{"project_id": "dependency-project", "dependency_type": "incompatible"}]),
     );
+    let mut update_version = version_json(
+        "update-version",
+        "main-project",
+        "update.jar",
+        &update,
+        base.join("files/update.jar").unwrap(),
+        json!([{"version_id": "dependency-version", "dependency_type": "required"}]),
+    );
+    update_version["version_number"] = json!("2.0.0");
+    update_version["name"] = json!("main-project 2.0.0");
     let dependency_version = version_json(
         "dependency-version",
         "dependency-project",
@@ -556,7 +570,11 @@ async fn remote_server(main: Vec<u8>, dependency: Vec<u8>) -> (Url, tokio::task:
     });
     let main_project = project_json("main-project", "main-mod");
     let dependency_project = project_json("dependency-project", "dependency-mod");
-    let versions = vec![main_version.clone(), conflict_version.clone()];
+    let versions = vec![
+        main_version.clone(),
+        conflict_version.clone(),
+        update_version.clone(),
+    ];
     let router = Router::new()
         .route(
             "/v2/search",
@@ -601,6 +619,13 @@ async fn remote_server(main: Vec<u8>, dependency: Vec<u8>) -> (Url, tokio::task:
             }),
         )
         .route(
+            "/v2/version/update-version",
+            get(move || {
+                let payload = update_version.clone();
+                async move { Json(payload) }
+            }),
+        )
+        .route(
             "/v2/version/dependency-version",
             get(move || {
                 let payload = dependency_version.clone();
@@ -611,6 +636,13 @@ async fn remote_server(main: Vec<u8>, dependency: Vec<u8>) -> (Url, tokio::task:
             "/files/main.jar",
             get(move || {
                 let bytes = main.clone();
+                async move { bytes }
+            }),
+        )
+        .route(
+            "/files/update.jar",
+            get(move || {
+                let bytes = update.clone();
                 async move { bytes }
             }),
         )
@@ -970,6 +1002,22 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
             .unwrap_err();
         assert_eq!(
             skin_reset.data.as_ref().unwrap()["code"],
+            "permission_denied"
+        );
+        let content_update = server
+            .content_update(Parameters(ContentUpdateParams {
+                instance_id: "example".to_owned(),
+                kind: "mod".to_owned(),
+                relative_path: "missing.jar".to_owned(),
+                version_id: "missing".to_owned(),
+                expected_revision: None,
+                idempotency_key: None,
+                dry_run: Some(false),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            content_update.data.as_ref().unwrap()["code"],
             "permission_denied"
         );
         assert!(!temporary.path().join("minecraft/versions/blocked").exists());
@@ -1563,6 +1611,7 @@ fn remote_content_tools_preflight_install_and_replay() {
     let (base, handle) = context.runtime.block_on(remote_server(
         fabric_mod("main-mod", "1.0.0"),
         fabric_mod("dependency-mod", "1.0.0"),
+        fabric_mod("main-mod", "2.0.0"),
     ));
     let client = ModrinthClient::new(ModrinthConfig::new(base)).unwrap();
     let mut owned_context = match Arc::try_unwrap(context) {
@@ -1729,12 +1778,100 @@ fn remote_content_tools_preflight_install_and_replay() {
             .await
             .unwrap_err();
         assert!(conflict.message.contains("incompatible installed mods"));
+
+        let update_plan = structured(
+            server
+                .content_update(Parameters(ContentUpdateParams {
+                    instance_id: "example".to_owned(),
+                    kind: "mod".to_owned(),
+                    relative_path: "main.jar".to_owned(),
+                    version_id: "update-version".to_owned(),
+                    expected_revision: Some(revision.clone()),
+                    idempotency_key: Some("update-plan".to_owned()),
+                    dry_run: Some(true),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(update_plan["relative_path"], "main.jar");
+        assert_eq!(
+            update_plan["preflight"]["main"]["status"]["state"],
+            "installed_different_version"
+        );
+        let update_started = structured(
+            server
+                .content_update(Parameters(ContentUpdateParams {
+                    instance_id: "example".to_owned(),
+                    kind: "mod".to_owned(),
+                    relative_path: "main.jar".to_owned(),
+                    version_id: "update-version".to_owned(),
+                    expected_revision: Some(revision.clone()),
+                    idempotency_key: Some("update".to_owned()),
+                    dry_run: Some(false),
+                }))
+                .await
+                .unwrap(),
+        );
+        let update_replay = structured(
+            server
+                .content_update(Parameters(ContentUpdateParams {
+                    instance_id: "example".to_owned(),
+                    kind: "mod".to_owned(),
+                    relative_path: "main.jar".to_owned(),
+                    version_id: "update-version".to_owned(),
+                    expected_revision: Some(revision.clone()),
+                    idempotency_key: Some("update".to_owned()),
+                    dry_run: Some(false),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(update_replay["idempotent_replay"], true);
+        assert_eq!(update_replay["task_id"], update_started["task_id"]);
+        let update_task_id = update_started["task_id"].as_u64().unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let task = structured(
+                    server
+                        .tasks_get(Parameters(TaskIdParams {
+                            task_id: update_task_id,
+                        }))
+                        .await
+                        .unwrap(),
+                );
+                match task["status"].as_str().unwrap() {
+                    "completed" => break,
+                    "failed" | "cancelled" => panic!("content update failed: {task}"),
+                    _ => tokio::time::sleep(Duration::from_millis(20)).await,
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(temporary.path().join("minecraft/mods/main.jar")).unwrap(),
+            fabric_mod("main-mod", "2.0.0")
+        );
+        assert!(!temporary.path().join("minecraft/mods/update.jar").exists());
+        let already_installed = server
+            .content_update(Parameters(ContentUpdateParams {
+                instance_id: "example".to_owned(),
+                kind: "mod".to_owned(),
+                relative_path: "main.jar".to_owned(),
+                version_id: "update-version".to_owned(),
+                expected_revision: Some(revision.clone()),
+                idempotency_key: Some("already-installed".to_owned()),
+                dry_run: Some(false),
+            }))
+            .await
+            .unwrap_err();
+        assert!(already_installed.message.contains("already installed"));
         assert_eq!(
             structured(server.tasks_list().await.unwrap())["items"]
                 .as_array()
                 .unwrap()
                 .len(),
-            1
+            2
         );
     });
     drop(server);

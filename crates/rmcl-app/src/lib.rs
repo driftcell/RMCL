@@ -69,7 +69,8 @@ pub use rmcl_content::{
     InstalledModIndex, LocalContent, ModDependency, ModMetadata, ModMetadataError,
     ModMetadataLoader, ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency,
     RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
-    RemoteSort, RemoteVersion, read_mod_metadata, recommended_version, scan_installed_mods,
+    RemoteSort, RemoteVersion, read_mod_metadata, recommended_version, replace_content_file,
+    scan_installed_mods,
 };
 pub use rmcl_instance::{
     InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,

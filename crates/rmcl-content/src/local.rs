@@ -166,6 +166,95 @@ pub fn import_file(
     make_item(kind, &directory, &destination, Some(enabled))
 }
 
+/// Replaces one existing content file while preserving its relative path and
+/// enable state. The old file is restored if publishing the replacement fails.
+pub fn replace_content_file(
+    instance: &InstanceLayout,
+    kind: ContentKind,
+    source: &Path,
+    relative_path: &RepositoryPath,
+) -> Result<LocalContent, ContentError> {
+    let directory = kind.directory(instance);
+    let destination = ensure_safe_existing(&directory, relative_path)?;
+    let metadata = fs::symlink_metadata(&destination).map_err(|source| ContentError::Io {
+        operation: "inspect replaced content",
+        path: destination.clone(),
+        source,
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(ContentError::Symlink { path: destination });
+    }
+    if !metadata.is_file() {
+        return Err(ContentError::UnsupportedOperation {
+            kind,
+            operation: "replace a non-file entry",
+        });
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| ContentError::UnsafePath {
+            path: destination.clone(),
+            reason: "content path has no parent".to_owned(),
+        })?;
+    let mut temporary = NamedTempFile::new_in(parent).map_err(|source| ContentError::Io {
+        operation: "create replacement temporary file",
+        path: destination.clone(),
+        source,
+    })?;
+    let mut input = File::open(source).map_err(|error| ContentError::Io {
+        operation: "open replacement source",
+        path: source.to_path_buf(),
+        source: error,
+    })?;
+    std::io::copy(&mut input, temporary.as_file_mut()).map_err(|source| ContentError::Io {
+        operation: "write replacement content",
+        path: temporary.path().to_path_buf(),
+        source,
+    })?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|source| ContentError::Io {
+            operation: "sync replacement content",
+            path: temporary.path().to_path_buf(),
+            source,
+        })?;
+
+    let backup = NamedTempFile::new_in(parent).map_err(|source| ContentError::Io {
+        operation: "reserve replacement backup",
+        path: destination.clone(),
+        source,
+    })?;
+    let backup_path = backup.into_temp_path();
+    fs::remove_file(&backup_path).map_err(|source| ContentError::Io {
+        operation: "prepare replacement backup",
+        path: backup_path.to_path_buf(),
+        source,
+    })?;
+    fs::rename(&destination, &backup_path).map_err(|source| ContentError::Io {
+        operation: "backup replaced content",
+        path: destination.clone(),
+        source,
+    })?;
+    if let Err(error) = temporary.persist_noclobber(&destination) {
+        let restore = fs::rename(&backup_path, &destination);
+        return match restore {
+            Ok(()) => Err(ContentError::Io {
+                operation: "publish replacement content",
+                path: destination,
+                source: error.error,
+            }),
+            Err(source) => Err(ContentError::Io {
+                operation: "restore content after replacement failure",
+                path: backup_path.to_path_buf(),
+                source,
+            }),
+        };
+    }
+    drop(backup_path);
+    make_item(kind, &directory, &destination, None)
+}
+
 /// Deletes one content entry and updates resource-pack options when needed.
 pub fn delete_content(
     instance: &InstanceLayout,
@@ -946,6 +1035,38 @@ mod tests {
             import_file(&instance, ContentKind::Mod, &source, ConflictPolicy::Reject),
             Err(ContentError::Conflict { .. })
         ));
+    }
+
+    #[test]
+    fn replacement_preserves_path_and_disabled_state() {
+        let temporary = TempDir::new().unwrap();
+        let instance = instance(temporary.path());
+        let destination = instance.mods_dir().join("example.jar.disabled");
+        write(&destination, b"old");
+        let relative = RepositoryPath::new("example.jar.disabled").unwrap();
+        let source = temporary.path().join("new.jar");
+        write(&source, b"new");
+
+        let replaced =
+            replace_content_file(&instance, ContentKind::Mod, &source, &relative).unwrap();
+        assert_eq!(replaced.relative_path, relative);
+        assert!(!replaced.enabled);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"new");
+
+        let missing_source = temporary.path().join("missing.jar");
+        assert!(
+            replace_content_file(&instance, ContentKind::Mod, &missing_source, &relative).is_err()
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), b"new");
+        assert!(
+            replace_content_file(
+                &instance,
+                ContentKind::Mod,
+                &source,
+                &RepositoryPath::new("missing.jar").unwrap(),
+            )
+            .is_err()
+        );
     }
 
     #[test]

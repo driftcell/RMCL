@@ -8,8 +8,8 @@ use std::{
 use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, InstalledMod, InstalledModIndex, LocalContent,
     ModDependency, ModMetadata, ModrinthClient, RemoteDependency, RemoteDependencyKind, RemoteFile,
-    RemoteProject, RemoteVersion, delete_content, import_file, read_mod_metadata, scan_library,
-    set_content_enabled, version_satisfies,
+    RemoteProject, RemoteVersion, delete_content, import_file, read_mod_metadata,
+    replace_content_file, scan_library, set_content_enabled, version_satisfies,
 };
 use rmcl_domain::DownloadRequest;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath};
@@ -120,6 +120,8 @@ pub struct ContentInstallRequest {
     pub file: RemoteFile,
     pub display_name: String,
     pub conflict: ConflictPolicy,
+    /// Existing relative path replaced only after a verified download.
+    pub replace: Option<RepositoryPath>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +169,8 @@ pub struct ContentGraphInstallRequest {
     pub conflict: ConflictPolicy,
     pub game_version: String,
     pub loader: Option<String>,
+    /// Existing relative path for the primary file, replaced after verification.
+    pub replace: Option<RepositoryPath>,
     /// Versions whose local mod ID/version already satisfy the requirement and
     /// must not be downloaded again as dependencies.
     pub skip_version_ids: Vec<String>,
@@ -373,6 +377,11 @@ pub async fn resolve_content_install_batch(
             file,
             display_name,
             conflict: request.conflict,
+            replace: if version.id == request.version.id {
+                request.replace.clone()
+            } else {
+                None
+            },
         });
     }
     Ok(requests)
@@ -1037,9 +1046,13 @@ impl ContentInstaller {
         let instance = request.instance.clone();
         let kind = request.kind;
         let conflict = request.conflict;
+        let replacement = request.replace.clone();
         let import_path = destination.clone();
-        let content = tokio::task::spawn_blocking(move || {
-            import_file(&instance, kind, &import_path, conflict)
+        let content = tokio::task::spawn_blocking(move || match replacement {
+            Some(relative_path) => {
+                replace_content_file(&instance, kind, &import_path, &relative_path)
+            }
+            None => import_file(&instance, kind, &import_path, conflict),
         })
         .await
         .map_err(|error| AppError::BlockingTask(error.to_string()))?

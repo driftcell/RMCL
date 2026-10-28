@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、本地皮肤库与正版皮肤工作流、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现；高级内容更新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、离线账户、Java ensure、服务器收藏与状态、本地皮肤库与正版皮肤工作流、任务通知、revision、幂等、跨进程写锁、HTTP 安全、GUI 服务设置和外部变更刷新已实现
 
 日期：2026-10-28
 
@@ -279,10 +279,13 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 | `content_set_enabled` | 启用或禁用本地 Mod 或资源包，返回更新后的条目 |
 | `content_delete` | 删除一个本地内容条目；必须提供匹配的 `expected_revision` |
 | `content_install` | 安装 Modrinth 版本及 required 依赖，或返回真实预检；支持 idempotency key |
+| `content_update` | 用指定 Modrinth 版本替换现有内容，保持相对路径和启停状态；支持预检与 idempotency key |
 
 `content_install` 在 `dry_run=true` 时解析版本和 required 依赖图，扫描本地 Mod 元数据，并复用 GUI 的主文件元数据与冲突预检。响应包含主文件、依赖状态、incompatible、optional 数量、警告和应跳过的版本 ID；不会创建内容安装任务或修改实例内容，但可能填充启动器自己的元数据缓存。
 
 实际安装也先执行同一套预检：已满足的依赖通过 `skip_version_ids` 交给现有安装任务，检测到已安装的不兼容 Mod 时拒绝创建任务。安装和下载仍由 `TaskManager` 与 `ContentInstaller` 执行，MCP 不另写下载或依赖解析实现。
+
+`content_update` 额外要求目标 `relative_path` 已存在，并使用同一 revision 检查和仓库锁。`dry_run` 返回目标路径及完整依赖预检；实际执行只在版本和 SHA-1 验证成功后替换主文件，保留旧相对路径与 `.disabled`/资源包启停状态，不留下第二个版本。替换发布失败会恢复旧文件；下载或校验失败不会触碰旧文件。相同版本已经安装时返回 `conflict`，依赖仍按普通安装流程处理。这是单文件替换加依赖导入，不是完整的多文件更新事务。
 
 ## 跨进程写锁
 
@@ -305,6 +308,6 @@ stdio 直接接收这些 JSON-RPC notification 帧。使用 Streamable HTTP 的�
 
 ## 后续阶段
 
-1. 更完整的内容更新工作流。
+1. CurseForge、整合包和更完整的依赖求解。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。

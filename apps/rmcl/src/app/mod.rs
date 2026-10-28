@@ -5604,6 +5604,7 @@ impl LauncherApp {
                 .loader
                 .as_ref()
                 .map(|loader| loader.kind.as_str().to_owned()),
+            replace: None,
             skip_version_ids: Vec::new(),
         };
         if self.content_browser.preflighting {

@@ -7,16 +7,16 @@ use std::{
 
 use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
-    CreateInstanceRequest, GameLaunchRequest, InstalledVersion, JavaEnsureRequest, LoaderKind,
-    LoaderSelection, MicrosoftAccountServiceError, PreparedSkin, RemoteSearchQuery, RemoteSort,
-    RepositoryPath, RepositoryWriteGuard, ServerBookmarkError, SkinLibraryEntry, SkinLibraryError,
-    SkinSourceError, TaskId, VanillaInstallRequest, VersionSource,
-    delete_installed_version_with_guard, delete_instance_content_with_guard,
+    ContentPreflightStatus, CreateInstanceRequest, GameLaunchRequest, InstalledVersion,
+    JavaEnsureRequest, LoaderKind, LoaderSelection, MicrosoftAccountServiceError, PreparedSkin,
+    RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, ServerBookmarkError,
+    SkinLibraryEntry, SkinLibraryError, SkinSourceError, TaskId, VanillaInstallRequest,
+    VersionSource, delete_installed_version_with_guard, delete_instance_content_with_guard,
     discover_installed_versions, import_instance_content_with_guard, load_skin_file,
     migrate_instance_to_isolated_with_guard, preflight_content_install, remove_server_bookmark,
-    rename_instance_with_guard, scan_installed_mods, set_instance_content_enabled_with_guard,
-    set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
-    upsert_server_bookmark,
+    rename_instance_with_guard, scan_installed_mods, scan_instance_content,
+    set_instance_content_enabled_with_guard, set_instance_java_with_guard,
+    set_instance_launch_settings_with_guard, try_lock_repository, upsert_server_bookmark,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount, SkinVariant};
 use rmcl_domain::ServerAddress;
@@ -42,17 +42,17 @@ use crate::{
     notifications::TaskSubscriptions,
     schema::{
         AccountDelete, AccountKind, AccountList, AccountSummary, AccountWrite, Capabilities,
-        ContentDelete, ContentInstallResult, ContentList, ContentWrite, CreateInstancePlan,
-        CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan, InstanceDelete,
-        InstanceDeletePlan, InstanceDeleteResult, InstanceList, InstanceSummary, JavaFailure,
-        JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MicrosoftProfile,
-        MinecraftVersionList, MinecraftVersionSummary, PathSummary, PlatformSummary,
-        PreflightCheck, PreflightCheckStatus, ProfileCape, ProfileSkin, RemoteProjectSummary,
-        RemoteSearchPage, RemoteVersionList, RemoteVersionSummary, ServerBookmark, ServerDelete,
-        ServerList, ServerPingResult, ServerWrite, SkinApplyResult, SkinDelete, SkinEntry,
-        SkinList, SkinWrite, TaskList, TaskSnapshot, TaskStarted, TaskSubscription,
-        TaskSubscriptionEnded, content_entry, instance_revision, instance_summary, java_runtime,
-        log_page, task_snapshot,
+        ContentDelete, ContentInstallResult, ContentList, ContentUpdatePreflight,
+        ContentUpdateResult, ContentWrite, CreateInstancePlan, CreateInstanceResult,
+        CreateLoaderPlan, CreatePlatformPlan, InstanceDelete, InstanceDeletePlan,
+        InstanceDeleteResult, InstanceList, InstanceSummary, JavaFailure, JavaList,
+        LoaderVersionInfo, LoaderVersionList, LogPage, MicrosoftProfile, MinecraftVersionList,
+        MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
+        PreflightCheckStatus, ProfileCape, ProfileSkin, RemoteProjectSummary, RemoteSearchPage,
+        RemoteVersionList, RemoteVersionSummary, ServerBookmark, ServerDelete, ServerList,
+        ServerPingResult, ServerWrite, SkinApplyResult, SkinDelete, SkinEntry, SkinList, SkinWrite,
+        TaskList, TaskSnapshot, TaskStarted, TaskSubscription, TaskSubscriptionEnded,
+        content_entry, instance_revision, instance_summary, java_runtime, log_page, task_snapshot,
     },
 };
 
@@ -404,6 +404,31 @@ struct ContentInstallPreparation {
     repository_guard: RepositoryWriteGuard,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ContentUpdateParams {
+    /// Stable instance directory ID.
+    instance_id: String,
+    /// Content kind: mod, resourcepack, or shader.
+    kind: String,
+    /// Existing relative path to replace while preserving enable state.
+    relative_path: String,
+    /// Modrinth version ID to install with required dependencies.
+    version_id: String,
+    /// Expected revision returned by the previous read; rejects concurrent writes.
+    expected_revision: Option<String>,
+    /// Optional idempotency key used to deduplicate retries in this process.
+    idempotency_key: Option<String>,
+    /// Resolve dependencies and return preflight without replacing the file.
+    dry_run: Option<bool>,
+}
+
+struct ContentUpdatePreparation {
+    request: ContentGraphInstallRequest,
+    preflight: ContentInstallPreflight,
+    relative_path: String,
+    repository_guard: RepositoryWriteGuard,
+}
+
 #[tool_router]
 impl McpServer {
     pub fn new(context: Arc<AppContext>) -> Self {
@@ -455,6 +480,7 @@ impl McpServer {
                 "content_search",
                 "content_versions",
                 "content_install",
+                "content_update",
                 "java_list",
                 "java_ensure",
                 "accounts_list",
@@ -1879,6 +1905,7 @@ impl McpServer {
                 .loader
                 .as_ref()
                 .map(|loader| loader.kind.as_str().to_owned()),
+            replace: None,
             skip_version_ids: Vec::new(),
         };
         let installed = tokio::task::spawn_blocking({
@@ -1899,6 +1926,139 @@ impl McpServer {
         Ok(ContentInstallPreparation {
             request,
             preflight,
+            repository_guard,
+        })
+    }
+
+    #[tool(
+        description = "Replace an existing content file with a verified Modrinth version while preserving its path and enable state",
+        output_schema = schema_for_type::<ContentUpdateResult>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
+    )]
+    async fn content_update(
+        &self,
+        Parameters(params): Parameters<ContentUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if params.dry_run != Some(true) {
+            self.require_write("content_update")?;
+        }
+        if params.dry_run == Some(true) {
+            let preparation = self.prepare_content_update(&params).await?;
+            return structured(ContentUpdateResult::Preflight(Box::new(
+                ContentUpdatePreflight {
+                    dry_run: true,
+                    relative_path: preparation.relative_path,
+                    preflight: (&preparation.preflight).into(),
+                },
+            )));
+        }
+        let idempotency_key = params.idempotency_key.clone();
+        let (task, replay) = self
+            .idempotent_task(
+                "content_update",
+                idempotency_key.as_deref(),
+                || async move {
+                    let mut preparation = self.prepare_content_update(&params).await?;
+                    if matches!(
+                        preparation.preflight.main.status,
+                        ContentPreflightStatus::AlreadyInstalled { .. }
+                    ) {
+                        return Err(conflict(
+                            "the selected version is already installed at this path",
+                        ));
+                    }
+                    if !preparation.preflight.incompatible.is_empty() {
+                        let conflicts = preparation
+                            .preflight
+                            .incompatible
+                            .iter()
+                            .map(|item| item.title.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(conflict(format!(
+                            "content update blocked by incompatible installed mods: {conflicts}"
+                        )));
+                    }
+                    preparation.request.skip_version_ids = preparation.preflight.skip_version_ids;
+                    self.context
+                        .tasks
+                        .start_content_install_with_dependencies_and_guard(
+                            preparation.request,
+                            preparation.repository_guard,
+                        )
+                        .await
+                        .map_err(app_error)
+                },
+            )
+            .await?;
+        structured(ContentUpdateResult::Task(task_started(task, replay)))
+    }
+
+    async fn prepare_content_update(
+        &self,
+        params: &ContentUpdateParams,
+    ) -> Result<ContentUpdatePreparation, McpError> {
+        let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
+        self.expect_revision(&instance, params.expected_revision.as_deref())?;
+        let kind = parse_content_kind(&params.kind)?;
+        let relative_path = RepositoryPath::new(&params.relative_path)
+            .map_err(|error| invalid_input(error.to_string()))?;
+        let layout = instance.instance_layout(self.context.minecraft_root.clone());
+        let library = scan_instance_content(layout.clone())
+            .await
+            .map_err(app_error)?;
+        if !library
+            .items_for(kind)
+            .any(|item| item.relative_path == relative_path)
+        {
+            return Err(not_found(format!(
+                "content `{}` was not found in instance `{}`",
+                params.relative_path, params.instance_id
+            )));
+        }
+        let version = self
+            .context
+            .modrinth
+            .version(
+                &params.version_id,
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(internal_error)?;
+        let request = ContentGraphInstallRequest {
+            instance: layout.clone(),
+            kind,
+            version: version.clone(),
+            display_name: format!("{} {}", version.project_id, version.version_number),
+            conflict: ConflictPolicy::Reject,
+            game_version: instance.minecraft_version.clone(),
+            loader: instance
+                .loader
+                .as_ref()
+                .map(|loader| loader.kind.as_str().to_owned()),
+            replace: Some(relative_path),
+            skip_version_ids: Vec::new(),
+        };
+        let installed = tokio::task::spawn_blocking({
+            let layout = layout.clone();
+            move || scan_installed_mods(&layout)
+        })
+        .await
+        .map_err(internal_error)?;
+        let preflight = preflight_content_install(
+            &self.context.modrinth,
+            &request,
+            &installed,
+            Some(&self.context.mod_metadata),
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .map_err(internal_error)?;
+        Ok(ContentUpdatePreparation {
+            request,
+            preflight,
+            relative_path: params.relative_path.clone(),
             repository_guard,
         })
     }

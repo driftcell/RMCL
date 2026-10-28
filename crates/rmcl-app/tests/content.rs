@@ -11,7 +11,7 @@ use rmcl_app::{
     scan_instance_content, set_instance_content_enabled,
 };
 use rmcl_domain::Sha1Hash;
-use rmcl_instance::{InstanceLayout, MinecraftLayout, VersionId};
+use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath, VersionId};
 use rmcl_net::DownloadConfig;
 use serde_json::json;
 use sha1::{Digest, Sha1};
@@ -159,6 +159,7 @@ async fn downloads_verifies_and_imports_remote_content() {
                 file: remote_file(&base, &bytes, None),
                 display_name: "Example".to_owned(),
                 conflict: ConflictPolicy::Rename,
+                replace: None,
             },
             CancellationToken::new(),
             None,
@@ -182,6 +183,7 @@ async fn downloads_verifies_and_imports_remote_content() {
                 file: remote_file(&base, &bytes, None),
                 display_name: "Example".to_owned(),
                 conflict: ConflictPolicy::Rename,
+                replace: None,
             },
             CancellationToken::new(),
             None,
@@ -189,6 +191,48 @@ async fn downloads_verifies_and_imports_remote_content() {
         .await
         .unwrap();
     assert_eq!(second.content.relative_path.as_str(), "example (1).jar");
+    server.abort();
+}
+
+#[tokio::test]
+async fn replacement_install_preserves_relative_path_and_enabled_state() {
+    let bytes = b"new remote mod".to_vec();
+    let (base, server) = mod_server(bytes.clone()).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let destination = instance.mods_dir().join("example.jar.disabled");
+    write(&destination, b"old remote mod");
+    let installer = ContentInstaller::official(DownloadConfig::default()).unwrap();
+
+    let outcome = installer
+        .install(
+            ContentInstallRequest {
+                instance: instance.clone(),
+                kind: ContentKind::Mod,
+                file: remote_file(&base, &bytes, None),
+                display_name: "Example".to_owned(),
+                conflict: ConflictPolicy::Rename,
+                replace: Some(RepositoryPath::new("example.jar.disabled").unwrap()),
+            },
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        outcome.content.relative_path.as_str(),
+        "example.jar.disabled"
+    );
+    assert!(!outcome.content.enabled);
+    assert_eq!(std::fs::read(destination).unwrap(), bytes);
+    assert_eq!(
+        scan_instance_content(instance)
+            .await
+            .unwrap()
+            .count(ContentKind::Mod),
+        1
+    );
     server.abort();
 }
 
@@ -209,6 +253,7 @@ async fn remote_hash_mismatch_does_not_publish_content() {
                 file: remote_file(&base, &bytes, Some(bad_hash)),
                 display_name: "Example".to_owned(),
                 conflict: ConflictPolicy::Rename,
+                replace: None,
             },
             CancellationToken::new(),
             None,
@@ -248,6 +293,7 @@ async fn remote_install_rejects_unsafe_names_and_missing_hashes() {
                 },
                 display_name: "Unsafe".to_owned(),
                 conflict: ConflictPolicy::Rename,
+                replace: None,
             },
             CancellationToken::new(),
             None,
@@ -270,6 +316,7 @@ async fn remote_install_rejects_unsafe_names_and_missing_hashes() {
                 },
                 display_name: "No hash".to_owned(),
                 conflict: ConflictPolicy::Rename,
+                replace: None,
             },
             CancellationToken::new(),
             None,
@@ -513,6 +560,7 @@ fn graph_request(
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        replace: None,
         skip_version_ids: Vec::new(),
     }
 }
@@ -788,6 +836,7 @@ async fn cancelling_dependency_resolution_marks_the_task_cancelled() {
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        replace: None,
         skip_version_ids: Vec::new(),
     };
     let manager = TaskManager::with_content_and_modrinth(
@@ -837,6 +886,7 @@ async fn real_modrinth_required_dependency_chain_installs() {
         conflict: ConflictPolicy::Rename,
         game_version: "1.21.1".to_owned(),
         loader: Some("fabric".to_owned()),
+        replace: None,
         skip_version_ids: Vec::new(),
     };
 
@@ -900,6 +950,7 @@ async fn content_task_exposes_subject_and_completes() {
             file: remote_file(&base, &bytes, None),
             display_name: "Example Mod".to_owned(),
             conflict: ConflictPolicy::Rename,
+            replace: None,
         })
         .await
         .unwrap();

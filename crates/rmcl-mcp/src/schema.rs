@@ -915,6 +915,20 @@ pub enum ContentInstallResult {
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ContentUpdatePreflight {
+    pub dry_run: bool,
+    pub relative_path: String,
+    pub preflight: ContentInstallPreflightDto,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum ContentUpdateResult {
+    Preflight(Box<ContentUpdatePreflight>),
+    Task(TaskStarted),
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
 pub struct MinecraftVersionSummary {
     pub id: String,
     pub version_type: Option<String>,
