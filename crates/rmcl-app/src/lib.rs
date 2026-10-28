@@ -14,6 +14,7 @@ mod java;
 mod loader;
 mod model;
 mod servers;
+mod services;
 mod skin_library;
 mod skin_preview;
 mod skin_source;
@@ -71,6 +72,7 @@ pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
 pub use servers::{ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient};
+pub use services::AppContext;
 pub use skin_library::{SkinLibrary, SkinLibraryEntry, SkinLibraryError};
 pub use skin_preview::SkinPreviewRenderer;
 pub use skin_source::{

@@ -1,137 +1,13 @@
-use std::{
-    path::{Path, PathBuf},
-    rc::Rc,
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use rmcl_app::{
-    AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
-    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
-    ModrinthClient, ServerIconCache, ServerStatusClient, SkinCache, SkinLibrary, SkinUrlClient,
-    TaskManager, UpdateClient, VanillaInstaller, VersionCatalog,
-};
+pub use rmcl_app::AppContext as Services;
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
-use rmcl_domain::{OperatingSystem, Platform};
-use rmcl_net::{DownloadConfig, MirrorHealth, MirrorPreference};
-use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
-    CONFIG_SCHEMA_VERSION, ConfigStore, DownloadSourcePreference, LauncherConfig,
-    StoredAccountKind, StoredMicrosoftAccount, StoredOfflineAccount, default_java_store,
-    default_minecraft_root,
+    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
+    StoredOfflineAccount, default_java_store, default_minecraft_root,
 };
-use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
-
-pub struct Services {
-    pub runtime: Runtime,
-    pub tasks: TaskManager,
-    pub java: JavaService,
-    pub platform: Platform,
-    pub catalog: VersionCatalog,
-    pub modrinth: ModrinthClient,
-    pub loaders: LoaderCatalog,
-    pub config_store: ConfigStore,
-    pub microsoft_accounts: MicrosoftAccountService,
-    pub skins: SkinCache,
-    pub skin_library: SkinLibrary,
-    pub skin_urls: SkinUrlClient,
-    pub servers: ServerStatusClient,
-    pub server_icons: ServerIconCache,
-    pub mod_metadata: ModMetadataCache,
-    pub updates: UpdateClient,
-    pub mirror: Arc<MirrorHealth>,
-}
-
-impl Services {
-    pub fn new(config: &LauncherConfig, config_store: ConfigStore) -> Result<Rc<Self>, AppError> {
-        let runtime = Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("rmcl-core")
-            .build()
-            .map_err(|source| AppError::Io {
-                operation: "create Tokio runtime",
-                path: PathBuf::from("<runtime>"),
-                source,
-            })?;
-        let mirror = Arc::new(MirrorHealth::new(mirror_preference(config.download_source)));
-        let installer =
-            VanillaInstaller::official(DownloadConfig::default())?.with_mirror(mirror.clone());
-        let mut java_config = JavaServiceConfig::new(config.java_store.clone());
-        java_config.auto_install = config.auto_install_java;
-        java_config.mirror = Some(mirror.clone());
-        let java = JavaService::new(java_config)?;
-        let content = ContentInstaller::official(DownloadConfig::default())?;
-        let loaders = LoaderCatalog::official()?.with_mirror(mirror.clone());
-        let forge = ForgeInstaller::new(DownloadConfig::default())?.with_mirror(mirror.clone());
-        let creator = InstanceCreator::new(installer.clone(), loaders.clone())
-            .with_forge(forge, java.clone());
-        let catalog =
-            VersionCatalog::official(DownloadConfig::default())?.with_mirror(mirror.clone());
-        let modrinth = ModrinthClient::official()?;
-        let tasks = TaskManager::with_full_and_modrinth(
-            installer,
-            java.clone(),
-            content,
-            creator,
-            modrinth.clone(),
-            256,
-        );
-        let secrets = std::sync::Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
-        let microsoft_accounts = MicrosoftAccountService::new(secrets)?;
-        let skin_cache_dir = config_store
-            .path()
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("cache")
-            .join("skins");
-        let skins = SkinCache::new(skin_cache_dir);
-        let skin_library = SkinLibrary::new(
-            config_store
-                .path()
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join("skins")
-                .join("library"),
-        );
-        let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
-        let server_icon_cache_dir = config_store
-            .path()
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("cache")
-            .join("servers");
-        let mod_metadata_cache_dir = config_store
-            .path()
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("cache")
-            .join("mod-metadata");
-        let mod_metadata =
-            ModMetadataCache::new(DownloadConfig::default(), mod_metadata_cache_dir)?;
-        let updates =
-            UpdateClient::github().map_err(|error| AppError::Update(error.to_string()))?;
-        Ok(Rc::new(Self {
-            runtime,
-            tasks,
-            java,
-            platform: current_platform(),
-            catalog,
-            modrinth,
-            loaders,
-            config_store,
-            microsoft_accounts,
-            skins,
-            skin_library,
-            skin_urls,
-            servers: ServerStatusClient::default(),
-            server_icons: ServerIconCache::new(server_icon_cache_dir),
-            mod_metadata,
-            updates,
-            mirror,
-        }))
-    }
-}
 
 #[derive(Debug, Parser)]
 #[command(name = "rmcl", about = "A cross-platform Minecraft launcher")]
@@ -308,29 +184,6 @@ fn should_save_on_start(config_existed: bool, has_overrides: bool, warning: Opti
 /// Opens a local file or directory with the platform's default handler.
 pub fn open_path(path: &Path) -> std::io::Result<()> {
     open::that(path)
-}
-
-fn mirror_preference(value: DownloadSourcePreference) -> MirrorPreference {
-    match value {
-        DownloadSourcePreference::Auto => MirrorPreference::Auto,
-        DownloadSourcePreference::Official => MirrorPreference::Official,
-        DownloadSourcePreference::Mirror => MirrorPreference::Mirror,
-    }
-}
-
-fn current_platform() -> Platform {
-    let os = if cfg!(windows) {
-        OperatingSystem::Windows
-    } else if cfg!(target_os = "macos") {
-        OperatingSystem::MacOs
-    } else {
-        OperatingSystem::Linux
-    };
-    Platform::new(
-        os,
-        sysinfo::System::os_version().unwrap_or_default(),
-        std::env::consts::ARCH,
-    )
 }
 
 #[cfg(test)]

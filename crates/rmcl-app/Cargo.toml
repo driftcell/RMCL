@@ -16,6 +16,7 @@ rmcl-launch.workspace = true
 rmcl-minecraft.workspace = true
 rmcl-net.workspace = true
 rmcl-platform.workspace = true
+rmcl-store.workspace = true
 base64.workspace = true
 flate2.workspace = true
 serde.workspace = true
