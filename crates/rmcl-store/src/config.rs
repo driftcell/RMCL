@@ -35,8 +35,8 @@ impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
             schema_version: CONFIG_SCHEMA_VERSION,
-            minecraft_root: default_minecraft_root(),
-            java_store: default_java_store(),
+            minecraft_root: PathBuf::new(),
+            java_store: PathBuf::new(),
             selected_version: None,
             selected_account: None,
             selected_account_kind: StoredAccountKind::Offline,
@@ -142,8 +142,8 @@ impl ConfigStore {
         Self { path: path.into() }
     }
 
-    pub fn discover() -> Self {
-        Self::new(default_config_path())
+    pub fn discover() -> Result<Self, StoreError> {
+        Ok(Self::new(default_config_path()?))
     }
 
     pub fn path(&self) -> &Path {
@@ -246,27 +246,46 @@ impl ConfigStore {
     }
 }
 
-pub fn home_directory() -> PathBuf {
+pub fn home_directory() -> Option<PathBuf> {
     dirs::home_dir()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-pub fn default_config_dir() -> PathBuf {
+pub fn default_config_dir() -> Result<PathBuf, StoreError> {
     dirs::config_dir()
-        .unwrap_or_else(|| home_directory().join(".config"))
-        .join("rmcl")
+        .map(|path| path.join("rmcl"))
+        .ok_or(StoreError::DirectoryUnavailable {
+            directory: "configuration",
+        })
 }
 
-pub fn default_minecraft_root() -> PathBuf {
-    home_directory().join(".minecraft")
+pub fn default_minecraft_root() -> Result<PathBuf, StoreError> {
+    if cfg!(windows) {
+        dirs::data_dir().map(|path| path.join(".minecraft")).ok_or(
+            StoreError::DirectoryUnavailable {
+                directory: "application data",
+            },
+        )
+    } else if cfg!(target_os = "macos") {
+        dirs::data_dir().map(|path| path.join("minecraft")).ok_or(
+            StoreError::DirectoryUnavailable {
+                directory: "application data",
+            },
+        )
+    } else {
+        home_directory()
+            .map(|path| path.join(".minecraft"))
+            .ok_or(StoreError::DirectoryUnavailable { directory: "home" })
+    }
 }
 
-pub fn default_java_store() -> PathBuf {
-    home_directory().join(".rmcl").join("java")
+pub fn default_java_store() -> Result<PathBuf, StoreError> {
+    home_directory()
+        .map(|path| path.join(".rmcl").join("java"))
+        .ok_or(StoreError::DirectoryUnavailable { directory: "home" })
 }
 
-pub fn default_config_path() -> PathBuf {
-    default_config_dir().join("config.toml")
+pub fn default_config_path() -> Result<PathBuf, StoreError> {
+    Ok(default_config_dir()?.join("config.toml"))
 }
 
 #[cfg(test)]
@@ -299,12 +318,11 @@ mod tests {
 
     #[test]
     fn defaults_keep_rmcl_state_out_of_hmcl_configuration() {
-        let config = default_config_path();
+        let config = default_config_path().unwrap();
         assert_eq!(config.file_name().unwrap(), "config.toml");
         assert_eq!(config.parent().unwrap().file_name().unwrap(), "rmcl");
         assert!(!config.to_string_lossy().to_lowercase().contains("hmcl"));
-        assert!(default_minecraft_root().ends_with(".minecraft"));
-        assert!(default_java_store().ends_with(".rmcl/java"));
+        assert!(default_java_store().unwrap().ends_with(".rmcl/java"));
         assert_eq!(
             LauncherConfig::default().schema_version,
             CONFIG_SCHEMA_VERSION
@@ -313,12 +331,18 @@ mod tests {
 
     #[test]
     fn defaults_use_platform_directories() {
-        if let Some(home) = dirs::home_dir() {
-            assert_eq!(home_directory(), home);
-        }
+        assert_eq!(home_directory(), dirs::home_dir());
         if let Some(config) = dirs::config_dir() {
-            assert_eq!(default_config_dir(), config.join("rmcl"));
+            assert_eq!(default_config_dir().unwrap(), config.join("rmcl"));
         }
+
+        let minecraft = default_minecraft_root().unwrap();
+        #[cfg(windows)]
+        assert_eq!(minecraft, dirs::data_dir().unwrap().join(".minecraft"));
+        #[cfg(target_os = "macos")]
+        assert_eq!(minecraft, dirs::data_dir().unwrap().join("minecraft"));
+        #[cfg(all(unix, not(target_os = "macos")))]
+        assert_eq!(minecraft, dirs::home_dir().unwrap().join(".minecraft"));
     }
 
     #[test]

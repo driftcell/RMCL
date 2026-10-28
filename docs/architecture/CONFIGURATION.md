@@ -20,7 +20,17 @@
 | Linux | `$XDG_CONFIG_HOME/rmcl/config.toml`；未设置时使用 `~/.config/rmcl/config.toml` |
 | Windows | `%APPDATA%\rmcl\config.toml` |
 
-基础目录由 `dirs` 按系统规则解析，RMCL 不再直接读取 `HOME`、`USERPROFILE`、`APPDATA` 或 `XDG_CONFIG_HOME`。Minecraft 仓库默认仍是用户主目录下的 `.minecraft`。
+基础目录由 `dirs` 按系统规则解析，RMCL 不再直接读取 `HOME`、`USERPROFILE`、`APPDATA` 或 `XDG_CONFIG_HOME`。系统目录无法解析时启动会返回明确错误，不会静默回退到当前工作目录。
+
+默认 Minecraft 仓库：
+
+| 平台 | 默认路径 |
+|---|---|
+| macOS | `~/Library/Application Support/minecraft` |
+| Linux | `~/.minecraft` |
+| Windows | `%APPDATA%\.minecraft` |
+
+RMCL 不迁移或合并其他目录中的仓库。
 
 `--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像和完整纹理缓存位于同目录的 `cache/skins/`，本地皮肤库位于 `skins/library/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
@@ -28,7 +38,7 @@
 
 ```toml
 schema_version = 5
-minecraft_root = "/Users/example/.minecraft"
+minecraft_root = "/Users/example/Library/Application Support/minecraft"
 java_store = "/Users/example/.rmcl/java"
 selected_version = "1.21.1"
 selected_account = "Podwarden"

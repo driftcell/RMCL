@@ -18,8 +18,8 @@ use rmcl_net::{DownloadConfig, MirrorHealth, MirrorPreference};
 use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
     CONFIG_SCHEMA_VERSION, ConfigStore, DownloadSourcePreference, LauncherConfig,
-    StoredAccountKind, StoredMicrosoftAccount, StoredOfflineAccount, default_config_path,
-    default_java_store, default_minecraft_root,
+    StoredAccountKind, StoredMicrosoftAccount, StoredOfflineAccount, default_java_store,
+    default_minecraft_root,
 };
 use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
@@ -175,13 +175,15 @@ impl Bootstrap {
             version,
             player,
         } = arguments;
-        let config_path = config.unwrap_or_else(default_config_path);
+        let config_store = match config {
+            Some(path) => ConfigStore::new(path),
+            None => ConfigStore::discover().map_err(|error| error.to_string())?,
+        };
         let has_overrides = minecraft_root.is_some()
             || java_store.is_some()
             || version.is_some()
             || player.is_some();
-        let config_existed = config_path.exists();
-        let config_store = ConfigStore::new(config_path);
+        let config_existed = config_store.path().exists();
         let (mut config, config_warning) = match config_store.load() {
             Ok(config) => (config, None),
             Err(error) => (LauncherConfig::default(), Some(error.to_string())),
@@ -211,10 +213,10 @@ impl Bootstrap {
         }
         ensure_selected_account(&mut config);
         if config.minecraft_root.as_os_str().is_empty() {
-            config.minecraft_root = default_minecraft_root();
+            config.minecraft_root = default_minecraft_root().map_err(|error| error.to_string())?;
         }
         if config.java_store.as_os_str().is_empty() {
-            config.java_store = default_java_store();
+            config.java_store = default_java_store().map_err(|error| error.to_string())?;
         }
 
         Ok(Self {

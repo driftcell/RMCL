@@ -137,7 +137,11 @@ pub fn server_tile(path: Option<&std::path::Path>, size: Rems, cx: &App) -> AnyE
 /// Only paths below the user's home directory are abbreviated; user-editable
 /// path inputs keep the full path they operate on.
 pub fn display_path(path: impl AsRef<Path>) -> String {
-    abbreviate_home(path, home_directory())
+    let path = path.as_ref();
+    match home_directory() {
+        Some(home) => abbreviate_home(path, home),
+        None => path.display().to_string(),
+    }
 }
 
 fn abbreviate_home(path: impl AsRef<Path>, home: impl AsRef<Path>) -> String {
