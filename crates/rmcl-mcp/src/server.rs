@@ -8,16 +8,17 @@ use std::{
 use rmcl_app::{
     AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
     CreateInstanceRequest, GameLaunchRequest, InstalledVersion, JavaEnsureRequest, LoaderKind,
-    LoaderSelection, RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard,
-    ServerBookmarkError, SkinLibraryEntry, SkinLibraryError, SkinSourceError, TaskId,
-    VanillaInstallRequest, VersionSource, delete_installed_version_with_guard,
-    delete_instance_content_with_guard, discover_installed_versions,
-    import_instance_content_with_guard, load_skin_file, migrate_instance_to_isolated_with_guard,
-    preflight_content_install, remove_server_bookmark, rename_instance_with_guard,
-    scan_installed_mods, set_instance_content_enabled_with_guard, set_instance_java_with_guard,
-    set_instance_launch_settings_with_guard, try_lock_repository, upsert_server_bookmark,
+    LoaderSelection, MicrosoftAccountServiceError, PreparedSkin, RemoteSearchQuery, RemoteSort,
+    RepositoryPath, RepositoryWriteGuard, ServerBookmarkError, SkinLibraryEntry, SkinLibraryError,
+    SkinSourceError, TaskId, VanillaInstallRequest, VersionSource,
+    delete_installed_version_with_guard, delete_instance_content_with_guard,
+    discover_installed_versions, import_instance_content_with_guard, load_skin_file,
+    migrate_instance_to_isolated_with_guard, preflight_content_install, remove_server_bookmark,
+    rename_instance_with_guard, scan_installed_mods, set_instance_content_enabled_with_guard,
+    set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
+    upsert_server_bookmark,
 };
-use rmcl_auth::{MicrosoftAccount, OfflineAccount};
+use rmcl_auth::{MicrosoftAccount, OfflineAccount, SkinVariant};
 use rmcl_domain::ServerAddress;
 use rmcl_instance::VersionId;
 use rmcl_launch::LaunchAccount;
@@ -44,13 +45,14 @@ use crate::{
         ContentDelete, ContentInstallResult, ContentList, ContentWrite, CreateInstancePlan,
         CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan, InstanceDelete,
         InstanceDeletePlan, InstanceDeleteResult, InstanceList, InstanceSummary, JavaFailure,
-        JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MinecraftVersionList,
-        MinecraftVersionSummary, PathSummary, PlatformSummary, PreflightCheck,
-        PreflightCheckStatus, RemoteProjectSummary, RemoteSearchPage, RemoteVersionList,
-        RemoteVersionSummary, ServerBookmark, ServerDelete, ServerList, ServerPingResult,
-        ServerWrite, SkinDelete, SkinEntry, SkinList, SkinWrite, TaskList, TaskSnapshot,
-        TaskStarted, TaskSubscription, TaskSubscriptionEnded, content_entry, instance_revision,
-        instance_summary, java_runtime, log_page, task_snapshot,
+        JavaList, LoaderVersionInfo, LoaderVersionList, LogPage, MicrosoftProfile,
+        MinecraftVersionList, MinecraftVersionSummary, PathSummary, PlatformSummary,
+        PreflightCheck, PreflightCheckStatus, ProfileCape, ProfileSkin, RemoteProjectSummary,
+        RemoteSearchPage, RemoteVersionList, RemoteVersionSummary, ServerBookmark, ServerDelete,
+        ServerList, ServerPingResult, ServerWrite, SkinApplyResult, SkinDelete, SkinEntry,
+        SkinList, SkinWrite, TaskList, TaskSnapshot, TaskStarted, TaskSubscription,
+        TaskSubscriptionEnded, content_entry, instance_revision, instance_summary, java_runtime,
+        log_page, task_snapshot,
     },
 };
 
@@ -119,6 +121,24 @@ struct SkinRenameParams {
 struct SkinIdParams {
     /// Content SHA-256 ID of the library entry.
     skin_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SkinProfileParams {
+    /// Microsoft username; defaults to the selected Microsoft account.
+    username: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SkinApplyParams {
+    /// Existing local library content ID; exactly one of skin_id or source is required.
+    skin_id: Option<String>,
+    /// Local PNG path or direct HTTPS PNG URL; exactly one of skin_id or source is required.
+    source: Option<String>,
+    /// Arm model: classic or slim.
+    variant: String,
+    /// Microsoft username; defaults to the selected Microsoft account.
+    username: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -449,6 +469,9 @@ impl McpServer {
                 "skins_import",
                 "skins_rename",
                 "skins_delete",
+                "skins_profile",
+                "skins_apply",
+                "skins_reset",
                 "tasks_list",
                 "tasks_get",
                 "tasks_logs",
@@ -969,17 +992,7 @@ impl McpServer {
         if source.is_empty() {
             return Err(invalid_input("skin source cannot be blank"));
         }
-        let prepared = if source.starts_with("https://") || source.starts_with("http://") {
-            self.context
-                .skin_urls
-                .fetch(source, &tokio_util::sync::CancellationToken::new())
-                .await
-                .map_err(skin_source_error)?
-        } else if source.contains("://") {
-            return Err(invalid_input("skin URL must use HTTPS"));
-        } else {
-            load_skin_file(source).await.map_err(skin_source_error)?
-        };
+        let prepared = self.prepare_skin_source(source).await?;
         let _library_guard =
             try_lock_repository(self.context.skin_library.root()).map_err(app_error)?;
         let mut entry = self
@@ -1056,6 +1069,111 @@ impl McpServer {
             deleted: true,
             skin_id: params.skin_id,
         })
+    }
+
+    #[tool(
+        description = "Refresh a Microsoft profile and list owned skins and capes without exposing tokens",
+        output_schema = schema_for_type::<MicrosoftProfile>(),
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
+    )]
+    async fn skins_profile(
+        &self,
+        Parameters(params): Parameters<SkinProfileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let account = self.microsoft_account(params.username.as_deref()).await?;
+        let profile = self
+            .context
+            .microsoft_accounts
+            .refresh_profile(&account, &tokio_util::sync::CancellationToken::new())
+            .await
+            .map_err(microsoft_account_error)?;
+        structured(microsoft_profile(&profile))
+    }
+
+    #[tool(
+        description = "Upload a validated local or remote PNG skin to a Microsoft account and cache it locally",
+        output_schema = schema_for_type::<SkinApplyResult>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
+    )]
+    async fn skins_apply(
+        &self,
+        Parameters(params): Parameters<SkinApplyParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("skins_apply")?;
+        let prepared = match (params.skin_id, params.source) {
+            (Some(skin_id), None) => self
+                .context
+                .skin_library
+                .load(&skin_id)
+                .await
+                .map_err(skin_library_error)?,
+            (None, Some(source)) => self.prepare_skin_source(&source).await?,
+            _ => {
+                return Err(invalid_input(
+                    "exactly one of skin_id or source is required",
+                ));
+            }
+        };
+        let variant = parse_skin_variant(&params.variant)?;
+        let account = self.microsoft_account(params.username.as_deref()).await?;
+        let profile = self
+            .context
+            .microsoft_accounts
+            .upload_skin(
+                &account,
+                variant,
+                prepared.file_name(),
+                prepared.bytes(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .map_err(microsoft_account_error)?;
+        let _library_guard =
+            try_lock_repository(self.context.skin_library.root()).map_err(app_error)?;
+        let entry = self
+            .context
+            .skin_library
+            .import(&prepared)
+            .await
+            .map_err(|error| {
+                conflict(format!(
+                    "skin was uploaded for {}, but local library import failed: {error}",
+                    profile.username()
+                ))
+            })?;
+        structured(SkinApplyResult {
+            profile: microsoft_profile(&profile),
+            skin: self.skin_entry(&entry)?,
+        })
+    }
+
+    #[tool(
+        description = "Reset a Microsoft account to its default skin and refresh the returned profile if needed",
+        output_schema = schema_for_type::<MicrosoftProfile>(),
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = true)
+    )]
+    async fn skins_reset(
+        &self,
+        Parameters(params): Parameters<SkinProfileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.require_write("skins_reset")?;
+        let account = self.microsoft_account(params.username.as_deref()).await?;
+        let profile = self
+            .context
+            .microsoft_accounts
+            .reset_skin(&account, &tokio_util::sync::CancellationToken::new())
+            .await
+            .map_err(microsoft_account_error)?;
+        let profile = match profile {
+            Some(profile) => profile,
+            None => self
+                .context
+                .microsoft_accounts
+                .refresh_profile(&account, &tokio_util::sync::CancellationToken::new())
+                .await
+                .map_err(microsoft_account_error)?,
+        };
+        structured(microsoft_profile(&profile))
     }
 
     #[tool(
@@ -1911,6 +2029,60 @@ impl McpServer {
             .ok_or_else(|| not_found(format!("unknown instance ID `{id}`")))
     }
 
+    async fn prepare_skin_source(&self, source: &str) -> Result<PreparedSkin, McpError> {
+        let source = source.trim();
+        if source.is_empty() {
+            return Err(invalid_input("skin source cannot be blank"));
+        }
+        if source.starts_with("https://") || source.starts_with("http://") {
+            self.context
+                .skin_urls
+                .fetch(source, &tokio_util::sync::CancellationToken::new())
+                .await
+                .map_err(skin_source_error)
+        } else if source.contains("://") {
+            Err(invalid_input("skin URL must use HTTPS"))
+        } else {
+            load_skin_file(source).await.map_err(skin_source_error)
+        }
+    }
+
+    async fn microsoft_account(
+        &self,
+        username: Option<&str>,
+    ) -> Result<MicrosoftAccount, McpError> {
+        let config = self.context.config_store.load().map_err(internal_error)?;
+        let stored = match username {
+            Some(username) => config
+                .microsoft_accounts
+                .iter()
+                .find(|account| account.username == username)
+                .ok_or_else(|| {
+                    not_found(format!("Microsoft account `{username}` was not found"))
+                })?,
+            None => {
+                if config.selected_account_kind != StoredAccountKind::Microsoft {
+                    return Err(invalid_input("no Microsoft account is selected"));
+                }
+                let selected = config
+                    .selected_account
+                    .as_deref()
+                    .ok_or_else(|| invalid_input("no Microsoft account is selected"))?;
+                config
+                    .microsoft_accounts
+                    .iter()
+                    .find(|account| account.username == selected)
+                    .ok_or_else(|| {
+                        invalid_input("the selected Microsoft account no longer exists")
+                    })?
+            }
+        };
+        let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
+        MicrosoftAccount::new(&stored.username, uuid)
+            .map(|account| account.with_skin_url(stored.skin_url.clone()))
+            .map_err(internal_error)
+    }
+
     fn skin_entry(&self, entry: &SkinLibraryEntry) -> Result<SkinEntry, McpError> {
         let head_path = self
             .context
@@ -1945,6 +2117,57 @@ fn structured(value: impl Serialize) -> Result<CallToolResult, McpError> {
 
 fn task_started(task: TaskId, replay: bool) -> TaskStarted {
     TaskStarted::new(task.get(), replay)
+}
+
+fn parse_skin_variant(value: &str) -> Result<SkinVariant, McpError> {
+    match value {
+        "classic" => Ok(SkinVariant::Classic),
+        "slim" => Ok(SkinVariant::Slim),
+        _ => Err(invalid_input(format!(
+            "unsupported skin variant `{value}`; expected classic or slim"
+        ))),
+    }
+}
+
+fn microsoft_account_error(error: MicrosoftAccountServiceError) -> McpError {
+    match error {
+        MicrosoftAccountServiceError::CredentialsMissing => {
+            invalid_input("Microsoft account requires sign in")
+        }
+        other => internal_error(other),
+    }
+}
+
+fn microsoft_profile(account: &MicrosoftAccount) -> MicrosoftProfile {
+    MicrosoftProfile {
+        username: account.username().to_owned(),
+        uuid: account.uuid().to_string(),
+        skin_url: account.skin_url().map(str::to_owned),
+        active_variant: account
+            .active_skin()
+            .map(|skin| skin.variant().as_str().to_owned()),
+        skins: account
+            .skins()
+            .iter()
+            .map(|skin| ProfileSkin {
+                id: skin.id().to_owned(),
+                url: skin.url().to_owned(),
+                variant: skin.variant().as_str().to_owned(),
+                alias: skin.alias().map(str::to_owned),
+                active: skin.is_active(),
+            })
+            .collect(),
+        capes: account
+            .capes()
+            .iter()
+            .map(|cape| ProfileCape {
+                id: cape.id().to_owned(),
+                url: cape.url().to_owned(),
+                alias: cape.alias().map(str::to_owned),
+                active: cape.is_active(),
+            })
+            .collect(),
+    }
 }
 
 fn skin_library_error(error: SkinLibraryError) -> McpError {

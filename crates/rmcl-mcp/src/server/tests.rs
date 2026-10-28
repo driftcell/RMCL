@@ -13,8 +13,10 @@ use rmcl_app::{
     ContentInstaller, JavaService, JavaServiceConfig, LoaderCatalog, LoaderCatalogConfig,
     ModrinthClient, ModrinthConfig, TaskManager, VanillaInstaller, VanillaSources, VersionCatalog,
 };
+use rmcl_auth::{MicrosoftCredentials, MicrosoftEndpoints};
 use rmcl_net::DownloadConfig;
-use rmcl_store::{ConfigStore, LauncherConfig};
+use rmcl_platform::{MemorySecretStore, SecretStore};
+use rmcl_store::{ConfigStore, LauncherConfig, StoredMicrosoftAccount};
 #[cfg(unix)]
 use rmcp::{
     ClientHandler, ServiceExt,
@@ -47,7 +49,7 @@ fn every_tool_declares_an_output_schema() {
             "capabilities" | "instances_list" | "instances_get" | "accounts_list"
             | "content_list" | "content_search" | "content_versions" | "versions_list"
             | "loaders_list" | "java_list" | "servers_list" | "servers_ping" | "skins_list"
-            | "tasks_list" | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
+            | "skins_profile" | "tasks_list" | "tasks_get" | "tasks_logs" | "tasks_unsubscribe" => {
                 assert_eq!(annotations.read_only_hint, Some(true));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(true));
@@ -57,13 +59,13 @@ fn every_tool_declares_an_output_schema() {
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
-            "servers_upsert" | "skins_import" => {
+            "servers_upsert" | "skins_import" | "skins_apply" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(false));
                 assert_eq!(annotations.idempotent_hint, Some(false));
             }
             "content_delete" | "tasks_cancel" | "instances_delete" | "accounts_delete"
-            | "servers_delete" | "skins_delete" => {
+            | "servers_delete" | "skins_delete" | "skins_reset" => {
                 assert_eq!(annotations.read_only_hint, Some(false));
                 assert_eq!(annotations.destructive_hint, Some(true));
             }
@@ -245,6 +247,140 @@ async fn ping_server() -> (String, tokio::task::JoinHandle<()>) {
         stream.shutdown().await.unwrap();
     });
     (address, handle)
+}
+
+fn profile_json(url: &str, variant: &str) -> Value {
+    json!({
+        "id": "986dec87b7ec47ff89ff033fdb95c4b5",
+        "name": "HowDoesAuthWork",
+        "skins": [{
+            "id": "skin-id",
+            "state": "ACTIVE",
+            "url": url,
+            "variant": variant,
+            "alias": "Current Skin"
+        }],
+        "capes": [{
+            "id": "cape-id",
+            "state": "ACTIVE",
+            "url": "https://textures.minecraft.net/texture/cape",
+            "alias": "Current Cape"
+        }]
+    })
+}
+
+async fn mock_profile(headers: axum::http::HeaderMap) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    assert_eq!(
+        headers.get(axum::http::header::AUTHORIZATION).unwrap(),
+        "Bearer minecraft-token"
+    );
+    Json(profile_json(
+        "https://textures.minecraft.net/texture/current",
+        "CLASSIC",
+    ))
+    .into_response()
+}
+
+async fn mock_upload(
+    axum::extract::State(calls): axum::extract::State<Arc<AtomicUsize>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    calls.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        headers.get(axum::http::header::AUTHORIZATION).unwrap(),
+        "Bearer minecraft-token"
+    );
+    let multipart = String::from_utf8_lossy(&body);
+    assert!(multipart.contains("name=\"variant\""));
+    assert!(multipart.contains("slim"));
+    Json(profile_json(
+        "https://textures.minecraft.net/texture/new",
+        "SLIM",
+    ))
+    .into_response()
+}
+
+async fn mock_reset(headers: axum::http::HeaderMap) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    assert_eq!(
+        headers.get(axum::http::header::AUTHORIZATION).unwrap(),
+        "Bearer minecraft-token"
+    );
+    Json(profile_json(
+        "https://textures.minecraft.net/texture/default",
+        "CLASSIC",
+    ))
+    .into_response()
+}
+
+async fn skin_mock() -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    use axum::routing::{delete, post};
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let router = Router::new()
+        .route("/profile", get(mock_profile))
+        .route("/profile/skins", post(mock_upload))
+        .route("/profile/skins/active", delete(mock_reset))
+        .with_state(calls.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    (base, calls, handle)
+}
+
+fn microsoft_test_context(temporary: &TempDir, base: &str) -> Arc<AppContext> {
+    let context = test_context(temporary, ModrinthClient::official().unwrap());
+    let mut owned = match Arc::try_unwrap(context) {
+        Ok(context) => context,
+        Err(_) => panic!("test context should have one owner"),
+    };
+    let secrets = Arc::new(MemorySecretStore::default());
+    let account = MicrosoftAccount::new(
+        "HowDoesAuthWork",
+        Uuid::parse_str("986dec87-b7ec-47ff-89ff-033fdb95c4b5").unwrap(),
+    )
+    .unwrap();
+    let credentials = MicrosoftCredentials::new("refresh", "minecraft-token", u64::MAX);
+    secrets
+        .set(
+            &format!("microsoft:{}", account.compact_uuid()),
+            &serde_json::to_string(&credentials).unwrap(),
+        )
+        .unwrap();
+    let auth = rmcl_auth::MicrosoftAuth::with_endpoints(
+        "test-client",
+        MicrosoftEndpoints {
+            device_code: format!("{base}/device"),
+            token: format!("{base}/token"),
+            xbox_authenticate: format!("{base}/xbox"),
+            xsts_authorize: format!("{base}/xsts"),
+            minecraft_login: format!("{base}/login"),
+            minecraft_entitlements: format!("{base}/entitlements"),
+            minecraft_profile: format!("{base}/profile"),
+            minecraft_profile_skins: format!("{base}/profile/skins"),
+            minecraft_profile_skins_active: format!("{base}/profile/skins/active"),
+        },
+    )
+    .unwrap();
+    owned.microsoft_accounts = rmcl_app::MicrosoftAccountService::with_auth(auth, secrets);
+    let mut config = owned.config_store.load().unwrap();
+    config.selected_account = Some(account.username().to_owned());
+    config.selected_account_kind = StoredAccountKind::Microsoft;
+    config.microsoft_accounts = vec![StoredMicrosoftAccount {
+        username: account.username().to_owned(),
+        uuid: account.uuid().to_string(),
+        skin_url: None,
+    }];
+    owned.config_store.save(&config).unwrap();
+    Arc::new(owned)
 }
 
 async fn catalog_server() -> (Url, tokio::task::JoinHandle<()>) {
@@ -815,6 +951,27 @@ fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
             skin_write.data.as_ref().unwrap()["code"],
             "permission_denied"
         );
+        let skin_apply = server
+            .skins_apply(Parameters(SkinApplyParams {
+                skin_id: None,
+                source: Some("does-not-exist.png".to_owned()),
+                variant: "classic".to_owned(),
+                username: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            skin_apply.data.as_ref().unwrap()["code"],
+            "permission_denied"
+        );
+        let skin_reset = server
+            .skins_reset(Parameters(SkinProfileParams { username: None }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            skin_reset.data.as_ref().unwrap()["code"],
+            "permission_denied"
+        );
         assert!(!temporary.path().join("minecraft/versions/blocked").exists());
         assert_eq!(
             structured(server.tasks_list().await.unwrap())["items"]
@@ -1019,6 +1176,98 @@ fn skin_library_tools_validate_import_rename_and_delete() {
         assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
     });
     drop(server);
+    shutdown_context(context);
+}
+
+#[test]
+fn microsoft_skin_tools_refresh_upload_and_reset_with_mocked_credentials() {
+    let temporary = TempDir::new().unwrap();
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let (base, uploads, mock_handle) = context.runtime.block_on(skin_mock());
+    let context = {
+        let _ = context;
+        microsoft_test_context(&temporary, &base)
+    };
+    let server = McpServer::new(context.clone());
+    let source = temporary.path().join("upload.png");
+    write_skin(&source, 64, 64);
+    context.runtime.block_on(async {
+        let profile = structured(
+            server
+                .skins_profile(Parameters(SkinProfileParams { username: None }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(profile["username"], "HowDoesAuthWork");
+        assert_eq!(profile["active_variant"], "classic");
+        assert_eq!(profile["skins"][0]["active"], true);
+        assert_eq!(profile["capes"][0]["active"], true);
+        assert_eq!(profile["skins"][0]["alias"], "Current Skin");
+
+        let imported = structured(
+            server
+                .skins_import(Parameters(SkinImportParams {
+                    source: source.display().to_string(),
+                    name: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        let skin_id = imported["skin"]["id"].as_str().unwrap().to_owned();
+        let applied = structured(
+            server
+                .skins_apply(Parameters(SkinApplyParams {
+                    skin_id: Some(skin_id.clone()),
+                    source: None,
+                    variant: "slim".to_owned(),
+                    username: None,
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            applied["profile"]["skin_url"],
+            "https://textures.minecraft.net/texture/new"
+        );
+        assert_eq!(applied["profile"]["active_variant"], "slim");
+        assert_eq!(applied["skin"]["id"], skin_id);
+        assert_eq!(uploads.load(Ordering::SeqCst), 1);
+
+        let reset = structured(
+            server
+                .skins_reset(Parameters(SkinProfileParams {
+                    username: Some("HowDoesAuthWork".to_owned()),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            reset["skin_url"],
+            "https://textures.minecraft.net/texture/default"
+        );
+        assert_eq!(reset["active_variant"], "classic");
+
+        let invalid = server
+            .skins_apply(Parameters(SkinApplyParams {
+                skin_id: None,
+                source: Some(source.display().to_string()),
+                variant: "wide".to_owned(),
+                username: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(invalid.data.as_ref().unwrap()["code"], "invalid_input");
+        assert_eq!(uploads.load(Ordering::SeqCst), 1);
+        let missing = server
+            .skins_profile(Parameters(SkinProfileParams {
+                username: Some("Missing".to_owned()),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
+    });
+    drop(server);
+    mock_handle.abort();
     shutdown_context(context);
 }
 

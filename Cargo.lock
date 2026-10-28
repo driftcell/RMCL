@@ -5756,6 +5756,7 @@ dependencies = [
  "rmcl-java",
  "rmcl-launch",
  "rmcl-net",
+ "rmcl-platform",
  "rmcl-store",
  "rmcp",
  "schemars",

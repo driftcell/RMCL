@@ -1090,6 +1090,39 @@ pub struct SkinDelete {
     pub skin_id: String,
 }
 
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ProfileSkin {
+    pub id: String,
+    pub url: String,
+    pub variant: String,
+    pub alias: Option<String>,
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct ProfileCape {
+    pub id: String,
+    pub url: String,
+    pub alias: Option<String>,
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct MicrosoftProfile {
+    pub username: String,
+    pub uuid: String,
+    pub skin_url: Option<String>,
+    pub active_variant: Option<String>,
+    pub skins: Vec<ProfileSkin>,
+    pub capes: Vec<ProfileCape>,
+}
+
+#[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
+pub struct SkinApplyResult {
+    pub profile: MicrosoftProfile,
+    pub skin: SkinEntry,
+}
+
 #[cfg(test)]
 mod tests {
     use rmcl_app::{TaskId, TaskProgress as AppTaskProgress};
