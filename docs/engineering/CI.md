@@ -90,7 +90,7 @@ bun run build
 
 - `.config/nextest.toml` 是仓库共享配置；本地默认 profile 输出失败上下文，CI profile 运行全部测试。
 - CI 使用 stable Rust、`Cargo.lock` 和 `--locked`，锁文件必须提交。
-- Ubuntu job 在 Rust 安装前通过 `.github/scripts/install-gpui-deps.sh` 安装 GPUI Kit 0.8.0 文档要求的 fontconfig、Wayland、WebKitGTK、XKB/X11、SSL、zstd 和 Vulkan 开发库；不启用 ALSA/speech 等可选 feature。
+- Ubuntu job 在 Rust 安装前通过 `.github/scripts/install-gpui-deps.sh` 安装 GPUI Kit 0.8.1 文档要求的 fontconfig、Wayland、WebKitGTK、XKB/X11、SSL、zstd 和 Vulkan 开发库；不启用 ALSA/speech 等可选 feature。
 - 安装脚本按 `archive.ubuntu.com`、MIT、Waterloo、UMD、kernel.org 的顺序尝试 apt 镜像，每次 `apt-get update` 最多 90 秒，成功后安装依赖；apt 同时启用重试、20 秒请求超时和 IPv4。`UBUNTU_MIRROR` 可覆盖镜像地址。
 - Rust 编译产物由 `Swatinem/rust-cache` 缓存，nextest 由 `taiki-e/install-action` 安装。
 - Web 使用 `web/bun.lock`、Bun 1.4.4 和 `--frozen-lockfile`；`bun install` 在 CI 中只在 `web/` 目录执行。

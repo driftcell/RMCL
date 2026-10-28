@@ -123,6 +123,6 @@ Linux 构建使用 Ubuntu 24.04，产物面向较新的 glibc 和 GPUI Kit 所�
 
 ## GPUI Kit 平台约束
 
-RMCL 当前已引入 GPUI Kit 0.8.0 / gpui-pre 0.3.9。其文档列出 macOS 15+、Windows 10+，Linux 图形环境需要 Wayland/X11 与可用 Vulkan 驱动，并将 Ubuntu 24.04 作为验证环境。CI 按该依赖列表安装 Linux 开发库；实际最低系统要求和打包依赖仍需逐平台运行验证，不能提前宣称与 HMCL 相同。
+RMCL 当前已引入 GPUI Kit 0.8.1 / gpui-pre 0.3.10。其文档列出 macOS 15+、Windows 10+，Linux 图形环境需要 Wayland/X11 与可用 Vulkan 驱动，并将 Ubuntu 24.04 作为验证环境。CI 按该依赖列表安装 Linux 开发库；实际最低系统要求和打包依赖仍需逐平台运行验证，不能提前宣称与 HMCL 相同。
 
 参考：[GPUI Kit Installation](https://gpui-kit.com/docs/installation)、[Packaging](https://gpui-kit.com/docs/packaging)、[桌面界面与 GPUI 桥接](../architecture/USER_INTERFACE.md)。

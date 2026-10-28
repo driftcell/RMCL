@@ -173,7 +173,7 @@ impl LauncherApp {
                             .id("log-scroll")
                             .flex_1()
                             .min_h_0()
-                            .on_scroll_wheel(move |_, _, cx| {
+                            .on_scroll(move |_, _, cx| {
                                 let _ = scroll_view.update(cx, |this, cx| {
                                     if this.log_follow {
                                         this.log_follow = false;
