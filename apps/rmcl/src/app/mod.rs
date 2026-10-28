@@ -191,6 +191,7 @@ pub struct ContentBrowserState {
     kind: Option<ContentKind>,
     project: Option<RemoteProject>,
     projects: Vec<RemoteProject>,
+    project_icons: HashMap<String, Option<PathBuf>>,
     total_hits: u64,
     search_loading: bool,
     search_error: Option<String>,
@@ -431,7 +432,9 @@ pub struct LauncherApp {
     remote_sort: RemoteSort,
     content_browser_request: u64,
     content_browser_cancel: Option<CancellationToken>,
+    content_browser_icons_cancel: Option<CancellationToken>,
     _content_browser_task: Option<Task<()>>,
+    _content_icons_task: Option<Task<()>>,
     servers: ServersState,
     server_tab: ServerTab,
     server_query: Entity<InputState>,
@@ -872,7 +875,9 @@ impl LauncherApp {
             remote_sort: RemoteSort::Relevance,
             content_browser_request: 0,
             content_browser_cancel: None,
+            content_browser_icons_cancel: None,
             _content_browser_task: None,
+            _content_icons_task: None,
             servers: ServersState::default(),
             server_tab: ServerTab::default(),
             server_query,
@@ -5404,7 +5409,70 @@ impl LauncherApp {
         if let Some(cancellation) = self.content_browser_cancel.take() {
             cancellation.cancel();
         }
+        self.cancel_content_icons();
         self.content_browser_request = self.content_browser_request.wrapping_add(1);
+    }
+
+    fn cancel_content_icons(&mut self) {
+        if let Some(cancellation) = self.content_browser_icons_cancel.take() {
+            cancellation.cancel();
+        }
+        self._content_icons_task = None;
+    }
+
+    fn load_project_icons(
+        &mut self,
+        projects: &[RemoteProject],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pending = projects
+            .iter()
+            .filter_map(|project| {
+                let url = project.icon_url.as_deref()?;
+                (!self.content_browser.project_icons.contains_key(&project.id))
+                    .then(|| (project.id.clone(), url.to_owned()))
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return;
+        }
+
+        self.cancel_content_icons();
+        let cancellation = CancellationToken::new();
+        self.content_browser_icons_cancel = Some(cancellation.clone());
+        let cache = self.services.remote_icons.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._content_icons_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let results = runtime
+                .spawn(async move {
+                    let mut tasks = tokio::task::JoinSet::new();
+                    for (id, url) in pending {
+                        let cache = cache.clone();
+                        let cancellation = cancellation.clone();
+                        tasks.spawn(async move {
+                            let path = cache.ensure(&url, &cancellation).await.ok();
+                            (id, path)
+                        });
+                    }
+                    let mut results = Vec::new();
+                    while let Some(joined) = tasks.join_next().await {
+                        if let Ok(result) = joined {
+                            results.push(result);
+                        }
+                    }
+                    results
+                })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if let Ok(results) = results {
+                    for (id, path) in results {
+                        view.content_browser.project_icons.insert(id, path);
+                    }
+                    cx.notify();
+                }
+            });
+        }));
     }
 
     fn load_remote_search(&mut self, reset: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -5453,7 +5521,7 @@ impl LauncherApp {
             let result = runtime
                 .spawn(async move { client.search(&query, &cancellation).await })
                 .await;
-            let _ = this.update_in(cx, |view, _, cx| {
+            let _ = this.update_in(cx, |view, window, cx| {
                 if view.content_browser_request != request {
                     return;
                 }
@@ -5462,11 +5530,16 @@ impl LauncherApp {
                     Ok(Ok(page)) => {
                         if reset {
                             view.content_browser.projects = page.projects;
+                            view.content_browser
+                                .project_icons
+                                .retain(|_, path| path.is_some());
                         } else {
                             view.content_browser.projects.extend(page.projects);
                         }
                         view.content_browser.total_hits = page.total_hits;
                         view.content_browser.search_error = None;
+                        let projects = view.content_browser.projects.clone();
+                        view.load_project_icons(&projects, window, cx);
                     }
                     Ok(Err(error)) => {
                         if !matches!(error, rmcl_app::RemoteContentError::Cancelled) {
@@ -5489,9 +5562,16 @@ impl LauncherApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(
+            self.content_browser.project_icons.get(&project.id),
+            Some(None)
+        ) {
+            self.content_browser.project_icons.remove(&project.id);
+        }
         self.content_browser.project = Some(project.clone());
         self.content_browser.versions.clear();
         self.content_browser.versions_error = None;
+        self.load_project_icons(std::slice::from_ref(&project), window, cx);
         self.load_remote_versions(project, window, cx);
     }
 

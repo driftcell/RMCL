@@ -14,6 +14,7 @@ mod java;
 mod loader;
 mod locks;
 mod model;
+mod remote_icons;
 mod servers;
 mod services;
 mod skin_library;
@@ -64,6 +65,7 @@ pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,
 };
+pub use remote_icons::{MAX_REMOTE_ICON_BYTES, RemoteIconCache, RemoteIconError};
 pub use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, ContentSource, ContentWarning, InstalledMod,
     InstalledModIndex, LocalContent, ModDependency, ModMetadata, ModMetadataError,
