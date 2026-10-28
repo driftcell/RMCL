@@ -18,8 +18,9 @@ use crate::{
     ContentInstallPhase, ContentInstallRequest, ContentInstaller, CreateInstanceRequest,
     GameLaunchEvent, GameLaunchOutcome, GameLaunchRequest, GameLauncher, InstallDownloadProgress,
     InstallEvent, InstallOutcome, InstallPhase, InstanceCreateEvent, InstanceCreateOutcome,
-    InstanceCreatePhase, InstanceCreator, JavaEvent, ModrinthClient, VanillaInstallRequest,
-    VanillaInstaller, content::absolute_instance, content::resolve_content_install_batch,
+    InstanceCreatePhase, InstanceCreator, JavaEvent, ModrinthClient, RepositoryWriteGuard,
+    VanillaInstallRequest, VanillaInstaller, content::absolute_instance,
+    content::resolve_content_install_batch, try_lock_repository,
 };
 
 const GAME_LOG_CAPACITY: usize = 1024;
@@ -325,6 +326,20 @@ impl TaskManager {
         mut request: VanillaInstallRequest,
     ) -> Result<TaskId, AppError> {
         let key = prepare_request(&mut request)?;
+        self.ensure_available(&key).await?;
+        let repository_guard = try_lock_repository(&request.minecraft_root)?;
+        self.start_install_with_guard(request, repository_guard)
+            .await
+    }
+
+    /// Starts an install while the caller holds the repository write lock.
+    /// Used to keep revision validation and task registration in one critical section.
+    pub async fn start_install_with_guard(
+        &self,
+        mut request: VanillaInstallRequest,
+        repository_guard: RepositoryWriteGuard,
+    ) -> Result<TaskId, AppError> {
+        let key = prepare_request(&mut request)?;
         let subject = TaskSubject::Version {
             id: key.version_id.clone(),
         };
@@ -335,7 +350,14 @@ impl TaskManager {
         let manager = self.clone();
         tokio::spawn(async move {
             manager
-                .run_install(id, request, cancellation, sender, receiver)
+                .run_install(
+                    id,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                    repository_guard,
+                )
                 .await;
         });
         Ok(id)
@@ -350,6 +372,8 @@ impl TaskManager {
             return Err(AppError::InstanceCreatorNotConfigured);
         };
         let key = prepare_create_request(&mut request)?;
+        self.ensure_available(&key).await?;
+        let repository_guard = try_lock_repository(&request.minecraft_root)?;
         let subject = TaskSubject::Instance {
             id: key.version_id.clone(),
             name: if request.name.trim().is_empty() {
@@ -365,7 +389,15 @@ impl TaskManager {
         let manager = self.clone();
         tokio::spawn(async move {
             manager
-                .run_create_instance(id, creator, request, cancellation, sender, receiver)
+                .run_create_instance(
+                    id,
+                    creator,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                    repository_guard,
+                )
                 .await;
         });
         Ok(id)
@@ -380,6 +412,8 @@ impl TaskManager {
             return Err(AppError::RemoteContentNotConfigured);
         };
         let key = prepare_content_request(&mut request)?;
+        self.ensure_available(&key).await?;
+        let repository_guard = try_lock_repository(request.instance.repository().root())?;
         let subject = TaskSubject::Content {
             instance_id: key.version_id.clone(),
             kind: request.kind,
@@ -392,7 +426,15 @@ impl TaskManager {
         let manager = self.clone();
         tokio::spawn(async move {
             manager
-                .run_content_install(id, content, request, cancellation, sender, receiver)
+                .run_content_install(
+                    id,
+                    content,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                    repository_guard,
+                )
                 .await;
         });
         Ok(id)
@@ -405,6 +447,19 @@ impl TaskManager {
     pub async fn start_content_install_with_dependencies(
         &self,
         mut request: ContentGraphInstallRequest,
+    ) -> Result<TaskId, AppError> {
+        let key = prepare_content_graph_request(&mut request)?;
+        self.ensure_available(&key).await?;
+        let repository_guard = try_lock_repository(request.instance.repository().root())?;
+        self.start_content_install_with_dependencies_and_guard(request, repository_guard)
+            .await
+    }
+
+    /// Starts a dependency install while preserving the caller's revision lock.
+    pub async fn start_content_install_with_dependencies_and_guard(
+        &self,
+        mut request: ContentGraphInstallRequest,
+        repository_guard: RepositoryWriteGuard,
     ) -> Result<TaskId, AppError> {
         let Some(content) = self.inner.content.clone() else {
             return Err(AppError::RemoteContentNotConfigured);
@@ -433,6 +488,7 @@ impl TaskManager {
                     cancellation,
                     sender,
                     receiver,
+                    repository_guard,
                 )
                 .await;
         });
@@ -463,6 +519,8 @@ impl TaskManager {
             return Err(AppError::JavaNotConfigured);
         };
         let key = prepare_request(&mut request.install)?;
+        self.ensure_available(&key).await?;
+        let repository_guard = try_lock_repository(&request.install.minecraft_root)?;
         let subject = TaskSubject::Version {
             id: key.version_id.clone(),
         };
@@ -476,10 +534,33 @@ impl TaskManager {
         let manager = self.clone();
         tokio::spawn(async move {
             manager
-                .run_launch(id, game, request, cancellation, sender, receiver, installed)
+                .run_launch(
+                    id,
+                    game,
+                    request,
+                    cancellation,
+                    sender,
+                    receiver,
+                    installed,
+                    repository_guard,
+                )
                 .await;
         });
         Ok(id)
+    }
+
+    async fn ensure_available(&self, key: &InstallKey) -> Result<(), AppError> {
+        let registry = self.inner.registry.lock().await;
+        if let Some(existing) = registry
+            .active_versions
+            .iter()
+            .find(|active| &active.key == key)
+        {
+            return Err(AppError::TaskAlreadyRunning {
+                existing: existing.id,
+            });
+        }
+        Ok(())
     }
 
     async fn register(
@@ -598,6 +679,7 @@ impl TaskManager {
         cancellation: CancellationToken,
         sender: mpsc::Sender<InstallEvent>,
         mut receiver: mpsc::Receiver<InstallEvent>,
+        repository_guard: RepositoryWriteGuard,
     ) {
         let installer = self.inner.installer.clone();
         // NOTE: Heap-pin the large orchestration future instead of polling it on a worker stack.
@@ -609,8 +691,10 @@ impl TaskManager {
         };
         let (result, ()) = tokio::join!(install, forward);
         self.finish_install(id, result).await;
+        drop(repository_guard);
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_create_instance(
         self,
         id: TaskId,
@@ -619,6 +703,7 @@ impl TaskManager {
         cancellation: CancellationToken,
         sender: mpsc::Sender<InstanceCreateEvent>,
         mut receiver: mpsc::Receiver<InstanceCreateEvent>,
+        repository_guard: RepositoryWriteGuard,
     ) {
         let create = Box::pin(creator.create(request, cancellation, Some(sender)));
         let forward = async {
@@ -628,8 +713,10 @@ impl TaskManager {
         };
         let (result, ()) = tokio::join!(create, forward);
         self.finish_create_instance(id, result).await;
+        drop(repository_guard);
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_content_install(
         self,
         id: TaskId,
@@ -638,6 +725,7 @@ impl TaskManager {
         cancellation: CancellationToken,
         sender: mpsc::Sender<ContentInstallEvent>,
         mut receiver: mpsc::Receiver<ContentInstallEvent>,
+        repository_guard: RepositoryWriteGuard,
     ) {
         let install = Box::pin(installer.install(request, cancellation, Some(sender)));
         let forward = async {
@@ -647,6 +735,7 @@ impl TaskManager {
         };
         let (result, ()) = tokio::join!(install, forward);
         self.finish_content(id, result.map(|_| ())).await;
+        drop(repository_guard);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -659,6 +748,7 @@ impl TaskManager {
         cancellation: CancellationToken,
         sender: mpsc::Sender<ContentInstallEvent>,
         mut receiver: mpsc::Receiver<ContentInstallEvent>,
+        repository_guard: RepositoryWriteGuard,
     ) {
         self.update_phase(id, TaskPhase::Content(ContentInstallPhase::Preparing))
             .await;
@@ -687,6 +777,7 @@ impl TaskManager {
             result
         };
         self.finish_content(id, result).await;
+        drop(repository_guard);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -699,6 +790,7 @@ impl TaskManager {
         sender: mpsc::Sender<GameLaunchEvent>,
         mut receiver: mpsc::Receiver<GameLaunchEvent>,
         installed: bool,
+        repository_guard: RepositoryWriteGuard,
     ) {
         // NOTE: Keep the larger install-to-exit future off the worker stack as well.
         let run = Box::pin(async move {
@@ -716,6 +808,7 @@ impl TaskManager {
         };
         let (result, ()) = tokio::join!(run, forward);
         self.finish_launch(id, result).await;
+        drop(repository_guard);
     }
 
     async fn apply_install_event(&self, id: TaskId, event: InstallEvent) {

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use rmcl_instance::{InstanceLayout, InstanceManifest, IsolationMode, MinecraftLayout, VersionId};
 use tokio_util::sync::CancellationToken;
 
-use crate::AppError;
+use crate::{AppError, RepositoryWriteGuard, try_lock_repository};
 
 /// Moves an existing legacy instance to an isolated game directory.
 ///
@@ -22,7 +22,24 @@ pub async fn migrate_instance_to_isolated(
         path: root.as_ref().to_path_buf(),
         source,
     })?;
-    let layout = MinecraftLayout::new(root);
+    let repository_guard = try_lock_repository(&root)?;
+    migrate_instance_to_isolated_with_guard(
+        root,
+        instance_id,
+        copy_global_content,
+        &repository_guard,
+    )
+    .await
+}
+
+/// Migrates an instance while the caller holds the repository write lock.
+pub async fn migrate_instance_to_isolated_with_guard(
+    root: impl AsRef<Path>,
+    instance_id: &str,
+    copy_global_content: bool,
+    _repository_guard: &RepositoryWriteGuard,
+) -> Result<(), AppError> {
+    let layout = MinecraftLayout::new(root.as_ref().to_path_buf());
     let id = VersionId::new(instance_id)?;
     let probe = layout.instance(id.clone(), IsolationMode::Shared);
     let manifest = probe.load_manifest()?;
@@ -73,6 +90,16 @@ pub async fn migrate_instance_to_isolated(
 /// ID when displayed. Legacy versions without a manifest receive one using
 /// their current isolation mode.
 pub fn rename_instance(instance: &InstanceLayout, name: &str) -> Result<(), AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    rename_instance_with_guard(instance, name, &repository_guard)
+}
+
+/// Renames an instance while the caller holds the repository write lock.
+pub fn rename_instance_with_guard(
+    instance: &InstanceLayout,
+    name: &str,
+    _repository_guard: &RepositoryWriteGuard,
+) -> Result<(), AppError> {
     if !instance.version_json_path().is_file() {
         return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
     }
@@ -93,6 +120,24 @@ pub fn set_instance_launch_settings(
     memory_mb: Option<u32>,
     window_width: Option<u32>,
     window_height: Option<u32>,
+) -> Result<(), AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    set_instance_launch_settings_with_guard(
+        instance,
+        memory_mb,
+        window_width,
+        window_height,
+        &repository_guard,
+    )
+}
+
+/// Sets launch settings while the caller holds the repository write lock.
+pub fn set_instance_launch_settings_with_guard(
+    instance: &InstanceLayout,
+    memory_mb: Option<u32>,
+    window_width: Option<u32>,
+    window_height: Option<u32>,
+    _repository_guard: &RepositoryWriteGuard,
 ) -> Result<(), AppError> {
     if !instance.version_json_path().is_file() {
         return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
@@ -134,6 +179,16 @@ pub fn set_instance_launch_settings(
 /// versions without a manifest receive one using their current isolation mode,
 /// so changing Java never silently moves the game directory.
 pub fn set_instance_java(instance: &InstanceLayout, java: Option<PathBuf>) -> Result<(), AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    set_instance_java_with_guard(instance, java, &repository_guard)
+}
+
+/// Sets Java while the caller holds the repository write lock.
+pub fn set_instance_java_with_guard(
+    instance: &InstanceLayout,
+    java: Option<PathBuf>,
+    _repository_guard: &RepositoryWriteGuard,
+) -> Result<(), AppError> {
     if !instance.version_json_path().is_file() {
         return Err(AppError::VersionNotFound(instance.id().as_str().to_owned()));
     }

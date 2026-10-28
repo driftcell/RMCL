@@ -6,12 +6,14 @@ use std::{
 };
 
 use rmcl_app::{
-    AppContext, AppError, ConflictPolicy, ContentGraphInstallRequest, ContentKind,
+    AppContext, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPreflight, ContentKind,
     CreateInstanceRequest, GameLaunchRequest, InstalledVersion, LoaderKind, LoaderSelection,
-    RemoteSearchQuery, RemoteSort, RepositoryPath, TaskId, VanillaInstallRequest, VersionSource,
-    delete_instance_content, discover_installed_versions, import_instance_content,
-    migrate_instance_to_isolated, preflight_content_install, rename_instance, scan_installed_mods,
-    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
+    RemoteSearchQuery, RemoteSort, RepositoryPath, RepositoryWriteGuard, TaskId,
+    VanillaInstallRequest, VersionSource, delete_instance_content_with_guard,
+    discover_installed_versions, import_instance_content_with_guard,
+    migrate_instance_to_isolated_with_guard, preflight_content_install, rename_instance_with_guard,
+    scan_installed_mods, set_instance_content_enabled_with_guard, set_instance_java_with_guard,
+    set_instance_launch_settings_with_guard, try_lock_repository,
 };
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_domain::ServerAddress;
@@ -236,6 +238,12 @@ struct ContentInstallParams {
     idempotency_key: Option<String>,
     /// Resolve dependencies and return preflight without starting a task.
     dry_run: Option<bool>,
+}
+
+struct ContentInstallPreparation {
+    request: ContentGraphInstallRequest,
+    preflight: ContentInstallPreflight,
+    repository_guard: RepositoryWriteGuard,
 }
 
 #[tool_router]
@@ -470,8 +478,12 @@ impl McpServer {
             })));
         }
         let (task, replay) = self
-            .idempotent_task("create", params.idempotency_key.as_deref(), || {
-                self.context.tasks.start_create_instance(request)
+            .idempotent_task("create", params.idempotency_key.as_deref(), || async move {
+                self.context
+                    .tasks
+                    .start_create_instance(request)
+                    .await
+                    .map_err(app_error)
             })
             .await?;
         structured(CreateInstanceResult::Task(task_started(task, replay)))
@@ -487,10 +499,12 @@ impl McpServer {
         Parameters(params): Parameters<UpdateInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
         let layout = instance.instance_layout(self.context.minecraft_root.clone());
         if let Some(name) = params.name {
-            rename_instance(&layout, &name).map_err(internal_error)?;
+            rename_instance_with_guard(&layout, &name, &repository_guard)
+                .map_err(internal_error)?;
         }
         if let Some(java) = params.java {
             let java = java.trim();
@@ -502,7 +516,8 @@ impl McpServer {
                     .await
                     .map_err(internal_error)?;
             }
-            set_instance_java(&layout, path).map_err(internal_error)?;
+            set_instance_java_with_guard(&layout, path, &repository_guard)
+                .map_err(internal_error)?;
         }
 
         let mut memory = instance.max_memory_mb;
@@ -523,17 +538,25 @@ impl McpServer {
             || params.window.is_some()
             || params.clear_window == Some(true)
         {
-            set_instance_launch_settings(&layout, memory, width, height).map_err(internal_error)?;
+            set_instance_launch_settings_with_guard(
+                &layout,
+                memory,
+                width,
+                height,
+                &repository_guard,
+            )
+            .map_err(internal_error)?;
         }
 
         if let Some(isolation) = params.isolation {
             match isolation.as_str() {
                 "isolated" => {
                     if !instance.is_isolated() {
-                        migrate_instance_to_isolated(
+                        migrate_instance_to_isolated_with_guard(
                             &self.context.minecraft_root,
                             &params.instance_id,
                             true,
+                            &repository_guard,
                         )
                         .await
                         .map_err(internal_error)?;
@@ -567,6 +590,7 @@ impl McpServer {
         Parameters(params): Parameters<RepairInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
         let request = VanillaInstallRequest {
             minecraft_root: self.context.minecraft_root.clone(),
@@ -577,7 +601,7 @@ impl McpServer {
         let task = self
             .context
             .tasks
-            .start_install(request)
+            .start_install_with_guard(request, repository_guard)
             .await
             .map_err(internal_error)?;
         structured(task_started(task, false))
@@ -664,13 +688,20 @@ impl McpServer {
         Parameters(params): Parameters<ContentImportParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
         let kind = parse_content_kind(&params.kind)?;
         let conflict = parse_conflict_policy(params.conflict.as_deref())?;
         let layout = instance.instance_layout(self.context.minecraft_root.clone());
-        let content = import_instance_content(layout, kind, PathBuf::from(params.source), conflict)
-            .await
-            .map_err(internal_error)?;
+        let content = import_instance_content_with_guard(
+            layout,
+            kind,
+            PathBuf::from(params.source),
+            conflict,
+            &repository_guard,
+        )
+        .await
+        .map_err(internal_error)?;
         structured(ContentWrite {
             content: content_entry(&content),
             revision: instance_revision(&instance)?,
@@ -687,13 +718,20 @@ impl McpServer {
         Parameters(params): Parameters<ContentSetEnabledParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
         let kind = parse_content_kind(&params.kind)?;
         let layout = instance.instance_layout(self.context.minecraft_root.clone());
         let relative = RepositoryPath::new(params.relative_path).map_err(internal_error)?;
-        let content = set_instance_content_enabled(layout, kind, relative, params.enabled)
-            .await
-            .map_err(internal_error)?;
+        let content = set_instance_content_enabled_with_guard(
+            layout,
+            kind,
+            relative,
+            params.enabled,
+            &repository_guard,
+        )
+        .await
+        .map_err(internal_error)?;
         structured(ContentWrite {
             content: content_entry(&content),
             revision: instance_revision(&instance)?,
@@ -710,11 +748,12 @@ impl McpServer {
         Parameters(params): Parameters<ContentDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, Some(&params.expected_revision))?;
         let kind = parse_content_kind(&params.kind)?;
         let layout = instance.instance_layout(self.context.minecraft_root.clone());
         let relative = RepositoryPath::new(params.relative_path).map_err(internal_error)?;
-        delete_instance_content(layout, kind, relative)
+        delete_instance_content_with_guard(layout, kind, relative, &repository_guard)
             .await
             .map_err(internal_error)?;
         structured(ContentDelete {
@@ -792,7 +831,52 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<ContentInstallParams>,
     ) -> Result<CallToolResult, McpError> {
+        if params.dry_run == Some(true) {
+            let preparation = self.prepare_content_install(&params).await?;
+            return structured(ContentInstallResult::Preflight(Box::new(
+                (&preparation.preflight).into(),
+            )));
+        }
+        let idempotency_key = params.idempotency_key.clone();
+        let (task, replay) = self
+            .idempotent_task(
+                "content_install",
+                idempotency_key.as_deref(),
+                || async move {
+                    let mut preparation = self.prepare_content_install(&params).await?;
+                    if !preparation.preflight.incompatible.is_empty() {
+                        let conflicts = preparation
+                            .preflight
+                            .incompatible
+                            .iter()
+                            .map(|item| item.title.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(conflict(format!(
+                            "content install blocked by incompatible installed mods: {conflicts}"
+                        )));
+                    }
+                    preparation.request.skip_version_ids = preparation.preflight.skip_version_ids;
+                    self.context
+                        .tasks
+                        .start_content_install_with_dependencies_and_guard(
+                            preparation.request,
+                            preparation.repository_guard,
+                        )
+                        .await
+                        .map_err(app_error)
+                },
+            )
+            .await?;
+        structured(ContentInstallResult::Task(task_started(task, replay)))
+    }
+
+    async fn prepare_content_install(
+        &self,
+        params: &ContentInstallParams,
+    ) -> Result<ContentInstallPreparation, McpError> {
         let instance = self.instance(&params.instance_id).await?;
+        let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
         let kind = parse_content_kind(&params.kind)?;
         let version = self
@@ -804,7 +888,7 @@ impl McpServer {
             )
             .await
             .map_err(internal_error)?;
-        let mut request = ContentGraphInstallRequest {
+        let request = ContentGraphInstallRequest {
             instance: instance.instance_layout(self.context.minecraft_root.clone()),
             kind,
             version: version.clone(),
@@ -832,31 +916,11 @@ impl McpServer {
         )
         .await
         .map_err(internal_error)?;
-        if params.dry_run == Some(true) {
-            return structured(ContentInstallResult::Preflight(Box::new(
-                (&preflight).into(),
-            )));
-        }
-        if !preflight.incompatible.is_empty() {
-            let conflicts = preflight
-                .incompatible
-                .iter()
-                .map(|item| item.title.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(conflict(format!(
-                "content install blocked by incompatible installed mods: {conflicts}"
-            )));
-        }
-        request.skip_version_ids = preflight.skip_version_ids;
-        let (task, replay) = self
-            .idempotent_task("content_install", params.idempotency_key.as_deref(), || {
-                self.context
-                    .tasks
-                    .start_content_install_with_dependencies(request)
-            })
-            .await?;
-        structured(ContentInstallResult::Task(task_started(task, replay)))
+        Ok(ContentInstallPreparation {
+            request,
+            preflight,
+            repository_guard,
+        })
     }
 
     async fn launch_account(&self) -> Result<LaunchAccount, McpError> {
@@ -904,6 +968,10 @@ impl McpServer {
         }
     }
 
+    fn lock_repository(&self) -> Result<RepositoryWriteGuard, McpError> {
+        try_lock_repository(&self.context.minecraft_root).map_err(app_error)
+    }
+
     fn expect_revision(
         &self,
         instance: &InstalledVersion,
@@ -929,10 +997,10 @@ impl McpServer {
         start: impl FnOnce() -> F,
     ) -> Result<(TaskId, bool), McpError>
     where
-        F: Future<Output = Result<TaskId, AppError>>,
+        F: Future<Output = Result<TaskId, McpError>>,
     {
         let Some(key) = key else {
-            return Ok((start().await.map_err(app_error)?, false));
+            return Ok((start().await?, false));
         };
         if key.trim().is_empty() {
             return Err(invalid_input("idempotency_key cannot be blank"));
@@ -948,7 +1016,7 @@ impl McpServer {
         }
         // Keep the registry locked while registering the task so concurrent
         // retries cannot both pass the initial lookup and start duplicate work.
-        let task = start().await.map_err(app_error)?;
+        let task = start().await?;
         tasks.insert(key, task);
         Ok((task, false))
     }

@@ -20,6 +20,7 @@ pub enum ErrorCode {
     NotFound,
     RevisionConflict,
     TaskAlreadyRunning,
+    RepositoryBusy,
     Conflict,
     Cancelled,
     Unavailable,
@@ -36,6 +37,8 @@ pub struct ErrorDetails {
     pub actual_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 impl ErrorDetails {
@@ -46,6 +49,7 @@ impl ErrorDetails {
             expected_revision: None,
             actual_revision: None,
             task_id: None,
+            path: None,
         }
     }
 }
@@ -102,6 +106,17 @@ pub fn app_error(error: AppError) -> ErrorData {
             details.task_id = Some(existing.get());
             invalid_with_details(
                 format!("task {existing} is already installing this repository version"),
+                details,
+            )
+        }
+        AppError::RepositoryBusy { path } => {
+            let mut details = ErrorDetails::new(ErrorCode::RepositoryBusy, true);
+            details.path = Some(path.display().to_string());
+            invalid_with_details(
+                format!(
+                    "repository is being modified by another RMCL process (lock: `{}`)",
+                    path.display()
+                ),
                 details,
             )
         }

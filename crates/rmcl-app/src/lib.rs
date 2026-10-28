@@ -12,6 +12,7 @@ mod instance_create;
 mod instances;
 mod java;
 mod loader;
+mod locks;
 mod model;
 mod servers;
 mod services;
@@ -32,9 +33,11 @@ pub use content::{
     ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
     ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallPreflight,
     ContentInstallRequest, ContentInstaller, ContentPreflightItem, ContentPreflightStatus,
-    ModMetadataCache, ModMetadataFetch, delete_instance_content, import_instance_content,
-    preflight_content_install, resolve_content_install_batch, resolve_content_install_order,
-    scan_instance_content, set_instance_content_enabled,
+    ModMetadataCache, ModMetadataFetch, delete_instance_content,
+    delete_instance_content_with_guard, import_instance_content,
+    import_instance_content_with_guard, preflight_content_install, resolve_content_install_batch,
+    resolve_content_install_order, scan_instance_content, set_instance_content_enabled,
+    set_instance_content_enabled_with_guard,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};
@@ -48,12 +51,15 @@ pub use instance_create::{
     InstanceCreatePhase, InstanceCreator, LoaderSelection,
 };
 pub use instances::{
-    migrate_instance_to_isolated, rename_instance, set_instance_java, set_instance_launch_settings,
+    migrate_instance_to_isolated, migrate_instance_to_isolated_with_guard, rename_instance,
+    rename_instance_with_guard, set_instance_java, set_instance_java_with_guard,
+    set_instance_launch_settings, set_instance_launch_settings_with_guard,
 };
 pub use java::{
     JavaEvent, JavaEventSender, JavaSelection, JavaSelectionOrigin, JavaService, JavaServiceConfig,
 };
 pub use loader::{LoaderCatalog, LoaderCatalogConfig, LoaderVersion};
+pub use locks::{RepositoryWriteGuard, try_lock_repository};
 pub use model::{
     DownloadSummary, InstallDownloadProgress, InstallEvent, InstallEventSender, InstallOutcome,
     InstallPhase, VanillaInstallRequest, VanillaSources, VersionSource,

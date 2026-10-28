@@ -19,7 +19,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::AppError;
+use crate::{AppError, RepositoryWriteGuard, try_lock_repository};
 
 const MAX_PREFLIGHT_JAR_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -37,6 +37,18 @@ pub async fn import_instance_content(
     source: PathBuf,
     policy: ConflictPolicy,
 ) -> Result<LocalContent, AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    import_instance_content_with_guard(instance, kind, source, policy, &repository_guard).await
+}
+
+/// Imports content while the caller holds the repository write lock.
+pub async fn import_instance_content_with_guard(
+    instance: InstanceLayout,
+    kind: ContentKind,
+    source: PathBuf,
+    policy: ConflictPolicy,
+    _repository_guard: &RepositoryWriteGuard,
+) -> Result<LocalContent, AppError> {
     tokio::task::spawn_blocking(move || import_file(&instance, kind, source, policy))
         .await
         .map_err(|error| AppError::BlockingTask(error.to_string()))?
@@ -48,6 +60,17 @@ pub async fn delete_instance_content(
     instance: InstanceLayout,
     kind: ContentKind,
     relative_path: RepositoryPath,
+) -> Result<(), AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    delete_instance_content_with_guard(instance, kind, relative_path, &repository_guard).await
+}
+
+/// Deletes content while the caller holds the repository write lock.
+pub async fn delete_instance_content_with_guard(
+    instance: InstanceLayout,
+    kind: ContentKind,
+    relative_path: RepositoryPath,
+    _repository_guard: &RepositoryWriteGuard,
 ) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || delete_content(&instance, kind, &relative_path))
         .await
@@ -61,6 +84,25 @@ pub async fn set_instance_content_enabled(
     kind: ContentKind,
     relative_path: RepositoryPath,
     enabled: bool,
+) -> Result<LocalContent, AppError> {
+    let repository_guard = try_lock_repository(instance.repository().root())?;
+    set_instance_content_enabled_with_guard(
+        instance,
+        kind,
+        relative_path,
+        enabled,
+        &repository_guard,
+    )
+    .await
+}
+
+/// Toggles content while the caller holds the repository write lock.
+pub async fn set_instance_content_enabled_with_guard(
+    instance: InstanceLayout,
+    kind: ContentKind,
+    relative_path: RepositoryPath,
+    enabled: bool,
+    _repository_guard: &RepositoryWriteGuard,
 ) -> Result<LocalContent, AppError> {
     tokio::task::spawn_blocking(move || {
         set_content_enabled(&instance, kind, &relative_path, enabled)
