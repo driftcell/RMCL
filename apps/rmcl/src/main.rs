@@ -111,7 +111,7 @@ fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), Stri
         }
     };
     if let Ok(services) = Arc::try_unwrap(services) {
-        let services::Services { context, mcp } = services;
+        let services::Services { context, mcp, .. } = services;
         drop(mcp);
         if let Ok(context) = Arc::try_unwrap(context) {
             context.runtime.shutdown_background();

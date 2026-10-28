@@ -9,6 +9,7 @@ clap.workspace = true
 gpui-kit.workspace = true
 image.workspace = true
 open.workspace = true
+rmcl-agent.workspace = true
 rmcl-app.workspace = true
 rmcl-auth.workspace = true
 rmcl-domain.workspace = true
