@@ -29,7 +29,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify tag matches workspace version
+      - name: Verify tag matches app version
         id: version
         shell: bash
         run: |
@@ -41,18 +41,18 @@ jobs:
             is_release=false
           fi
 
-          cargo_version="$(awk '
-            /^\[workspace.package\]/ { in_section=1; next }
+          app_version="$(awk '
+            /^\[package\]/ { in_section=1; next }
             /^\[/ { in_section=0 }
             in_section && /^version[[:space:]]*=/ {
               gsub(/[",[:space:]]/, "", $3)
               print $3
               exit
             }
-          ' Cargo.toml)"
+          ' apps/rmcl/Cargo.toml)"
 
-          if [[ "${is_release}" == "true" && "${version}" != "${cargo_version}" ]]; then
-            echo "tag v${version} does not match workspace version ${cargo_version}" >&2
+          if [[ "${is_release}" == "true" && "${version}" != "${app_version}" ]]; then
+            echo "tag v${version} does not match app version ${app_version}" >&2
             exit 1
           fi
 
