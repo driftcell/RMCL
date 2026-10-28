@@ -30,7 +30,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    error::{app_error, conflict, internal_error, invalid_input, not_found, revision_conflict},
+    access::AccessLevel,
+    error::{
+        app_error, conflict, internal_error, invalid_input, not_found, permission_denied,
+        revision_conflict,
+    },
     schema::{
         Capabilities, ContentDelete, ContentInstallResult, ContentList, ContentWrite,
         CreateInstancePlan, CreateInstanceResult, CreateLoaderPlan, CreatePlatformPlan,
@@ -44,6 +48,7 @@ use crate::{
 #[derive(Clone)]
 pub struct McpServer {
     context: Arc<AppContext>,
+    access: AccessLevel,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -249,7 +254,19 @@ struct ContentInstallPreparation {
 #[tool_router]
 impl McpServer {
     pub fn new(context: Arc<AppContext>) -> Self {
-        Self { context }
+        Self::with_access(context, AccessLevel::ReadWrite)
+    }
+
+    pub fn with_access(context: Arc<AppContext>, access: AccessLevel) -> Self {
+        Self { context, access }
+    }
+
+    fn require_write(&self, operation: &str) -> Result<(), McpError> {
+        if self.access == AccessLevel::ReadWrite {
+            Ok(())
+        } else {
+            Err(permission_denied(operation))
+        }
     }
 
     #[tool(
@@ -261,7 +278,7 @@ impl McpServer {
         structured(Capabilities {
             name: "rmcl".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            access: "read_write".to_owned(),
+            access: self.access.as_str().to_owned(),
             transports: vec!["stdio".to_owned(), "streamable-http".to_owned()],
             tools: [
                 "capabilities",
@@ -436,6 +453,9 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<CreateInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
+        if params.dry_run != Some(true) {
+            self.require_write("instances_create")?;
+        }
         let loader = params
             .loader
             .map(|loader| {
@@ -498,6 +518,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<UpdateInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("instances_update")?;
         let instance = self.instance(&params.instance_id).await?;
         let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
@@ -589,6 +610,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<RepairInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("instances_repair")?;
         let instance = self.instance(&params.instance_id).await?;
         let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
@@ -616,6 +638,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<LaunchInstanceParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("instances_launch")?;
         let instance = self.instance(&params.instance_id).await?;
         let account = self.launch_account().await?;
         let server = params
@@ -658,6 +681,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<TaskIdParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("tasks_cancel")?;
         let cancelled = self
             .context
             .tasks
@@ -687,6 +711,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<ContentImportParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("content_import")?;
         let instance = self.instance(&params.instance_id).await?;
         let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
@@ -717,6 +742,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<ContentSetEnabledParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("content_set_enabled")?;
         let instance = self.instance(&params.instance_id).await?;
         let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, params.expected_revision.as_deref())?;
@@ -747,6 +773,7 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<ContentDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
+        self.require_write("content_delete")?;
         let instance = self.instance(&params.instance_id).await?;
         let repository_guard = self.lock_repository()?;
         self.expect_revision(&instance, Some(&params.expected_revision))?;
@@ -831,6 +858,9 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<ContentInstallParams>,
     ) -> Result<CallToolResult, McpError> {
+        if params.dry_run != Some(true) {
+            self.require_write("content_install")?;
+        }
         if params.dry_run == Some(true) {
             let preparation = self.prepare_content_install(&params).await?;
             return structured(ContentInstallResult::Preflight(Box::new(

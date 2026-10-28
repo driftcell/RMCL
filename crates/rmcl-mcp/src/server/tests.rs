@@ -419,6 +419,81 @@ fn local_content_tools_enforce_revision_and_create_dry_run() {
 }
 
 #[test]
+fn read_only_access_allows_queries_and_dry_run_but_rejects_writes() {
+    let temporary = TempDir::new().unwrap();
+    write_instance(&temporary.path().join("minecraft"), "example");
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let server = McpServer::with_access(context.clone(), AccessLevel::ReadOnly);
+    context.runtime.block_on(async {
+        let capabilities = structured(server.capabilities().await.unwrap());
+        assert_eq!(capabilities["access"], "read_only");
+        let plan = structured(
+            server
+                .instances_create(Parameters(CreateInstanceParams {
+                    instance_id: "dry-run".to_owned(),
+                    base_version_id: "missing".to_owned(),
+                    name: None,
+                    loader: None,
+                    copy_content_from: None,
+                    idempotency_key: None,
+                    dry_run: Some(true),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(plan["dry_run"], true);
+
+        let create = server
+            .instances_create(Parameters(CreateInstanceParams {
+                instance_id: "blocked".to_owned(),
+                base_version_id: "missing".to_owned(),
+                name: None,
+                loader: None,
+                copy_content_from: None,
+                idempotency_key: None,
+                dry_run: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(create.data.as_ref().unwrap()["code"], "permission_denied");
+        let update = server
+            .instances_update(Parameters(UpdateInstanceParams {
+                instance_id: "example".to_owned(),
+                name: Some("Blocked".to_owned()),
+                java: None,
+                max_memory_mb: None,
+                window: None,
+                clear_window: None,
+                isolation: None,
+                expected_revision: None,
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(update.data.as_ref().unwrap()["code"], "permission_denied");
+        let delete = server
+            .content_delete(Parameters(ContentDeleteParams {
+                instance_id: "example".to_owned(),
+                kind: "mod".to_owned(),
+                relative_path: "missing.jar".to_owned(),
+                expected_revision: "sha256:any".to_owned(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(delete.data.as_ref().unwrap()["code"], "permission_denied");
+        assert!(!temporary.path().join("minecraft/versions/blocked").exists());
+        assert_eq!(
+            structured(server.tasks_list().await.unwrap())["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+    });
+    drop(server);
+    shutdown_context(context);
+}
+
+#[test]
 fn remote_content_tools_preflight_install_and_replay() {
     let temporary = TempDir::new().unwrap();
     write_instance(&temporary.path().join("minecraft"), "example");

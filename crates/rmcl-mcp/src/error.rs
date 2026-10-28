@@ -21,6 +21,7 @@ pub enum ErrorCode {
     RevisionConflict,
     TaskAlreadyRunning,
     RepositoryBusy,
+    PermissionDenied,
     Conflict,
     Cancelled,
     Unavailable,
@@ -84,6 +85,13 @@ pub fn revision_conflict(expected: &str, actual: &str) -> ErrorData {
     invalid_with_details(
         format!("instance revision conflict; expected {expected}, actual {actual}"),
         details,
+    )
+}
+
+pub fn permission_denied(operation: &str) -> ErrorData {
+    invalid_with_details(
+        format!("write access is disabled; cannot call {operation}"),
+        ErrorDetails::new(ErrorCode::PermissionDenied, false),
     )
 }
 

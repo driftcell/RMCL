@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例工作流、本地内容写入、Modrinth 搜索/安装、`dry_run`、revision 和进程内 idempotency key 已实现；设置页、权限分级和跨进程修改锁尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、revision、幂等、跨进程写锁、HTTP 访问级别、Bearer token 和 Host/Origin 校验已实现；设置页和 GUI 外部变更刷新尚未实现
 
 日期：2026-10-28
 
@@ -32,7 +32,21 @@ stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_ba
 rmcl mcp --http --port 39271
 ```
 
-监听 `127.0.0.1`，端点 `/mcp`，使用 `StreamableHttpService` 和 loopback host 校验。默认端口为 `39271`，可以显式修改；`0` 被拒绝。当前只实现本地 HTTP，没有远程监听、Bearer token、Origin allowlist 或 GUI 设置开关，后续阶段必须补齐这些安全边界后再考虑远程访问。
+监听 `127.0.0.1`，端点 `/mcp`，使用 `StreamableHttpService`。默认端口为 `39271`，可以显式修改；`0` 被拒绝。stdio 始终为 `read_write`，HTTP 默认 `read_only`，只有查询和 `instances_create` / `content_install` 的 `dry_run` 可以执行；真实写操作返回 `permission_denied`。
+
+HTTP 还执行以下边界：
+
+- Host 只接受 `127.0.0.1:<port>`、`localhost:<port>` 或 `[::1]:<port>`，其他值返回 400。
+- 带 Origin 的请求默认全部返回 403；非浏览器 MCP 客户端没有 Origin 时可以正常访问。可通过重复 `--origin <URL>` 显式放行。
+- `--token <TOKEN>` 或 `RMCL_MCP_TOKEN` 配置后，缺少或错误的 Bearer token 返回 401 和 `WWW-Authenticate`。优先使用环境变量，避免 token 出现在进程列表中；token 不写日志，也不参与 Debug 输出。
+
+需要 HTTP 写入时显式提升访问级别：
+
+```bash
+RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https://agent.example
+```
+
+这些控制仍不构成远程监听能力；当前只绑定 loopback，不能据此暴露到局域网或公网。
 
 ## 查询与任务工具
 
@@ -85,6 +99,7 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 | `revision_conflict` | revision 不匹配，附 `expected_revision`、`actual_revision` |
 | `task_already_running` | 同类任务已运行，附现有 `task_id` |
 | `repository_busy` | 另一 RMCL 进程持有仓库写锁，附锁文件 `path`，可稍后重试 |
+| `permission_denied` | HTTP `read_only` 模式调用了真实写操作 |
 | `conflict` | 安装不完整、incompatible 等状态冲突 |
 | `cancelled` | 操作已取消，可按工作流决定是否重试 |
 | `unavailable` | 所需应用服务未配置 |
@@ -137,9 +152,8 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 ## 后续阶段
 
-1. 设置页开关、访问级别和端口。
-2. Bearer token、Origin allowlist 和 GUI 外部变更刷新。
-3. 离线账户、服务器和皮肤接口。
-4. 实例删除与更完整的内容更新工作流。
+1. 设置页开关、端口和 GUI 外部变更刷新。
+2. 离线账户、服务器和皮肤接口。
+3. 实例删除与更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。
