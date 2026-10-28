@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "apps/rmcl",
-    "apps/rmcl-mcp",
     "crates/rmcl-app",
     "crates/rmcl-archive",
     "crates/rmcl-auth",

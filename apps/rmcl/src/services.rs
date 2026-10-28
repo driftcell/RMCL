@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{ArgGroup, Args, Parser, Subcommand};
 pub use rmcl_app::AppContext as Services;
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_store::{
@@ -15,8 +15,10 @@ pub(crate) struct LauncherArgs {
     #[arg(long, value_name = "PLAN", hide = true)]
     pub(crate) apply_update: Option<PathBuf>,
     /// Launcher configuration (default: platform configuration directory).
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", global = true)]
     config: Option<PathBuf>,
+    #[command(subcommand)]
+    pub(crate) command: Option<LauncherCommand>,
     /// Override Minecraft repository for this run.
     #[arg(long, value_name = "PATH")]
     minecraft_root: Option<PathBuf>,
@@ -29,6 +31,26 @@ pub(crate) struct LauncherArgs {
     /// Add or select an offline player.
     #[arg(long, value_name = "NAME")]
     player: Option<String>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub(crate) enum LauncherCommand {
+    /// Expose RMCL instances, content, and tasks over MCP.
+    Mcp(McpArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+#[command(group = ArgGroup::new("transport").required(true).args(["stdio", "http"]))]
+pub(crate) struct McpArgs {
+    /// Serve MCP over standard input and output.
+    #[arg(long)]
+    pub(crate) stdio: bool,
+    /// Serve MCP over Streamable HTTP on loopback.
+    #[arg(long)]
+    pub(crate) http: bool,
+    /// Loopback TCP port for the HTTP transport.
+    #[arg(long, default_value_t = 39271, requires = "http")]
+    pub(crate) port: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +67,7 @@ impl Bootstrap {
         let LauncherArgs {
             apply_update: _,
             config,
+            command: _,
             minecraft_root,
             java_store,
             version,
@@ -207,6 +230,34 @@ mod tests {
             assert!(help.contains(option), "help should contain {option}");
         }
         assert!(!help.contains("--apply-update"));
+        assert!(help.contains("mcp"));
+    }
+
+    #[test]
+    fn cli_parses_mcp_transports_from_the_same_binary() {
+        let arguments =
+            LauncherArgs::try_parse_from(["rmcl", "mcp", "--stdio", "--config", "mcp-config.toml"])
+                .unwrap();
+        assert_eq!(
+            arguments.config.as_deref(),
+            Some(Path::new("mcp-config.toml"))
+        );
+        let Some(LauncherCommand::Mcp(mcp)) = arguments.command else {
+            panic!("expected MCP subcommand");
+        };
+        assert!(mcp.stdio);
+        assert!(!mcp.http);
+
+        let arguments =
+            LauncherArgs::try_parse_from(["rmcl", "mcp", "--http", "--port", "40000"]).unwrap();
+        let Some(LauncherCommand::Mcp(mcp)) = arguments.command else {
+            panic!("expected MCP subcommand");
+        };
+        assert!(mcp.http);
+        assert_eq!(mcp.port, 40000);
+
+        assert!(LauncherArgs::try_parse_from(["rmcl", "mcp"]).is_err());
+        assert!(LauncherArgs::try_parse_from(["rmcl", "mcp", "--stdio", "--http"]).is_err());
     }
 
     #[test]

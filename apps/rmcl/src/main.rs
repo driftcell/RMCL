@@ -1,15 +1,15 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 mod app;
 mod services;
 mod state;
 mod theme;
 
+use std::sync::Arc;
+
 use app::LauncherApp;
 use clap::Parser;
 use gpui_kit::component::TitleBar;
 use gpui_kit::*;
-use services::{Bootstrap, LauncherArgs, Services};
+use services::{Bootstrap, LauncherArgs, LauncherCommand, Services};
 
 fn main() {
     let arguments = LauncherArgs::parse();
@@ -19,6 +19,7 @@ fn main() {
         }
         return;
     }
+    let command = arguments.command.clone();
     let bootstrap = match Bootstrap::from_arguments(arguments) {
         Ok(bootstrap) => bootstrap,
         Err(error) => {
@@ -33,6 +34,17 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    if let Some(command) = command {
+        if let Err(error) = run_mcp(services, command) {
+            eprintln!("RMCL MCP failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    #[cfg(windows)]
+    release_console();
 
     application()
         .with_assets(gpui_kit::assets::AllAssets)
@@ -63,6 +75,52 @@ fn main() {
                 cx.quit();
             }
         });
+}
+
+fn run_mcp(services: Arc<Services>, command: LauncherCommand) -> Result<(), String> {
+    let LauncherCommand::Mcp(arguments) = command;
+    let runtime = services.runtime.handle().clone();
+    let result = if arguments.http && arguments.port == 0 {
+        Err("MCP port must be between 1 and 65535".to_owned())
+    } else {
+        runtime.block_on(async {
+            if arguments.stdio {
+                rmcl_mcp::serve_stdio(services.clone())
+                    .await
+                    .map_err(|error| error.to_string())
+            } else {
+                eprintln!(
+                    "RMCL MCP listening on http://127.0.0.1:{}/mcp",
+                    arguments.port
+                );
+                rmcl_mcp::serve_http(
+                    services.clone(),
+                    arguments.port,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+                .map_err(|error| error.to_string())
+            }
+        })
+    };
+    if let Ok(services) = Arc::try_unwrap(services) {
+        services.runtime.shutdown_background();
+    }
+    result
+}
+
+#[cfg(windows)]
+fn release_console() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn FreeConsole() -> i32;
+    }
+
+    // SAFETY: GUI mode does not use console stdio. MCP mode returns before this
+    // call and keeps its console or inherited stdio pipes available.
+    unsafe {
+        let _ = FreeConsole();
+    }
 }
 
 #[cfg(target_os = "macos")]

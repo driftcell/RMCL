@@ -5581,6 +5581,7 @@ dependencies = [
  "rmcl-auth",
  "rmcl-domain",
  "rmcl-launch",
+ "rmcl-mcp",
  "rmcl-net",
  "rmcl-platform",
  "rmcl-store",
@@ -5780,16 +5781,6 @@ dependencies = [
  "url",
  "uuid",
  "zip",
-]
-
-[[package]]
-name = "rmcl-mcp-cli"
-version = "0.8.1"
-dependencies = [
- "clap",
- "rmcl-app",
- "rmcl-mcp",
- "tokio-util",
 ]
 
 [[package]]

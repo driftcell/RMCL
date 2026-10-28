@@ -18,18 +18,18 @@
 
 ### stdio
 
-独立控制台程序 `rmcl-mcp` 使用 rmcp 的 `transport-io`：
+同一个 `rmcl` 可执行文件通过子命令使用 rmcp 的 `transport-io`，不需要独立 MCP 程序：
 
 ```bash
-rmcl-mcp stdio --config /path/to/config.toml
+rmcl mcp --stdio --config /path/to/config.toml
 ```
 
-stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_background` 关闭应用内 Tokio runtime，EOF 不会触发 runtime drop panic。独立控制台也避免 Windows GUI 子系统导致 stdout 不可用。
+stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_background` 关闭应用内 Tokio runtime，EOF 不会触发 runtime drop panic。Windows 构建使用控制台子系统以保留 MCP stdio；不带 MCP 子命令的 GUI 启动会调用 `FreeConsole` 释放启动控制台，避免常驻额外控制台窗口。
 
 ### Streamable HTTP
 
 ```bash
-rmcl-mcp serve --port 39271
+rmcl mcp --http --port 39271
 ```
 
 监听 `127.0.0.1`，端点 `/mcp`，使用 `StreamableHttpService` 和 loopback host 校验。默认端口为 `39271`，可以显式修改；`0` 被拒绝。当前只实现本地 HTTP，没有远程监听、Bearer token、Origin allowlist 或 GUI 设置开关，后续阶段必须补齐这些安全边界后再考虑远程访问。
