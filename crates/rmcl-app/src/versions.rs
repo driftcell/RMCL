@@ -4,7 +4,7 @@ use rmcl_install::resolve_version;
 use rmcl_instance::{InstanceLayout, InstanceLoader, IsolationMode, MinecraftLayout, VersionId};
 use rmcl_minecraft::GameVersion;
 
-use crate::AppError;
+use crate::{AppError, RepositoryWriteGuard, try_lock_repository};
 
 /// One valid version directory and its RMCL instance metadata.
 ///
@@ -197,6 +197,16 @@ pub fn discover_installed_versions(
 pub async fn delete_installed_version(
     root: impl AsRef<Path>,
     version_id: &str,
+) -> Result<(), AppError> {
+    let repository_guard = try_lock_repository(root.as_ref())?;
+    delete_installed_version_with_guard(root, version_id, &repository_guard).await
+}
+
+/// Deletes an installed version while the caller holds the repository write lock.
+pub async fn delete_installed_version_with_guard(
+    root: impl AsRef<Path>,
+    version_id: &str,
+    _repository_guard: &RepositoryWriteGuard,
 ) -> Result<(), AppError> {
     let layout = MinecraftLayout::new(root.as_ref());
     let id = VersionId::new(version_id)?;

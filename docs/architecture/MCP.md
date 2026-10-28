@@ -1,6 +1,6 @@
 # Model Context Protocol（MCP）
 
-状态：实例与内容工作流、稳定 DTO/错误、revision、幂等、跨进程写锁、HTTP 访问级别、Bearer token 和 Host/Origin 校验已实现；设置页和 GUI 外部变更刷新尚未实现
+状态：实例与内容工作流、稳定 DTO/错误、版本/loader 目录、真实创建预检、实例删除、revision、幂等、跨进程写锁和 HTTP 安全已实现；设置页和 GUI 外部变更刷新尚未实现
 
 日期：2026-10-28
 
@@ -55,6 +55,8 @@ RMCL_MCP_TOKEN=<local-secret> rmcl mcp --http --access read_write --origin https
 | `capabilities` | RMCL 版本、平台、路径、传输与工具集合 |
 | `instances_list` | 已安装实例及 loader、隔离模式、Java、内存、窗口配置和 revision |
 | `instances_get` | 按稳定目录 ID 查询一个实例 |
+| `versions_list` | 官方 Minecraft 目录，支持刷新、ID 子串、类型过滤和数量上限 |
+| `loaders_list` | 按 Minecraft 版本查询兼容的 Fabric/Quilt/Forge/NeoForge 版本 |
 | `content_list` | 实例的 Mod、资源包和光影及扫描警告，可按 kind 过滤 |
 | `content_search` | 按 kind、查询词、游戏版本、loader、排序和分页搜索 Modrinth |
 | `content_versions` | 查询 Modrinth 项目的可安装版本、文件和依赖 |
@@ -96,6 +98,7 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 | --- | --- |
 | `invalid_input` | 输入不满足工具约束 |
 | `not_found` | 未知实例或任务 |
+| `already_exists` | 创建目标已存在，附冲突 `path` |
 | `revision_conflict` | revision 不匹配，附 `expected_revision`、`actual_revision` |
 | `task_already_running` | 同类任务已运行，附现有 `task_id` |
 | `repository_busy` | 另一 RMCL 进程持有仓库写锁，附锁文件 `path`，可稍后重试 |
@@ -109,14 +112,15 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 | 工具 | 语义 |
 | --- | --- |
-| `instances_create` | 创建 Vanilla 或指定 loader 的实例，返回 `task_id`；支持计划型 `dry_run` 和 idempotency key |
+| `instances_create` | 创建 Vanilla 或指定 loader 的实例，返回 `task_id`；支持真实预检和 idempotency key |
 | `instances_update` | 重命名、修改 Java、内存、窗口和隔离模式，返回最新实例快照 |
 | `instances_repair` | 检查并修复实例，返回 `task_id` |
 | `instances_launch` | 使用当前选中账户启动实例，可选完整修复和服务器目标 |
+| `instances_delete` | 按 revision 删除实例；`dry_run` 返回删除范围，不修改文件 |
 
 创建、修复和启动由 `TaskManager` 执行，调用方立即获得 `task_id`，再通过 `tasks_get` 和 `tasks_logs` 观察终态。配置修改是同步短操作，直接返回最新实例数据。Java 覆盖在写入前执行真实 probe；共享模式迁移到隔离模式时复用现有内容复制逻辑。
 
-`instances_create` 的 `dry_run` 只返回创建计划，不创建目录或任务，也不伪装成已经完成远程版本解析。删除实例尚未暴露给 MCP。
+`instances_create` 的 `dry_run` 与实际创建共用预检：校验实例 ID 和目标目录，解析官方基础版本，检查复制源，并按 Minecraft 版本精确匹配 loader 与 installer 版本。响应包含逐项 checks 和非稳定版本 warnings；不会创建目录或任务。`instances_delete` 强制要求匹配的 revision，实际删除只移除 `versions/<id>`，保留共享 libraries 和 assets。
 
 ## 内容写操作
 
@@ -154,6 +158,6 @@ JSON-RPC `error.data` 提供稳定的 `code` 和 `retryable`。调用方错误�
 
 1. 设置页开关、端口和 GUI 外部变更刷新。
 2. 离线账户、服务器和皮肤接口。
-3. 实例删除与更完整的内容更新工作流。
+3. 更完整的内容更新工作流。
 
 HTTP 仍只允许 loopback，不能据此暴露到局域网或公网。

@@ -5749,6 +5749,7 @@ dependencies = [
  "rmcl-app",
  "rmcl-auth",
  "rmcl-domain",
+ "rmcl-instance",
  "rmcl-launch",
  "rmcl-net",
  "rmcl-store",

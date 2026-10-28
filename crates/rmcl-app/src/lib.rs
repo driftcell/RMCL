@@ -94,4 +94,7 @@ pub use update::{
     UpdateAsset, UpdateClient, UpdateError, UpdatePackage, UpdatePlan, UpdateProgress,
     UpdateRelease, apply_update, spawn_apply_helper,
 };
-pub use versions::{InstalledVersion, delete_installed_version, discover_installed_versions};
+pub use versions::{
+    InstalledVersion, delete_installed_version, delete_installed_version_with_guard,
+    discover_installed_versions,
+};
