@@ -42,6 +42,7 @@ flate2 = "1"
 futures = "0.3"
 gpui-kit = "0.8.1"
 hex = "0.4"
+hickory-resolver = "0.26"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 md-5 = "0.11"
 mvn_version = "0.1"

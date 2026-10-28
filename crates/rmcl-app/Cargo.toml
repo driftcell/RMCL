@@ -19,6 +19,7 @@ rmcl-platform.workspace = true
 rmcl-store.workspace = true
 base64.workspace = true
 flate2.workspace = true
+hickory-resolver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 semver.workspace = true
