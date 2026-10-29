@@ -197,7 +197,7 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - 皮肤上传、恢复默认、429 冷却、图片直链导入和真实窗口视觉验收仍需使用真实正版账户逐平台手动验证；自动化测试不调用真实换肤接口。
 - 使用正版 Minecraft access token 的真实 Vanilla 启动已由用户在 macOS ARM64 实际验证，游戏可以正常进入运行阶段。
 - Windows 和 Linux 的凭据存储与正版启动仍需平台运行测试。
-- 外置登录使用本地 mock Yggdrasil 服务覆盖 ALI、元数据、登录、validate、refresh、多角色选择、令牌持久化、jar 下载校验、启动注入和 MCP 启动；真实第三方服务端、真实进服、皮肤显示和聊天签名仍需逐平台手工验收。
+- 外置登录使用本地 mock Yggdrasil 服务覆盖 ALI、元数据、登录、validate、refresh、多角色选择、令牌持久化、jar 下载校验、启动注入和 MCP 启动；`apps/rmcl` 的 headless GPUI 测试覆盖提交登录后对话框保持打开。真实第三方服务端、真实进服、皮肤显示和聊天签名仍需逐平台手工验收。
 
 协议依据：
 

@@ -7812,3 +7812,122 @@ fn restore_macos_windows() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{
+        ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, WindowOptions, point, px,
+    };
+    use gpui_kit::{AppContext as _, component::WindowExt as _};
+    use rmcl_store::{ConfigStore, LauncherConfig};
+    use tempfile::TempDir;
+
+    use super::{LauncherApp, Page};
+    use crate::services::{Bootstrap, Services};
+
+    #[gpui::test]
+    fn authlib_login_keeps_the_dialog_open(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let temporary = TempDir::new().unwrap();
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            ..LauncherConfig::default()
+        };
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
+        let services = Services::new(&config, store.clone()).unwrap();
+        let bootstrap = Bootstrap {
+            config,
+            config_store: store,
+            config_warning: None,
+            save_on_start: false,
+        };
+        let (handle, app) = cx
+            .update(|cx| {
+                gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| LauncherApp::new(window, cx, services, bootstrap))
+                })
+            })
+            .unwrap();
+        let mut cx = VisualTestContext::from_window(handle, cx);
+
+        app.update_in(&mut cx, |app, window, cx| {
+            app.open_authlib_login_dialog(window, cx);
+            app.authlib_custom_server = true;
+            app.authlib_server_input.update(cx, |state, cx| {
+                state.set_value("http://127.0.0.1:1", window, cx);
+            });
+            app.authlib_username_input.update(cx, |state, cx| {
+                state.set_value("user", window, cx);
+            });
+            app.authlib_password_input.update(cx, |state, cx| {
+                state.set_value("pass", window, cx);
+            });
+            assert!(!app.begin_authlib_login(window, cx));
+        });
+
+        assert!(cx.update(|window, cx| window.has_active_dialog(cx)));
+    }
+
+    #[gpui::test]
+    fn agent_wheel_reaches_the_transcript_tail(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let temporary = TempDir::new().unwrap();
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            ..LauncherConfig::default()
+        };
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
+        let services = Services::new(&config, store.clone()).unwrap();
+        let bootstrap = Bootstrap {
+            config,
+            config_store: store,
+            config_warning: None,
+            save_on_start: false,
+        };
+        let (handle, app) = cx
+            .update(|cx| {
+                gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| LauncherApp::new(window, cx, services, bootstrap))
+                })
+            })
+            .unwrap();
+        let mut cx = VisualTestContext::from_window(handle, cx);
+
+        app.update_in(&mut cx, |app, window, cx| {
+            app.navigate(Page::Agent, window, cx);
+            for index in 0..40 {
+                app.agent.push_user(
+                    format!("Message {index}: a long transcript entry that wraps across lines."),
+                    cx,
+                );
+            }
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        let viewport = cx
+            .debug_bounds("agent-scroll-viewport")
+            .expect("transcript viewport was not laid out");
+        cx.simulate_event(ScrollEvent {
+            position: viewport.center(),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-100_000.))),
+            ..Default::default()
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        let last = cx
+            .debug_bounds("agent-last-message")
+            .expect("last message row was not laid out");
+        assert!(
+            last.top() >= viewport.top() - px(0.5),
+            "last message starts above the viewport: {last:?} vs {viewport:?}"
+        );
+        assert!(
+            last.bottom() <= viewport.bottom() + px(0.5),
+            "wheel stopped before the last message: {last:?} vs {viewport:?}"
+        );
+    }
+}

@@ -32,5 +32,6 @@ objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSStri
 winresource = "0.1.34"
 
 [dev-dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.10", features = ["test-support"] }
 serde_json.workspace = true
 tempfile.workspace = true
