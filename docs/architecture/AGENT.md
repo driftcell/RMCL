@@ -40,7 +40,7 @@
 - 移除 `tasks_subscribe`、`tasks_unsubscribe` 和 `content_import`；它们对内置模型没有帮助或需要本地文件路径。
 - 不向外部 GUI MCP 客户端暴露 `agent_report_status`；它由 `rmcl-agent` 启动的独立小 MCP 服务提供。
 - 长任务使用公开的 `tasks_wait` 等待，默认 120 秒、最长 600 秒；超时返回当前快照并标记 `timed_out`；失败附最后 20 行脱敏日志。
-- 工具结果过长时截断后交给模型；原始结构化结果仍用于 UI 提取 `task_id`。
+- 工具结果过长时截断后交给模型；任务进度由全局状态栏从 `TaskManager` 读取，AI 页面不解析工具结果中的 `task_id`。
 
 ## 权限与确认
 
