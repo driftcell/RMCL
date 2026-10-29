@@ -247,12 +247,12 @@ impl AuthlibInjectorService {
                         continue;
                     }
                     if artifact_path.exists() {
-                        fs::remove_file(&artifact_path)
-                            .await
-                            .map_err(|source| AuthlibInjectorError::Io {
+                        fs::remove_file(&artifact_path).await.map_err(|source| {
+                            AuthlibInjectorError::Io {
                                 path: artifact_path.display().to_string(),
                                 source,
-                            })?;
+                            }
+                        })?;
                     }
                     fs::rename(&temporary, &artifact_path)
                         .await
