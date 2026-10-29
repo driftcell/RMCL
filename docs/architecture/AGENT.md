@@ -59,14 +59,14 @@
 
 - 侧栏“应用”组新增“AI 助手”；运行中显示 Spinner，等待确认时显示圆点。
 - `MessageScroller` 管理对话行；用户消息右对齐 `Filled`，Agent 最终回复为 `Ghost` Bubble + `TextView::new(&state).stream_fade(true)`。
-- 三点等待动画用 GPUI `with_animation` 自己实现；系统开启减少动态效果时显示静态点。
-- 当前活动使用 `Marker`：运行中 `loading(true)` + `MarkerLoadingStyle::Shimmer`，完成显示绿色 `CircleCheck`，失败显示红色 `CircleX`，跳过显示 `CircleStop`。
-- 同一位置原地切换活动内容，不做反复淡入淡出；并行工具调用可同时列出多个步骤。
+- 运行状态使用一张紧凑的活动卡，而不是独立气泡：主色脉冲圆点 + `ShimmerText` 状态文案组成唯一的活动焦点，系统开启减少动态效果时脉冲与微光都保持静态。
+- 工具步骤使用真实 `Spinner` 表示运行中，完成后切换为绿色 `CircleCheck`，失败为红色 `CircleX`，跳过为 `CircleStop`；步骤文字从前景色过渡为弱化色，不叠加多个 shimmer 或旋转图标。
+- 同一位置原地切换活动内容，不做反复淡入淡出；并行工具调用可同时列出最近三个步骤。
 - 工具步骤摘要只显示实例名、游戏或加载器版本、内容路径、服务器地址等用户可识别的值；`task_id`、revision、幂等键和 Modrinth version ID 不进入界面，无法识别的参数不回退为原始 JSON。
 - 已完成步骤折叠为“已完成 N 个步骤 · 时长”，位于该回合最终回复上方；失败时自动展开。
 - 展开/收起步骤会 remeasure 当前行；回合结束后先 append 再观察 `TextViewState`，并在下一帧 remeasure 最后一行，避免虚拟列表高度过期导致滚轮停不到底部。
 - 任务进度只由全局底部状态栏读取同一 `TaskManager` 快照显示，AI 页面活动卡和输入框不再重复显示进度条；模型仍不需要轮询进度。
-- 输入使用 `Textarea`（`auto_grow(1, 8)`、`submit_on_enter`）；运行时发送按钮变为停止。
+- 输入使用 `Textarea`（`auto_grow(1, 8)`、`submit_on_enter`）；输入框与发送按钮默认同为 2.5rem 高，输入框增高时按钮保持底部对齐。运行期间仍可编辑草稿，发送按钮变为停止，提交新消息要等当前回合结束。
 - 会话只保存在内存；提供清空和停止。清空同时移除 UI 消息和模型历史。停止立即使当前回合代次失效并取消启动、MCP 连接或模型执行，迟到事件不会进入下一回合；不会自动取消已启动的 RMCL 任务。内部任务异常终止会显示错误，不会静默消失。
 
 ## 任务终态副作用
