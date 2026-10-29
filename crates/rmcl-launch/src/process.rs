@@ -1,5 +1,6 @@
 use std::{fmt, io, process::ExitStatus, sync::Arc};
 
+use rmcl_platform::HideConsoleWindow as _;
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, BufReader},
     process::{Child, Command},
@@ -84,6 +85,7 @@ impl GameProcess {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        command.hide_console_window();
         let mut child = command.spawn().map_err(|source| LaunchError::Spawn {
             path: plan.java.display().to_string(),
             source,

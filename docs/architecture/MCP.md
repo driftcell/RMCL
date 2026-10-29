@@ -24,7 +24,7 @@
 rmcl mcp --stdio --config /path/to/config.toml
 ```
 
-stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_background` 关闭应用内 Tokio runtime，EOF 不会触发 runtime drop panic。Windows 构建使用控制台子系统以保留 MCP stdio；不带 MCP 子命令的 GUI 启动会调用 `FreeConsole` 释放启动控制台，避免常驻额外控制台窗口。
+stdout 只写 MCP 帧，错误和诊断写 stderr。退出时通过 `shutdown_background` 关闭应用内 Tokio runtime，EOF 不会触发 runtime drop panic。Windows 构建使用控制台子系统以保留 MCP stdio；不带 MCP 子命令的 GUI 启动会调用 `FreeConsole` 释放启动控制台，避免常驻额外控制台窗口。GUI 启动的 Java 子进程通过 `CREATE_NO_WINDOW` 禁止 Windows 为它们新建控制台窗口；见 [启动计划与游戏进程](LAUNCH.md#进程与日志)。
 
 ### 客户端接入
 
