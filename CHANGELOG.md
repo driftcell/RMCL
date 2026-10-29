@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/driftcell/RMCL/compare/v0.10.0...v0.10.1) - 2026-10-29
+
+### Fixed
+
+- *(ui)* keep title bar actions out of window drag ([#104](https://github.com/driftcell/RMCL/pull/104))
+
 ## [0.10.0](https://github.com/driftcell/RMCL/compare/v0.9.0...v0.10.0) - 2026-10-29
 
 ### Added
