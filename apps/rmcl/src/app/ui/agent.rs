@@ -214,18 +214,20 @@ impl LauncherApp {
                     .child(
                         h_flex()
                             .w_full()
-                            .items_center()
+                            .items_end()
                             .gap_2()
                             .child(
                                 div().flex_1().min_w_0().child(
                                     Textarea::new(&input)
                                         .w_full()
+                                        .min_h_10()
                                         .aria_label("给 AI 助手发送消息"),
                                 ),
                             )
                             .child(
                                 Button::new("agent-send")
                                     .primary()
+                                    .h_10()
                                     .icon(send_icon)
                                     .label(send_label)
                                     .disabled(key_missing && !running)
