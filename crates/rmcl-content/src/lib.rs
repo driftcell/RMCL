@@ -15,8 +15,8 @@ mod version_req;
 pub use error::ContentError;
 pub use kind::ContentKind;
 pub use local::{
-    ConflictPolicy, delete_content, import_file, move_resource_pack, replace_content_file,
-    scan_kind, scan_library, set_content_enabled,
+    ConflictPolicy, delete_content, import_file, move_resource_pack, read_resource_pack_order,
+    replace_content_file, scan_kind, scan_library, set_content_enabled,
 };
 pub use metadata::{
     InstalledMod, InstalledModIndex, ModDependency, ModMetadata, ModMetadataError,

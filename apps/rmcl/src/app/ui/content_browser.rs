@@ -181,6 +181,17 @@ impl LauncherApp {
                             ))
                         },
                     )
+                    .when(
+                        kind == ContentKind::ShaderPack
+                            && self.content_browser.shader_loader.is_none(),
+                        |this| {
+                            this.child(warning_banner(
+                                "当前实例没有光影加载器",
+                                "光影包可以下载到 shaderpacks 目录，但需要 Iris、Oculus 或 OptiFine 才会在游戏中生效。",
+                                cx,
+                            ))
+                        },
+                    )
                     .child(match project {
                         Some(project) => self
                             .render_remote_project(&project, &version, kind, cx)

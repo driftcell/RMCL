@@ -38,15 +38,16 @@ pub use authlib_accounts::{
 pub use authlib_injector::{AuthlibInjectorArtifact, AuthlibInjectorError, AuthlibInjectorService};
 pub use catalog::VersionCatalog;
 pub use content::{
-    ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,
-    ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase, ContentInstallPreflight,
-    ContentInstallRequest, ContentInstaller, ContentPreflightItem, ContentPreflightStatus,
-    ModMetadataCache, ModMetadataFetch, delete_instance_content,
-    delete_instance_content_with_guard, import_instance_content,
-    import_instance_content_with_guard, move_instance_resource_pack, preflight_content_install,
-    read_instance_shader_pack, resolve_content_install_batch, resolve_content_install_order,
-    resource_pack_format, scan_instance_content, set_instance_content_enabled,
-    set_instance_content_enabled_with_guard, set_instance_shader_pack,
+    ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInspection,
+    ContentInstallEvent, ContentInstallEventSender, ContentInstallOutcome, ContentInstallPhase,
+    ContentInstallPreflight, ContentInstallRequest, ContentInstaller, ContentPreflightItem,
+    ContentPreflightStatus, ModMetadataCache, ModMetadataFetch, ResourcePackInspection,
+    delete_instance_content, delete_instance_content_with_guard, import_instance_content,
+    import_instance_content_with_guard, inspect_content, move_instance_resource_pack,
+    preflight_content_install, read_instance_shader_pack, resolve_content_install_batch,
+    resolve_content_install_order, resource_pack_format, scan_and_inspect_instance_content,
+    scan_instance_content, set_instance_content_enabled, set_instance_content_enabled_with_guard,
+    set_instance_shader_pack,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};

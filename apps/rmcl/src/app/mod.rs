@@ -36,20 +36,22 @@ use gpui_kit::{
 };
 use rmcl_app::{
     AppError, AuthlibAccountServiceError, ConflictPolicy, ContentGraphInstallRequest,
-    ContentInstallPhase, ContentInstallPreflight, ContentKind, ContentLibrary,
+    ContentInspection, ContentInstallPhase, ContentInstallPreflight, ContentKind, ContentLibrary,
     ContentPreflightItem, ContentPreflightStatus, ContentSource, CreateInstanceRequest,
     FeaturedServer, GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase,
     JavaRuntime, JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
     MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
-    RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount, ServerIconCache,
-    ServerPingError, ServerStatus, ServerStatusClient, TaskEvent, TaskId, TaskKind, TaskPhase,
-    TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease,
-    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
-    delete_installed_version, delete_instance_content, discover_installed_versions,
+    RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount, ResourcePackOrder,
+    ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient, ShaderLoader, TaskEvent,
+    TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan,
+    UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest, VersionSource,
+    VersionSummary, delete_installed_version, delete_instance_content, discover_installed_versions,
     featured_servers, import_instance_content, migrate_instance_to_isolated,
-    preflight_content_install, recommended_version, remove_server_bookmark, rename_instance,
-    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
-    set_instance_launch_settings, spawn_apply_helper, upsert_server_bookmark,
+    move_instance_resource_pack, preflight_content_install, recommended_version,
+    remove_server_bookmark, rename_instance, scan_and_inspect_instance_content,
+    scan_installed_mods, set_instance_content_enabled, set_instance_java,
+    set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
+    upsert_server_bookmark,
 };
 use rmcl_auth::{
     AUTHLIB_SERVER_PRESETS, Account, AccountKind, AuthlibAccount, AuthlibError, AuthlibLogin,
@@ -81,7 +83,7 @@ use self::{
     skin_service::{SkinService, SkinServiceEvent},
     skin_viewer::SkinViewer,
     ui::{
-        common::{display_path, field_label, help},
+        common::{display_path, field_label, help, render_rgba_image},
         layout,
         skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
     },
@@ -203,6 +205,7 @@ pub enum ContentTab {
 #[derive(Default)]
 pub struct ContentBrowserState {
     kind: Option<ContentKind>,
+    shader_loader: Option<ShaderLoader>,
     project: Option<RemoteProject>,
     projects: Vec<RemoteProject>,
     project_icons: HashMap<String, Option<PathBuf>>,
@@ -448,6 +451,8 @@ pub struct LauncherApp {
     selected_instance: Option<String>,
     content_tab: ContentTab,
     content_library: Option<ContentLibrary>,
+    content_inspection: Option<ContentInspection>,
+    content_icons: HashMap<RepositoryPath, Arc<RenderImage>>,
     content_loading: bool,
     content_error: Option<String>,
     content_action_pending: bool,
@@ -948,6 +953,8 @@ impl LauncherApp {
             selected_instance: None,
             content_tab: ContentTab::Mods,
             content_library: None,
+            content_inspection: None,
+            content_icons: HashMap::new(),
             content_loading: false,
             content_error: None,
             content_action_pending: false,
@@ -4954,6 +4961,8 @@ impl LauncherApp {
         self.page = Page::Instance;
         self.content_tab = ContentTab::Mods;
         self.content_library = None;
+        self.content_inspection = None;
+        self.content_icons.clear();
         self.content_error = None;
         self.content_query.update(cx, |state, cx| {
             state.set_value("", window, cx);
@@ -6084,6 +6093,10 @@ impl LauncherApp {
         self.page = Page::ContentBrowser;
         self.content_browser = ContentBrowserState {
             kind: Some(kind),
+            shader_loader: self
+                .content_inspection
+                .as_ref()
+                .and_then(|inspection| inspection.shader_loader),
             ..ContentBrowserState::default()
         };
         self.remote_sort = RemoteSort::Relevance;
@@ -6279,8 +6292,15 @@ impl LauncherApp {
             return;
         };
         let game_version = version.minecraft_version.clone();
+        let shader_loader = self.content_browser.shader_loader;
         let loader = project
-            .version_loader_filter(version.loader.as_ref().map(|loader| loader.kind.as_str()));
+            .version_loader_filter(version.loader.as_ref().map(|loader| loader.kind.as_str()))
+            .or_else(|| {
+                (project.kind() == Some(ContentKind::ShaderPack))
+                    .then(|| shader_loader.map(shader_loader_filter))
+                    .flatten()
+                    .map(str::to_owned)
+            });
         let project_id = project.id.clone();
         let recommended_kind = self.content_browser.kind;
         self.content_browser.recommended = None;
@@ -6567,6 +6587,19 @@ impl LauncherApp {
         });
     }
 
+    fn apply_content_snapshot(&mut self, library: ContentLibrary, inspection: ContentInspection) {
+        self.content_icons = inspection
+            .resource_packs
+            .iter()
+            .filter_map(|(path, pack)| {
+                let image = image::load_from_memory(pack.metadata.icon_png.as_deref()?).ok()?;
+                Some((path.clone(), render_rgba_image(image.to_rgba8())))
+            })
+            .collect();
+        self.content_library = Some(library);
+        self.content_inspection = Some(inspection);
+    }
+
     fn load_instance_content(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.content_request = self.content_request.wrapping_add(1);
         let request = self.content_request;
@@ -6584,7 +6617,7 @@ impl LauncherApp {
         self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = services
                 .runtime
-                .spawn(async move { scan_instance_content(instance).await })
+                .spawn(async move { scan_and_inspect_instance_content(instance).await })
                 .await;
             let _ = this.update_in(cx, |view, _, cx| {
                 if view.content_request != request {
@@ -6592,8 +6625,8 @@ impl LauncherApp {
                 }
                 view.content_loading = false;
                 match result {
-                    Ok(Ok(library)) => {
-                        view.content_library = Some(library);
+                    Ok(Ok((library, inspection))) => {
+                        view.apply_content_snapshot(library, inspection);
                         view.content_error = None;
                     }
                     Ok(Err(error)) => view.content_error = Some(error.to_string()),
@@ -6696,16 +6729,18 @@ impl LauncherApp {
                             Err(error) => failures.push(error.to_string()),
                         }
                     }
-                    let library = scan_instance_content(instance).await;
-                    (imported, failures, library)
+                    let snapshot = scan_and_inspect_instance_content(instance).await;
+                    (imported, failures, snapshot)
                 })
                 .await;
             let _ = this.update_in(cx, |view, window, cx| {
                 view.content_action_pending = false;
                 match result {
-                    Ok((imported, failures, library)) => {
-                        match library {
-                            Ok(library) => view.content_library = Some(library),
+                    Ok((imported, failures, snapshot)) => {
+                        match snapshot {
+                            Ok((library, inspection)) => {
+                                view.apply_content_snapshot(library, inspection);
+                            }
                             Err(error) => view.content_error = Some(error.to_string()),
                         }
                         if failures.is_empty() {
@@ -6770,22 +6805,24 @@ impl LauncherApp {
                         enabled,
                     )
                     .await;
-                    let library = scan_instance_content(instance).await;
-                    (changed, library)
+                    let snapshot = scan_and_inspect_instance_content(instance).await;
+                    (changed, snapshot)
                 })
                 .await;
             let _ = this.update_in(cx, |view, window, cx| {
                 view.content_action_pending = false;
                 match result {
-                    Ok((changed, library)) => {
+                    Ok((changed, snapshot)) => {
                         if let Err(error) = changed {
                             window.push_notification(
                                 Notification::error(error.to_string()).title("更新内容失败"),
                                 cx,
                             );
                         }
-                        match library {
-                            Ok(library) => view.content_library = Some(library),
+                        match snapshot {
+                            Ok((library, inspection)) => {
+                                view.apply_content_snapshot(library, inspection);
+                            }
                             Err(error) => view.content_error = Some(error.to_string()),
                         }
                     }
@@ -6793,6 +6830,119 @@ impl LauncherApp {
                         window.push_notification(
                             Notification::error(format!("后台任务失败: {error}"))
                                 .title("更新内容失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn change_resource_pack_priority(
+        &mut self,
+        relative_path: RepositoryPath,
+        order: ResourcePackOrder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_operations_pending() {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_action_pending = true;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move {
+                    let changed =
+                        move_instance_resource_pack(instance.clone(), relative_path, order).await;
+                    let snapshot = scan_and_inspect_instance_content(instance).await;
+                    (changed, snapshot)
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_action_pending = false;
+                match result {
+                    Ok((changed, snapshot)) => {
+                        if let Err(error) = changed {
+                            window.push_notification(
+                                Notification::error(error.to_string()).title("调整优先级失败"),
+                                cx,
+                            );
+                        }
+                        match snapshot {
+                            Ok((library, inspection)) => {
+                                view.apply_content_snapshot(library, inspection);
+                            }
+                            Err(error) => view.content_error = Some(error.to_string()),
+                        }
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("调整优先级失败"),
+                            cx,
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    fn select_shader_pack(
+        &mut self,
+        loader: ShaderLoader,
+        pack: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_operations_pending() {
+            return;
+        }
+        let Some(version) = self.selected_instance_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
+        let services = self.services.clone();
+        self.content_action_pending = true;
+        self._content_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = services
+                .runtime
+                .spawn(async move {
+                    let changed = set_instance_shader_pack(instance.clone(), loader, pack).await;
+                    let snapshot = scan_and_inspect_instance_content(instance).await;
+                    (changed, snapshot)
+                })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.content_action_pending = false;
+                match result {
+                    Ok((changed, snapshot)) => {
+                        if let Err(error) = changed {
+                            window.push_notification(
+                                Notification::error(error.to_string()).title("切换光影失败"),
+                                cx,
+                            );
+                        }
+                        match snapshot {
+                            Ok((library, inspection)) => {
+                                view.apply_content_snapshot(library, inspection);
+                            }
+                            Err(error) => view.content_error = Some(error.to_string()),
+                        }
+                    }
+                    Err(error) => {
+                        window.push_notification(
+                            Notification::error(format!("后台任务失败: {error}"))
+                                .title("切换光影失败"),
                             cx,
                         );
                     }
@@ -6865,22 +7015,24 @@ impl LauncherApp {
                 .spawn(async move {
                     let deleted =
                         delete_instance_content(instance.clone(), kind, relative_path).await;
-                    let library = scan_instance_content(instance).await;
-                    (deleted, library)
+                    let snapshot = scan_and_inspect_instance_content(instance).await;
+                    (deleted, snapshot)
                 })
                 .await;
             let _ = this.update_in(cx, |view, window, cx| {
                 view.content_action_pending = false;
                 match result {
-                    Ok((deleted, library)) => match deleted {
+                    Ok((deleted, snapshot)) => match deleted {
                         Ok(()) => {
                             window.push_notification(
                                 Notification::success(format!("已删除 {display_name}。"))
                                     .title("内容已删除"),
                                 cx,
                             );
-                            match library {
-                                Ok(library) => view.content_library = Some(library),
+                            match snapshot {
+                                Ok((library, inspection)) => {
+                                    view.apply_content_snapshot(library, inspection);
+                                }
                                 Err(error) => view.content_error = Some(error.to_string()),
                             }
                         }
@@ -7588,6 +7740,13 @@ impl LauncherApp {
     ) {
         self.refresh_external_state(window, cx);
         cx.notify();
+    }
+}
+
+fn shader_loader_filter(loader: ShaderLoader) -> &'static str {
+    match loader {
+        ShaderLoader::Iris | ShaderLoader::Oculus => "iris",
+        ShaderLoader::OptiFine => "optifine",
     }
 }
 
