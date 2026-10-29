@@ -228,6 +228,18 @@ export class DomController {
           mode === "light" ? ACCENT_PALETTES[k].lightPrimary : ACCENT_PALETTES[k].darkPrimary;
       }
     }
+
+    this.updateScreenshotThemes(mode);
+  }
+
+  private updateScreenshotThemes(mode: ThemeMode): void {
+    const images = document.querySelectorAll<HTMLImageElement>(".shot-img, #lightbox-img");
+    for (const image of images) {
+      const url = mode === "dark" ? image.dataset.shotDark : image.dataset.shotLight;
+      if (url && image.getAttribute("src") !== url) {
+        image.src = url;
+      }
+    }
   }
 
   private buildTopNav(): void {
@@ -269,10 +281,12 @@ export class DomController {
 
       const screenshotHtml = ch.screenshot
         ? `
-          <figure class="shot-showcase" data-shot-url="${ch.screenshot.url}" data-shot-caption="${ch.screenshot.caption}">
+          <figure class="shot-showcase" data-shot-url-light="${ch.screenshot.lightUrl}" data-shot-url-dark="${ch.screenshot.darkUrl}" data-shot-caption="${ch.screenshot.caption}">
             <div class="shot-img-wrap">
               <img
-                src="${ch.screenshot.url}"
+                src="${ch.screenshot.lightUrl}"
+                data-shot-light="${ch.screenshot.lightUrl}"
+                data-shot-dark="${ch.screenshot.darkUrl}"
                 alt="${ch.screenshot.caption}"
                 class="shot-img"
                 width="934"
@@ -382,10 +396,13 @@ export class DomController {
     const figures = document.querySelectorAll<HTMLElement>(".shot-showcase");
     figures.forEach((fig) => {
       fig.addEventListener("click", () => {
-        const url = fig.dataset.shotUrl;
+        const lightUrl = fig.dataset.shotUrlLight;
+        const darkUrl = fig.dataset.shotUrlDark;
         const caption = fig.dataset.shotCaption;
-        if (!url) return;
-        this.lightboxImgEl.src = url;
+        if (!lightUrl || !darkUrl) return;
+        this.lightboxImgEl.dataset.shotLight = lightUrl;
+        this.lightboxImgEl.dataset.shotDark = darkUrl;
+        this.updateScreenshotThemes(this.currentMode);
         this.lightboxImgEl.alt = caption || "";
         this.lightboxCaptionEl.textContent = caption || "";
         this.lightboxEl.hidden = false;

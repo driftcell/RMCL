@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-27
+日期：2026-10-29
 
 ## 边界
 
@@ -40,7 +40,11 @@ bun run serve    # 直接预览 index.html
 - 一个静态 `h1`，动态章节标题使用 `h2`，保持标题层级。
 - `<noscript>` 简介和下载入口，方便不执行 JavaScript 的访问者。
 
-`web/public/robots.txt` 指向 sitemap；`web/public/sitemap.xml` 目前只包含根页面。OG 图片由 `web/public/screenshots/home.webp` 生成，文件名稳定，不随构建 hash 变化。
+`web/public/robots.txt` 指向 sitemap；`web/public/sitemap.xml` 目前只包含根页面。OG 图片由 `web/public/screenshots/home-light.webp` 生成，文件名稳定，不随构建 hash 变化。
+
+## 应用截图
+
+主页、新建实例、联机和下载四页分别提供 `*-light.webp` 与 `*-dark.webp`，统一为 934×618。`DomController.applyThemeTokens` 同步切换章节图片和放大预览，素材尺寸一致，不随明暗模式改变布局。`README.md` 复用同一目录下的资源，通过 `prefers-color-scheme` 展示对应外观。
 
 ## 版本号
 
@@ -79,7 +83,7 @@ workflow 使用 `pages: write` 和 `id-token: write` 权限，不写入仓库内
 
 - 本地运行 `bun run check` 和 `bun run build`，确认 `web/dist/index.html` 使用相对资源路径。
 - 合并到 `main` 后检查 Pages workflow 的 build 和 deploy job 成功。
-- 打开 <https://driftcell.github.io/RMCL/> 检查首页、截图、字体和 Three.js 场景；真实浏览器不报 404 或模块加载错误。
+- 打开 <https://driftcell.github.io/RMCL/> 检查首页、字体和 Three.js 场景；切换深色与浅色时，章节截图和放大预览使用对应资源，真实浏览器不报 404 或模块加载错误。
 - PR 预览不部署到 Pages；PR 只运行 `web` CI job。
 
 ## 当前限制
