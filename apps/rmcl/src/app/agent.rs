@@ -643,7 +643,7 @@ impl AgentState {
         // access on every launch. The key state is refreshed when the AI page
         // or settings page becomes visible.
         let key = AgentKeyState::Unknown;
-        let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
+        let scroller = cx.new(|cx| MessageScrollerState::new(1, cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         let input = cx.new(|cx| {
             TextareaState::new(window, cx)
@@ -726,7 +726,7 @@ impl AgentState {
         self.conversation.messages.clear();
         self.conversation
             .scroller
-            .update(cx, |state, cx| state.reset(0, cx));
+            .update(cx, |state, cx| state.reset(1, cx));
         cx.notify();
     }
 

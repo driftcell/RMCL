@@ -193,17 +193,16 @@ impl LauncherApp {
                                     self.agent.conversation.scroller.clone(),
                                     move |index, _, cx| {
                                         let Some(message) = messages.get(index) else {
-                                            return div().into_any_element();
+                                            // The transcript keeps one extra
+                                            // row after the last message. It
+                                            // is measured by the virtual list,
+                                            // so the wheel can always reach the
+                                            // bottom of the final text.
+                                            return div().h_6().w_full().into_any_element();
                                         };
                                         render_agent_message(index, message, &view, cx)
                                     },
                                 )
-                                // Leave breathing room below the final row.
-                                // GPUI's measured list height can be a few
-                                // pixels behind the last text layout; without
-                                // this the wheel stops with half a line clipped
-                                // and only the jump button can reveal it.
-                                .with_list_style(StyleRefinement::default().pb_6())
                                 .with_jump_button_label("回到底部")
                                 .w_full()
                                 .h_full()
