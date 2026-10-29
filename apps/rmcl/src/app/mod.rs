@@ -28,6 +28,7 @@ use gpui_kit::{
         select::{SearchableVec, Select, SelectEvent, SelectState},
         spinner::Spinner,
         tag::Tag,
+        text::{TextView, TextViewState},
         v_flex,
     },
     prelude::FluentBuilder,
@@ -1220,6 +1221,11 @@ impl LauncherApp {
         }
         let view = cx.entity().downgrade();
         let dialog_release = release.clone();
+        let notes_view = dialog_release
+            .notes
+            .clone()
+            .filter(|notes| !notes.trim().is_empty())
+            .map(|notes| cx.new(|cx| TextViewState::markdown(&notes, cx)));
         window.open_dialog(cx, move |dialog, _window, cx| {
             let save_view = view.clone();
             let save_release = dialog_release.clone();
@@ -1252,17 +1258,21 @@ impl LauncherApp {
                         )
                         .child(
                             div()
+                                .w_full()
+                                .min_w_0()
                                 .max_h(rems(15.))
                                 .overflow_y_scrollbar()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(
-                                    dialog_release
-                                        .notes
-                                        .clone()
-                                        .filter(|notes| !notes.trim().is_empty())
-                                        .unwrap_or_else(|| "该版本没有提供更新说明。".to_owned()),
-                                ),
+                                .when_some(notes_view.as_ref(), |this, notes| {
+                                    this.child(TextView::new(notes).selectable(true))
+                                })
+                                .when(notes_view.is_none(), |this| {
+                                    this.child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child("该版本没有提供更新说明。"),
+                                    )
+                                }),
                         )
                         .child(
                             div()
