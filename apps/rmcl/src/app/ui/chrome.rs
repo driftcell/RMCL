@@ -40,7 +40,7 @@ impl LauncherApp {
                         .small(),
                 )
                 .child(div().flex_1())
-                .child(
+                .child(title_bar_action(
                     Button::new("theme-toggle")
                         .ghost()
                         .small()
@@ -48,7 +48,7 @@ impl LauncherApp {
                         .tooltip("切换明暗主题")
                         .accessibility_label("切换明暗主题")
                         .on_click(cx.listener(|this, _, window, cx| this.toggle_theme(window, cx))),
-                ),
+                )),
         )
     }
 
@@ -343,6 +343,13 @@ impl LauncherApp {
                 )
             })
     }
+}
+
+fn title_bar_action(child: impl IntoElement) -> impl IntoElement {
+    div()
+        // Interactive title bar content must not arm the parent's window-drag gesture.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(child)
 }
 
 fn brand_mark(cx: &App) -> impl IntoElement {
