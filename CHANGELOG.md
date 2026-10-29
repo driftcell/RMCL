@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/driftcell/RMCL/compare/v0.11.0...v0.12.0) - 2026-10-29
+
+### Added
+
+- *(ui)* render resource pack and shader management ([#118](https://github.com/driftcell/RMCL/pull/118))
+- *(agent)* refine the live activity loading state ([#114](https://github.com/driftcell/RMCL/pull/114))
+
+### Fixed
+
+- *(agent)* add a measured tail row for scroll reach ([#122](https://github.com/driftcell/RMCL/pull/122))
+- keep auth lib login open and clear agent scroll edge ([#119](https://github.com/driftcell/RMCL/pull/119))
+- *(update)* render release notes as markdown ([#115](https://github.com/driftcell/RMCL/pull/115))
+- *(agent)* show task progress only in the status bar ([#111](https://github.com/driftcell/RMCL/pull/111))
+
+### Style
+
+- *(ui)* clarify shader activation timing ([#121](https://github.com/driftcell/RMCL/pull/121))
+
 ## [0.11.0](https://github.com/driftcell/RMCL/compare/v0.10.1...v0.11.0) - 2026-10-29
 
 ### Added
