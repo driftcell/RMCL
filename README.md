@@ -5,7 +5,7 @@
 <h1 align="center">RMCL</h1>
 
 <p align="center">
-  A modern Minecraft: Java Edition launcher built with Rust and GPUI Kit.
+  A native Minecraft: Java Edition launcher built with Rust and GPUI Kit.
 </p>
 
 <p align="center">
@@ -20,6 +20,21 @@
 </p>
 
 RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit 构建原生桌面界面。支持正版与离线账户、Vanilla 和主流加载器、实例隔离、Mod 管理、服务器收藏、皮肤更换与自动更新。
+
+## Overview
+
+RMCL is an independent Minecraft: Java Edition launcher written in Rust, with a native desktop interface built on GPUI Kit. It does not use Electron, and the launcher itself does not require a JVM.
+
+- Microsoft and offline accounts (device-code sign-in, tokens stored in the OS keychain)
+- Vanilla, Fabric, Quilt, and Forge/NeoForge through their modern installers
+- Isolated instances that reuse an existing `.minecraft` without rewriting another launcher's configuration
+- Modrinth search and installation with SHA-1 verification and required-dependency resolution
+- Live server list (MOTD, player count, latency), one-click join, skins, version repair, auto-update
+- macOS (Intel and Apple Silicon), Windows x86_64, Linux x86_64
+
+Downloads are published on [Releases](https://github.com/driftcell/RMCL/releases). The [project site](https://driftcell.github.io/RMCL/) is currently in Chinese.
+
+Known limitations: Forge/NeoForge has been verified on macOS ARM64 only, while Windows and Linux real-run verification is still in progress. authlib-injector, legacy Forge, and CurseForge are not implemented yet. macOS builds are ad-hoc signed, so first launch requires the `xattr` command documented below.
 
 ## 界面预览
 
@@ -100,3 +115,9 @@ cargo run -p rmcl
 ## 致谢
 
 感谢 HMCL 在 Minecraft 启动器行为和兼容性方面提供的公开参考。
+
+## License / 许可证
+
+RMCL original code is released under the [MIT License](LICENSE).
+
+RMCL 原创代码以 MIT 许可发布，见 [LICENSE](LICENSE)。
