@@ -91,7 +91,13 @@ impl LauncherApp {
                     .bg(cx.theme().background.opacity(0.45))
                     .p_3()
                     .child(
-                        div().flex_1().min_h_0().w_full().overflow_hidden().when(
+                        div()
+                            .debug_selector(|| "agent-scroll-viewport".to_owned())
+                            .flex_1()
+                            .min_h_0()
+                            .w_full()
+                            .overflow_hidden()
+                            .when(
                             self.agent.conversation.messages.is_empty(),
                             |this| {
                                 this.child(
@@ -198,9 +204,22 @@ impl LauncherApp {
                                             // is measured by the virtual list,
                                             // so the wheel can always reach the
                                             // bottom of the final text.
-                                            return div().h_6().w_full().into_any_element();
+                                            return div()
+                                                .debug_selector(|| "agent-scroll-tail".to_owned())
+                                                .h_8()
+                                                .w_full()
+                                                .into_any_element();
                                         };
-                                        render_agent_message(index, message, &view, cx)
+                                        let row = render_agent_message(index, message, &view, cx);
+                                        if index + 1 == messages.len() {
+                                            div()
+                                                .debug_selector(|| "agent-last-message".to_owned())
+                                                .w_full()
+                                                .child(row)
+                                                .into_any_element()
+                                        } else {
+                                            row
+                                        }
                                     },
                                 )
                                 .with_jump_button_label("回到底部")
