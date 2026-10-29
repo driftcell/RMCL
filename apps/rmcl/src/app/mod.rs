@@ -2385,6 +2385,19 @@ impl LauncherApp {
         if matches!(page, Page::Agent | Page::Settings) {
             self.refresh_agent_key_state(cx);
         }
+        if page == Page::Agent {
+            let scroller = self.agent.conversation.scroller.clone();
+            let count = scroller.read(cx).item_count();
+            if count > 0 {
+                let following = scroller.read(cx).is_following_tail();
+                scroller.update(cx, |scroller, cx| {
+                    let _ = scroller.remeasure_items(count - 1..count, cx);
+                    if following {
+                        scroller.scroll_to_end(cx);
+                    }
+                });
+            }
+        }
         cx.notify();
     }
 
@@ -3625,7 +3638,10 @@ impl LauncherApp {
         self.authlib_login_cancel = Some(cancellation.clone());
         self.spawn_authlib_login(server, username, password, cancellation, window, cx);
         cx.notify();
-        true
+        // Keep the dialog open while the request runs. Closing it here would
+        // cancel the login task and hide every error behind a disappearing
+        // dialog.
+        false
     }
 
     fn spawn_authlib_login(
@@ -6102,6 +6118,14 @@ impl LauncherApp {
         self.remote_sort = RemoteSort::Relevance;
         self.remote_query.update(cx, |state, cx| {
             state.set_value("", window, cx);
+        });
+        self.load_remote_search(true, window, cx);
+    }
+
+    fn open_shader_loader_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_content_browser(ContentKind::Mod, window, cx);
+        self.remote_query.update(cx, |state, cx| {
+            state.set_value("Iris", window, cx);
         });
         self.load_remote_search(true, window, cx);
     }

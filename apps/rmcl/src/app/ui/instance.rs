@@ -657,7 +657,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().danger)
-                                .child("当前游戏版本可能无法加载该资源包"),
+                                .child("可能与当前游戏版本不兼容"),
                         )
                     }),
             )
@@ -804,10 +804,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!(
-                                    "{} 已启用；光影切换会在下次进入游戏时生效。",
-                                    loader.label()
-                                )),
+                                .child(format!("{} 已启用 · 重启游戏后生效", loader.label())),
                         ),
                 )
             })
@@ -1013,18 +1010,16 @@ impl LauncherApp {
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(
-                        "光影包可以下载和管理，但需要 Iris、Oculus 或 OptiFine 才会在游戏中生效。",
-                    ),
+                    .child("需要 Iris、Oculus 或 OptiFine 才能生效。"),
             )
             .child(
                 Button::new("shader-browse-loader-mods")
                     .outline()
                     .small()
                     .icon(IconName::Globe)
-                    .label("浏览 Mod")
+                    .label("查找加载器")
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_content_browser(ContentKind::Mod, window, cx)
+                        this.open_shader_loader_search(window, cx)
                     })),
             )
     }

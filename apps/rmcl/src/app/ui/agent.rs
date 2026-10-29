@@ -198,6 +198,13 @@ impl LauncherApp {
                                         render_agent_message(index, message, &view, cx)
                                     },
                                 )
+                                // Leave breathing room below the final row.
+                                // GPUI's measured list height can be a few
+                                // pixels behind the last text layout; without
+                                // this the wheel stops with half a line clipped
+                                // and only the jump button can reveal it.
+                                .with_list_style(StyleRefinement::default().pb_6())
+                                .with_jump_button_label("回到底部")
                                 .w_full()
                                 .h_full()
                                 .min_h_0(),

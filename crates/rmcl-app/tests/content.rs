@@ -3,8 +3,8 @@ use std::{io::Write, path::Path, time::Duration};
 use axum::{Json, Router, response::IntoResponse, routing::get};
 use rmcl_app::{
     AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
-    ContentInstallRequest, ContentInstaller, ContentKind, ContentSource, IsolationMode,
-    ModMetadataCache, ModrinthClient, ModrinthConfig, PackFormat, RemoteDependency,
+    ContentInstallRequest, ContentInstaller, ContentKind, ContentPreflightStatus, ContentSource,
+    IsolationMode, ModMetadataCache, ModrinthClient, ModrinthConfig, PackFormat, RemoteDependency,
     RemoteDependencyKind, RemoteFile, RemoteVersion, ResourcePackOrder, ShaderLoader, TaskKind,
     TaskManager, TaskPhase, TaskProgress, TaskStatus, TaskSubject, VanillaInstaller,
     delete_instance_content, import_instance_content, inspect_content, move_instance_resource_pack,
@@ -241,6 +241,120 @@ async fn selects_and_disables_a_shader_pack_through_the_app_wrapper() {
         .unwrap();
     assert_eq!(selection.active.as_deref(), Some("Nice.zip"));
     assert!(!selection.enabled);
+}
+
+#[tokio::test]
+async fn preflights_online_resource_and_shader_packs() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let resource_project = json!({
+        "id": "rp-project",
+        "slug": "rp",
+        "title": "Resource Pack",
+        "description": "Resource pack",
+        "categories": [],
+        "project_type": "resourcepack",
+        "downloads": 0,
+        "follows": 0,
+        "game_versions": ["1.21.1"],
+        "loaders": ["minecraft"],
+        "updated": "2026-01-01T00:00:00Z"
+    });
+    let shader_project = json!({
+        "id": "shader-project",
+        "slug": "shader",
+        "title": "Shader Pack",
+        "description": "Shader pack",
+        "categories": ["iris"],
+        "project_type": "shader",
+        "downloads": 0,
+        "follows": 0,
+        "game_versions": ["1.21.1"],
+        "loaders": ["iris"],
+        "updated": "2026-01-01T00:00:00Z"
+    });
+    let router = Router::new()
+        .route(
+            "/v2/project/rp-project",
+            get(move || {
+                let payload = resource_project.clone();
+                async move { Json(payload) }
+            }),
+        )
+        .route(
+            "/v2/project/shader-project",
+            get(move || {
+                let payload = shader_project.clone();
+                async move { Json(payload) }
+            }),
+        );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let client = graph_client(base.clone());
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let bytes = b"remote pack".to_vec();
+    let request = |kind, project_id: &str, filename: &str| ContentGraphInstallRequest {
+        instance: instance.clone(),
+        kind,
+        version: RemoteVersion {
+            source: ContentSource::Modrinth,
+            id: format!("{project_id}-version"),
+            project_id: project_id.to_owned(),
+            name: filename.to_owned(),
+            version_number: "1.0".to_owned(),
+            changelog: None,
+            published: None,
+            version_type: "release".to_owned(),
+            downloads: 0,
+            game_versions: vec!["1.21.1".to_owned()],
+            loaders: vec!["minecraft".to_owned()],
+            files: vec![RemoteFile {
+                filename: filename.to_owned(),
+                url: base.join(filename).unwrap(),
+                size: Some(bytes.len() as u64),
+                sha1: Some(sha1(&bytes)),
+                primary: true,
+            }],
+            dependencies: Vec::new(),
+        },
+        display_name: filename.to_owned(),
+        conflict: ConflictPolicy::Rename,
+        game_version: "1.21.1".to_owned(),
+        loader: None,
+        replace: None,
+        skip_version_ids: Vec::new(),
+    };
+
+    let resource = preflight_content_install(
+        &client,
+        &request(ContentKind::ResourcePack, "rp-project", "pack.zip"),
+        &rmcl_content::InstalledModIndex::default(),
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(resource.main.status, ContentPreflightStatus::WillInstall);
+
+    let shader = preflight_content_install(
+        &client,
+        &request(ContentKind::ShaderPack, "shader-project", "shader.zip"),
+        &rmcl_content::InstalledModIndex::default(),
+        None,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shader.main.status, ContentPreflightStatus::WillInstall);
+    assert!(
+        shader
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Iris"))
+    );
+    server.abort();
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {
