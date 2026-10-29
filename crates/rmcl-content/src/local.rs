@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use crate::{
     ContentError, ContentKind, ContentLibrary, ContentScan, ContentWarning, LocalContent,
     kind::strip_disabled_suffix,
-    options::{ResourcePackOptions, modern_resource_pack_list},
+    options::{ResourcePackOptions, ResourcePackOrder, modern_resource_pack_list},
 };
 
 /// Policy used when an imported content file collides with an existing name.
@@ -920,6 +920,26 @@ fn file_name(relative_path: &RepositoryPath) -> &str {
         .unwrap_or_else(|| relative_path.as_str())
 }
 
+/// Moves an enabled resource pack in the `options.txt` priority list.
+///
+/// Packs later in `resourcePacks` override earlier ones. Moving a pack that is
+/// not enabled returns [`ContentError::ResourcePackNotEnabled`].
+pub fn move_resource_pack(
+    instance: &InstanceLayout,
+    relative_path: &RepositoryPath,
+    order: ResourcePackOrder,
+) -> Result<(), ContentError> {
+    let directory = instance.resourcepacks_dir();
+    ensure_safe_existing(&directory, relative_path)?;
+    let file_name = file_name(relative_path).to_owned();
+    let options_path = instance.options_path();
+    let modern = modern_hint(instance);
+    let mut options = ResourcePackOptions::load(options_path.clone(), modern)?
+        .unwrap_or_else(|| ResourcePackOptions::new(options_path, modern));
+    options.move_entry(&file_name, order)?;
+    options.save()
+}
+
 fn modern_hint(instance: &InstanceLayout) -> bool {
     let version = instance
         .load_manifest()
@@ -1139,6 +1159,40 @@ mod tests {
         assert!(!folder.exists());
         let options = std::fs::read_to_string(instance.options_path()).unwrap();
         assert!(!options.contains("Folder Pack"));
+    }
+
+    #[test]
+    fn moves_resource_pack_priority_and_rejects_disabled_packs() {
+        let temporary = TempDir::new().unwrap();
+        let instance = instance(temporary.path());
+        write(&instance.resourcepacks_dir().join("a.zip"), b"a");
+        write(&instance.resourcepacks_dir().join("b.zip"), b"b");
+        write(&instance.resourcepacks_dir().join("disabled.zip"), b"d");
+        write(
+            &instance.options_path(),
+            b"resourcePacks:[\"file/a.zip\",\"file/b.zip\"]\n",
+        );
+
+        move_resource_pack(
+            &instance,
+            &RepositoryPath::new("a.zip").unwrap(),
+            ResourcePackOrder::HigherPriority,
+        )
+        .unwrap();
+        assert!(
+            std::fs::read_to_string(instance.options_path())
+                .unwrap()
+                .contains("resourcePacks:[\"file/b.zip\",\"file/a.zip\"]")
+        );
+
+        assert!(matches!(
+            move_resource_pack(
+                &instance,
+                &RepositoryPath::new("disabled.zip").unwrap(),
+                ResourcePackOrder::HigherPriority,
+            ),
+            Err(ContentError::ResourcePackNotEnabled { .. })
+        ));
     }
 
     #[test]

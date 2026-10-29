@@ -28,6 +28,16 @@ pub enum ContentError {
     UnsafePath { path: PathBuf, reason: String },
     #[error("resource pack options file `{path}` is invalid: {reason}")]
     Options { path: PathBuf, reason: String },
+    #[error("invalid {kind} metadata in `{path}`: {reason}")]
+    PackMetadata {
+        kind: ContentKind,
+        path: PathBuf,
+        reason: String,
+    },
+    #[error("resource pack `{file_name}` is not enabled")]
+    ResourcePackNotEnabled { file_name: String },
+    #[error("invalid Minecraft client metadata in `{path}`: {reason}")]
+    ClientMetadata { path: PathBuf, reason: String },
     #[error("cannot {operation} for {kind}")]
     UnsupportedOperation {
         kind: ContentKind,

@@ -73,6 +73,34 @@ pub struct InstalledMod {
     pub enabled: bool,
 }
 
+/// A mod that provides shader-pack rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShaderLoader {
+    Iris,
+    Oculus,
+    OptiFine,
+}
+
+impl ShaderLoader {
+    pub const ALL: [Self; 3] = [Self::Iris, Self::Oculus, Self::OptiFine];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Iris => "iris",
+            Self::Oculus => "oculus",
+            Self::OptiFine => "optifine",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Iris => "Iris",
+            Self::Oculus => "Oculus",
+            Self::OptiFine => "OptiFine",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InstalledModIndex {
     pub mods: Vec<InstalledMod>,
@@ -94,22 +122,22 @@ impl InstalledModIndex {
         self.find(id).is_some_and(|installed| installed.enabled)
     }
 
+    /// Returns the enabled shader loader, if any.
+    ///
+    /// Disabled mods are ignored: a shader loader present as `.disabled` does
+    /// not make shader packs render.
+    pub fn shader_loader(&self) -> Option<ShaderLoader> {
+        ShaderLoader::ALL
+            .into_iter()
+            .find(|loader| self.has_enabled_mod(loader.id()))
+    }
+
     pub fn has_shader_loader(&self) -> bool {
-        ["iris", "oculus", "optifine"]
-            .iter()
-            .any(|id| self.has_mod(id))
+        self.shader_loader().is_some()
     }
 
     pub fn shader_loader_name(&self) -> Option<&'static str> {
-        if self.has_mod("iris") {
-            Some("Iris")
-        } else if self.has_mod("oculus") {
-            Some("Oculus")
-        } else if self.has_mod("optifine") {
-            Some("OptiFine")
-        } else {
-            None
-        }
+        self.shader_loader().map(ShaderLoader::label)
     }
 }
 
@@ -689,6 +717,34 @@ side = "BOTH"
                 .any(|warning| warning.contains("重复 Mod ID"))
         );
         assert!(index.has_mod("example"));
+    }
+
+    #[test]
+    fn shader_loader_detection_requires_an_enabled_mod() {
+        use rmcl_instance::RepositoryPath;
+
+        let mut index = InstalledModIndex {
+            mods: vec![InstalledMod {
+                metadata: ModMetadata {
+                    id: "iris".to_owned(),
+                    version: Some("1.8.0".to_owned()),
+                    name: Some("Iris".to_owned()),
+                    loader: ModMetadataLoader::Fabric,
+                    dependencies: Vec::new(),
+                    conflicts: Vec::new(),
+                },
+                relative_path: RepositoryPath::new("iris.jar").unwrap(),
+                file_name: "iris.jar".to_owned(),
+                enabled: false,
+            }],
+            warnings: Vec::new(),
+        };
+        assert_eq!(index.shader_loader(), None);
+        assert!(!index.has_shader_loader());
+
+        index.mods[0].enabled = true;
+        assert_eq!(index.shader_loader(), Some(ShaderLoader::Iris));
+        assert_eq!(index.shader_loader_name(), Some("Iris"));
     }
 
     fn jar_bytes(id: &str) -> Vec<u8> {
