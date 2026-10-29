@@ -10,9 +10,11 @@ use gpui_kit::{
         button::{Button, ButtonVariants},
         h_flex,
         input::Textarea,
-        marker::{Marker, MarkerAlignment, MarkerContent, MarkerIcon, MarkerLoadingStyle},
+        marker::{Marker, MarkerAlignment, MarkerContent, MarkerIcon},
         message::{Message, MessageAlignment, MessageContent},
         message_scroller::MessageScroller,
+        shimmer::ShimmerText,
+        spinner::Spinner,
         text::TextView,
         v_flex,
     },
@@ -23,8 +25,8 @@ use gpui_kit::{
 use super::super::{
     LauncherApp, Page,
     agent::{
-        AgentActivity, AgentKeyState, AgentMessage, AgentReply, AgentRunState, AgentStatusLine,
-        AgentStep, AgentStepState,
+        AgentActivity, AgentKeyState, AgentMessage, AgentReply, AgentRunState, AgentStep,
+        AgentStepState,
     },
 };
 use super::common::{card, error_banner, page_header, section_title};
@@ -43,6 +45,11 @@ impl LauncherApp {
             IconName::Square
         } else {
             IconName::Send
+        };
+        let compose_hint = if running {
+            "Agent 正在处理，完成后再发送 · Shift+Enter 换行"
+        } else {
+            "Enter 发送 · Shift+Enter 换行"
         };
         let examples = Rc::new(vec![
             "帮我安装一个 26.3 的 Fabric 实例",
@@ -213,8 +220,7 @@ impl LauncherApp {
                                 div().flex_1().min_w_0().child(
                                     Textarea::new(&input)
                                         .w_full()
-                                        .aria_label("给 AI 助手发送消息")
-                                        .disabled(self.agent.run.is_running()),
+                                        .aria_label("给 AI 助手发送消息"),
                                 ),
                             )
                             .child(
@@ -241,7 +247,7 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("Enter 发送 · Shift+Enter 换行"),
+                                    .child(compose_hint),
                             ),
                     ),
             )
@@ -249,37 +255,65 @@ impl LauncherApp {
     }
 
     fn render_agent_activity(&self, cx: &App) -> AnyElement {
-        let activity = match &self.agent.run {
+        const NO_STEPS: &[AgentStep] = &[];
+        let (message, detail, steps): (&str, Option<&str>, &[AgentStep]) = match &self.agent.run {
             AgentRunState::Idle => return div().into_any_element(),
-            AgentRunState::Starting { .. } | AgentRunState::Thinking { .. } => {
-                return typing_bubble(cx);
+            AgentRunState::Starting { .. } => ("正在连接模型", None, NO_STEPS),
+            AgentRunState::Thinking { .. } => ("正在思考", None, NO_STEPS),
+            AgentRunState::Working { activity, .. } => {
+                let (message, detail) = activity_message(activity);
+                (message, detail, activity.steps())
             }
-            AgentRunState::Working { activity, .. }
-            | AgentRunState::Confirming { activity, .. } => activity,
+            AgentRunState::Confirming { activity, .. } => ("等待你的确认", None, activity.steps()),
         };
-        let mut content = v_flex().w_full().gap_2();
-        match activity {
-            AgentActivity::Typing => {
-                content = content.child(typing_bubble(cx));
-            }
-            AgentActivity::Status(status) => {
-                content = content.child(status_marker(status, true, cx));
-            }
-            AgentActivity::Tools { status, steps } => {
-                if let Some(status) = status {
-                    content = content.child(status_marker(status, true, cx));
-                }
-                content = content.child(
-                    v_flex().w_full().gap_1().children(
-                        steps
-                            .iter()
-                            .rev()
-                            .take(3)
-                            .rev()
-                            .map(|step| tool_marker(step, cx)),
+        let dark = cx.theme().mode.is_dark();
+        let mut content = v_flex()
+            .w_full()
+            .gap_2()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(cx.theme().primary.opacity(if dark { 0.28 } else { 0.18 }))
+            .bg(cx.theme().primary.opacity(if dark { 0.10 } else { 0.05 }))
+            .p_3()
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_start()
+                    .gap_2()
+                    .child(activity_pulse(cx))
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                ShimmerText::new(message.to_owned())
+                                    .id("agent-activity-status")
+                                    .text_sm()
+                                    .font_medium()
+                                    .text_color(cx.theme().foreground),
+                            )
+                            .when_some(detail.map(str::to_owned), |this, detail| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(detail),
+                                )
+                            }),
                     ),
-                );
-            }
+            );
+        if !steps.is_empty() {
+            content = content.child(
+                v_flex().w_full().gap_1().pl_7().children(
+                    steps
+                        .iter()
+                        .rev()
+                        .take(3)
+                        .rev()
+                        .map(|step| tool_step(step, cx)),
+                ),
+            );
         }
         content.into_any_element()
     }
@@ -288,9 +322,14 @@ impl LauncherApp {
         let Some((_, request)) = self.agent.pending_confirmation() else {
             return div().into_any_element();
         };
-        card(cx)
+        v_flex()
+            .w_full()
+            .gap_2()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
             .border_color(cx.theme().warning.opacity(0.45))
             .bg(cx.theme().warning.opacity(0.08))
+            .p_3()
             .child(section_title(&request.title, &request.body, cx))
             .child(
                 h_flex()
@@ -416,7 +455,7 @@ fn render_agent_reply(
                 v_flex()
                     .w_full()
                     .gap_1()
-                    .children(reply.steps.iter().map(|step| tool_marker(step, cx))),
+                    .children(reply.steps.iter().map(|step| tool_step(step, cx))),
             );
         }
     }
@@ -447,45 +486,86 @@ fn reply_summary(reply: &AgentReply) -> String {
     }
 }
 
-fn status_marker(status: &AgentStatusLine, loading: bool, cx: &App) -> AnyElement {
-    let mut marker = Marker::new()
-        .loading(loading)
-        .with_loading_style(MarkerLoadingStyle::Shimmer)
-        .content(MarkerContent::new().text(status.message.clone()));
-    if let Some(detail) = &status.detail {
-        marker = marker.child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(detail.clone()),
-        );
+fn activity_message(activity: &AgentActivity) -> (&str, Option<&str>) {
+    match activity {
+        AgentActivity::Typing => ("正在思考", None),
+        AgentActivity::Status(status) => (status.message.as_str(), status.detail.as_deref()),
+        AgentActivity::Tools { status, .. } => {
+            status.as_ref().map_or(("正在处理", None), |status| {
+                (status.message.as_str(), status.detail.as_deref())
+            })
+        }
     }
-    marker.into_any_element()
 }
 
-fn tool_marker(step: &AgentStep, cx: &App) -> AnyElement {
-    let (icon, color, loading) = match step.state {
-        AgentStepState::Running => (IconName::LoaderCircle, cx.theme().primary, true),
-        AgentStepState::Success => (IconName::CircleCheck, cx.theme().success, false),
-        AgentStepState::Failed => (IconName::CircleX, cx.theme().danger, false),
-        AgentStepState::Skipped => (IconName::CircleStop, cx.theme().muted_foreground, false),
+fn activity_pulse(cx: &App) -> AnyElement {
+    let halo = div()
+        .mt_0p5()
+        .size_5()
+        .rounded_full()
+        .bg(cx.theme().primary.opacity(0.14))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(div().size_2().rounded_full().bg(cx.theme().primary));
+    if cx.reduce_motion() {
+        return halo.opacity(0.75).into_any_element();
+    }
+    halo.with_animation(
+        "agent-activity-pulse",
+        Animation::new(Duration::from_millis(1600)).repeat_synced(),
+        |halo, phase| {
+            let wave = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
+            halo.opacity(0.45 + 0.55 * wave)
+        },
+    )
+    .into_any_element()
+}
+
+fn tool_step(step: &AgentStep, cx: &App) -> AnyElement {
+    let running = step.state == AgentStepState::Running;
+    let (icon, color) = match step.state {
+        AgentStepState::Running => (IconName::LoaderCircle, cx.theme().primary),
+        AgentStepState::Success => (IconName::CircleCheck, cx.theme().success),
+        AgentStepState::Failed => (IconName::CircleX, cx.theme().danger),
+        AgentStepState::Skipped => (IconName::CircleStop, cx.theme().muted_foreground),
+    };
+    let glyph = if running {
+        Spinner::new()
+            .xsmall()
+            .color(cx.theme().primary)
+            .into_any_element()
+    } else {
+        Icon::new(icon).small().text_color(color).into_any_element()
     };
     let label = if step.summary.is_empty() {
         step.label.clone()
     } else {
         format!("{} · {}", step.label, step.summary)
     };
-    let marker = Marker::new()
-        .id(("agent-step", step.id))
-        .role(Role::Status)
-        .loading(loading)
-        .with_loading_style(MarkerLoadingStyle::Shimmer)
-        .icon(MarkerIcon::new().child(Icon::new(icon).small().text_color(color)))
-        .content(MarkerContent::new().text(label));
     v_flex()
         .w_full()
         .gap_1()
-        .child(marker)
+        .child(
+            h_flex()
+                .w_full()
+                .items_center()
+                .gap_2()
+                .child(div().w_4().flex().justify_center().child(glyph))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_sm()
+                        .text_color(if running {
+                            cx.theme().foreground
+                        } else {
+                            cx.theme().muted_foreground
+                        })
+                        .when(running, |this| this.font_medium())
+                        .child(label),
+                ),
+        )
         .when_some(step.error.clone(), |this, error| {
             this.child(
                 div()
@@ -495,36 +575,5 @@ fn tool_marker(step: &AgentStep, cx: &App) -> AnyElement {
                     .child(error),
             )
         })
-        .into_any_element()
-}
-
-fn typing_bubble(cx: &App) -> AnyElement {
-    let reduce_motion = cx.reduce_motion();
-    let dots = h_flex()
-        .gap_1()
-        .items_center()
-        .children((0..3).map(|index| {
-            let dot = div()
-                .size_1p5()
-                .rounded_full()
-                .bg(cx.theme().muted_foreground);
-            if reduce_motion {
-                dot.opacity(0.55).into_any_element()
-            } else {
-                dot.with_animation(
-                    ("agent-typing-dot", index as usize),
-                    Animation::new(Duration::from_millis(900)).repeat_synced(),
-                    move |dot, phase| {
-                        let shifted = (phase + index as f32 / 3.0) % 1.0;
-                        let wave = (shifted * std::f32::consts::PI).sin().abs();
-                        dot.opacity(0.25 + 0.75 * wave)
-                    },
-                )
-                .into_any_element()
-            }
-        }));
-    Bubble::new()
-        .with_variant(BubbleVariant::Secondary)
-        .child(dots)
         .into_any_element()
 }
