@@ -1,6 +1,15 @@
-use std::fmt;
+use std::{fmt, path::PathBuf};
 
 use uuid::Uuid;
+
+/// JVM configuration for authlib-injector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthlibLaunchConfig {
+    pub jar_path: PathBuf,
+    pub api_root: String,
+    /// Base64 of the exact API root metadata response.
+    pub prefetched_metadata: Option<String>,
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct LaunchAccount {
@@ -47,6 +56,24 @@ impl LaunchAccount {
             access_token: access_token.into(),
             user_type: "msa".to_owned(),
             user_properties: "{}".to_owned(),
+        }
+    }
+
+    /// Creates a launch identity from a third-party Yggdrasil profile.
+    ///
+    /// authlib-injector normalizes `mojang` to `msa`; RMCL passes `msa`
+    /// directly to match the HMCL baseline and current Minecraft versions.
+    pub fn from_authlib(
+        account: &rmcl_auth::AuthlibAccount,
+        access_token: impl Into<String>,
+        user_properties: impl Into<String>,
+    ) -> Self {
+        Self {
+            username: account.username().to_owned(),
+            uuid: account.uuid(),
+            access_token: access_token.into(),
+            user_type: "msa".to_owned(),
+            user_properties: user_properties.into(),
         }
     }
 }

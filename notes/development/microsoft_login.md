@@ -88,5 +88,5 @@
 ## 未决
 
 - Windows Credential Manager、Linux Secret Service 和这两个平台上的正版启动未运行验证。
-- 披风、皮肤上传、authlib-injector 和自有 Azure 应用注册未实现。
+- 披风、皮肤上传和自有 Azure 应用注册未实现。authlib-injector 外置登录已于 2026-10-29 另行实现，见 [authlib-injector 外置登录实现记录](authlib_injector.md)。
 - 公开客户端 ID 的长期可用性和发行合规需要后续评估。

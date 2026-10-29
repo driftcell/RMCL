@@ -25,6 +25,8 @@ pub struct LaunchOptions {
     pub libraries: Vec<PathBuf>,
     pub additional_jvm_arguments: Vec<String>,
     pub additional_game_arguments: Vec<String>,
+    /// Optional authlib-injector Java agent and prefetched metadata.
+    pub authlib: Option<crate::AuthlibLaunchConfig>,
     /// Base Minecraft version used to choose Quick Play versus legacy
     /// `--server`/`--port` arguments. Callers must preserve the base version
     /// for loader instances.
@@ -82,6 +84,7 @@ impl LaunchOptions {
             libraries: Vec::new(),
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
+            authlib: None,
             minecraft_version: version.id.clone(),
             server: None,
             features,

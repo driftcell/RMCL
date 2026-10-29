@@ -25,7 +25,7 @@ use gpui_kit::{
         notification::Notification,
         scroll::ScrollableElement,
         searchable_list::SearchableListItem,
-        select::{SearchableVec, SelectEvent, SelectState},
+        select::{SearchableVec, Select, SelectEvent, SelectState},
         spinner::Spinner,
         tag::Tag,
         v_flex,
@@ -34,25 +34,28 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
-    ContentInstallPreflight, ContentKind, ContentLibrary, ContentPreflightItem,
-    ContentPreflightStatus, ContentSource, CreateInstanceRequest, FeaturedServer,
-    GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase, JavaRuntime,
-    JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
+    AppError, AuthlibAccountServiceError, ConflictPolicy, ContentGraphInstallRequest,
+    ContentInstallPhase, ContentInstallPreflight, ContentKind, ContentLibrary,
+    ContentPreflightItem, ContentPreflightStatus, ContentSource, CreateInstanceRequest,
+    FeaturedServer, GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase,
+    JavaRuntime, JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
     MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
-    RepositoryPath, ResolvedMicrosoftAccount, ServerIconCache, ServerPingError, ServerStatus,
-    ServerStatusClient, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
-    TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest,
-    VersionManifest, VersionSource, VersionSummary, delete_installed_version,
-    delete_instance_content, discover_installed_versions, featured_servers,
-    import_instance_content, migrate_instance_to_isolated, preflight_content_install,
-    recommended_version, remove_server_bookmark, rename_instance, scan_installed_mods,
-    scan_instance_content, set_instance_content_enabled, set_instance_java,
+    RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount, ServerIconCache,
+    ServerPingError, ServerStatus, ServerStatusClient, TaskEvent, TaskId, TaskKind, TaskPhase,
+    TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease,
+    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary,
+    delete_installed_version, delete_instance_content, discover_installed_versions,
+    featured_servers, import_instance_content, migrate_instance_to_isolated,
+    preflight_content_install, recommended_version, remove_server_bookmark, rename_instance,
+    scan_installed_mods, scan_instance_content, set_instance_content_enabled, set_instance_java,
     set_instance_launch_settings, spawn_apply_helper, upsert_server_bookmark,
 };
-use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
+use rmcl_auth::{
+    AUTHLIB_SERVER_PRESETS, Account, AccountKind, AuthlibAccount, AuthlibError, AuthlibLogin,
+    AuthlibProfile, MicrosoftAccount, MicrosoftAuthError, OfflineAccount,
+};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
-use rmcl_launch::{GameLog, LaunchAccount, LogStream};
+use rmcl_launch::{AuthlibLaunchConfig, GameLog, LaunchAccount, LogStream};
 use rmcl_net::{MirrorHealth, MirrorPreference, MirrorProbe};
 use rmcl_store::{
     AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LauncherConfig,
@@ -65,8 +68,8 @@ use uuid::Uuid;
 
 use crate::{
     services::{
-        Bootstrap, Services, load_account, load_microsoft_account, open_path, stored_account,
-        stored_microsoft_account,
+        Bootstrap, Services, load_account, load_authlib_account, load_microsoft_account, open_path,
+        stored_account, stored_authlib_account, stored_microsoft_account,
     },
     state::LauncherState,
     theme,
@@ -77,7 +80,7 @@ use self::{
     skin_service::{SkinService, SkinServiceEvent},
     skin_viewer::SkinViewer,
     ui::{
-        common::display_path,
+        common::{display_path, field_label, help},
         layout,
         skin::{ApplyState, LinkImport, LinkImportState, SkinEditor},
     },
@@ -127,7 +130,7 @@ impl Page {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Agent => "用自然语言管理实例、内容和任务。",
             Self::Versions => "管理已安装的游戏实例与版本。",
-            Self::Skin => "查看并更换当前正版账户的官方皮肤。",
+            Self::Skin => "查看当前账户的皮肤；外置登录由认证服务器和 authlib-injector 管理。",
             Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
@@ -421,6 +424,18 @@ enum MicrosoftLoginUi {
     },
 }
 
+#[derive(Clone)]
+enum AuthlibLoginUi {
+    Requesting,
+    SelectingProfile {
+        login: Box<AuthlibLogin>,
+        profiles: Vec<AuthlibProfile>,
+    },
+    Failed {
+        message: String,
+    },
+}
+
 pub struct LauncherApp {
     services: Arc<Services>,
     page: Page,
@@ -525,6 +540,14 @@ pub struct LauncherApp {
     microsoft_login: Option<MicrosoftLoginUi>,
     login_cancel: Option<CancellationToken>,
     login_code_copied: bool,
+    authlib_login: Option<AuthlibLoginUi>,
+    authlib_server_select: Entity<SelectState<SearchableVec<String>>>,
+    authlib_server_input: Entity<InputState>,
+    authlib_username_input: Entity<InputState>,
+    authlib_password_input: Entity<InputState>,
+    authlib_custom_server: bool,
+    authlib_login_cancel: Option<CancellationToken>,
+    _authlib_login_task: Option<Task<()>>,
     _event_task: Task<()>,
     _command_task: Option<Task<()>>,
     _prompt_task: Option<Task<()>>,
@@ -565,9 +588,15 @@ impl LauncherApp {
                 .filter_map(load_microsoft_account)
                 .map(Account::Microsoft),
         );
+        accounts.extend(
+            config
+                .authlib_accounts
+                .iter()
+                .filter_map(load_authlib_account)
+                .map(Account::Authlib),
+        );
         if !accounts.iter().any(|account| {
-            config.selected_account.as_deref() == Some(account.username())
-                && stored_account_kind(account) == config.selected_account_kind
+            config.selected_account_id.as_deref() == Some(account_key(account).as_str())
         }) {
             config.selected_account = accounts
                 .first()
@@ -576,6 +605,7 @@ impl LauncherApp {
                 .first()
                 .map(stored_account_kind)
                 .unwrap_or(StoredAccountKind::Offline);
+            config.selected_account_id = accounts.first().map(account_key);
         }
 
         let mut versions_error = None;
@@ -687,6 +717,28 @@ impl LauncherApp {
         let launch_width_input = cx.new(|cx| InputState::new(window, cx).placeholder("1280"));
         let launch_height_input = cx.new(|cx| InputState::new(window, cx).placeholder("720"));
         let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
+        let authlib_server_items = SearchableVec::new(
+            AUTHLIB_SERVER_PRESETS
+                .iter()
+                .map(|preset| preset.name.to_owned())
+                .chain(std::iter::once("自定义服务器".to_owned()))
+                .collect::<Vec<_>>(),
+        );
+        let authlib_server_select = cx.new(|cx| {
+            SelectState::new(
+                authlib_server_items,
+                Some(IndexPath::default().row(0)),
+                window,
+                cx,
+            )
+        });
+        let authlib_server_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("https://example.com/api/yggdrasil/")
+        });
+        let authlib_username_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("邮箱或用户名"));
+        let authlib_password_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("密码").masked(true));
         let skin_link_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
 
@@ -826,6 +878,29 @@ impl LauncherApp {
                 }
             },
         ));
+        subscriptions.push(cx.subscribe(
+            &authlib_server_select,
+            |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    this.authlib_custom_server = value == "自定义服务器";
+                    cx.notify();
+                }
+            },
+        ));
+        for input in [
+            &authlib_server_input,
+            &authlib_username_input,
+            &authlib_password_input,
+        ] {
+            subscriptions.push(cx.subscribe(input, |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    if matches!(this.authlib_login, Some(AuthlibLoginUi::Failed { .. })) {
+                        this.authlib_login = None;
+                    }
+                    cx.notify();
+                }
+            }));
+        }
 
         let skin_service_observe = cx.observe(&skin_service, |_, _, cx| cx.notify());
         let skin_service_events =
@@ -963,6 +1038,14 @@ impl LauncherApp {
             microsoft_login: None,
             login_cancel: None,
             login_code_copied: false,
+            authlib_login: None,
+            authlib_server_select,
+            authlib_server_input,
+            authlib_username_input,
+            authlib_password_input,
+            authlib_custom_server: false,
+            authlib_login_cancel: None,
+            _authlib_login_task: None,
             _event_task: event_task,
             _command_task: None,
             _prompt_task: None,
@@ -1406,26 +1489,20 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn select_account_key(
-        &mut self,
-        username: &str,
-        kind: StoredAccountKind,
-        cx: &mut Context<Self>,
-    ) {
-        if self.config.selected_account.as_deref() == Some(username)
-            && self.config.selected_account_kind == kind
-        {
+    fn select_account_key(&mut self, account_id: &str, cx: &mut Context<Self>) {
+        if self.config.selected_account_id.as_deref() == Some(account_id) {
             return;
         }
-        if !self
+        let Some(account) = self
             .accounts
             .iter()
-            .any(|account| account.username() == username && stored_account_kind(account) == kind)
-        {
+            .find(|account| account_key(account) == account_id)
+        else {
             return;
-        }
-        self.config.selected_account = Some(username.to_owned());
-        self.config.selected_account_kind = kind;
+        };
+        self.config.selected_account = Some(account.username().to_owned());
+        self.config.selected_account_kind = stored_account_kind(account);
+        self.config.selected_account_id = Some(account_id.to_owned());
         self.save_config();
         if self.page == Page::Skin {
             self.skin_editor.draft = None;
@@ -1553,7 +1630,7 @@ impl LauncherApp {
             .iter()
             .filter_map(|account| match account {
                 Account::Offline(account) => Some(stored_account(account)),
-                Account::Microsoft(_) => None,
+                Account::Microsoft(_) | Account::Authlib(_) => None,
             })
             .collect();
         self.config.microsoft_accounts = self
@@ -1561,13 +1638,26 @@ impl LauncherApp {
             .iter()
             .filter_map(|account| match account {
                 Account::Microsoft(account) => Some(stored_microsoft_account(account)),
-                Account::Offline(_) => None,
+                Account::Offline(_) | Account::Authlib(_) => None,
             })
             .collect();
-        let selected_exists = self.accounts.iter().any(|account| {
-            self.config.selected_account.as_deref() == Some(account.username())
-                && stored_account_kind(account) == self.config.selected_account_kind
-        });
+        self.config.authlib_accounts = self
+            .accounts
+            .iter()
+            .filter_map(|account| match account {
+                Account::Authlib(account) => Some(stored_authlib_account(account)),
+                Account::Offline(_) | Account::Microsoft(_) => None,
+            })
+            .collect();
+        let selected_exists = self
+            .config
+            .selected_account_id
+            .as_deref()
+            .is_some_and(|id| {
+                self.accounts
+                    .iter()
+                    .any(|account| account_key(account) == id)
+            });
         if !selected_exists {
             self.config.selected_account = self
                 .accounts
@@ -1578,6 +1668,7 @@ impl LauncherApp {
                 .first()
                 .map(stored_account_kind)
                 .unwrap_or(StoredAccountKind::Offline);
+            self.config.selected_account_id = self.accounts.first().map(account_key);
         }
         match self.services.config_store.save(&self.config) {
             Ok(()) => self.config_save_error = None,
@@ -1649,11 +1740,23 @@ impl LauncherApp {
                                 .filter_map(load_microsoft_account)
                                 .map(Account::Microsoft),
                         )
+                        .chain(
+                            self.config
+                                .authlib_accounts
+                                .iter()
+                                .filter_map(load_authlib_account)
+                                .map(Account::Authlib),
+                        )
                         .collect::<Vec<_>>();
-                    let selected_exists = self.accounts.iter().any(|account| {
-                        self.config.selected_account.as_deref() == Some(account.username())
-                            && stored_account_kind(account) == self.config.selected_account_kind
-                    });
+                    let selected_exists =
+                        self.config
+                            .selected_account_id
+                            .as_deref()
+                            .is_some_and(|id| {
+                                self.accounts
+                                    .iter()
+                                    .any(|account| account_key(account) == id)
+                            });
                     if !selected_exists {
                         self.config.selected_account = self
                             .accounts
@@ -1664,6 +1767,7 @@ impl LauncherApp {
                             .first()
                             .map(stored_account_kind)
                             .unwrap_or(StoredAccountKind::Offline);
+                        self.config.selected_account_id = self.accounts.first().map(account_key);
                     }
                     self.refresh_account_heads(window, cx);
                 }
@@ -1677,6 +1781,12 @@ impl LauncherApp {
     }
 
     fn selected_account(&self) -> Option<&Account> {
+        if let Some(id) = self.config.selected_account_id.as_deref() {
+            return self
+                .accounts
+                .iter()
+                .find(|account| account_key(account) == id);
+        }
         let selected = self.config.selected_account.as_deref()?;
         self.accounts.iter().find(|account| {
             account.username() == selected
@@ -2414,6 +2524,7 @@ impl LauncherApp {
                     LaunchAccount::from_offline(&account),
                     version_id,
                     server,
+                    None,
                     window,
                     cx,
                 );
@@ -2456,6 +2567,7 @@ impl LauncherApp {
                                         resolved.launch,
                                         version_id,
                                         server,
+                                        None,
                                         window,
                                         cx,
                                     );
@@ -2480,6 +2592,77 @@ impl LauncherApp {
                     });
                 }));
             }
+            Account::Authlib(account) => {
+                self.launch_resolving = true;
+                cx.notify();
+                let service = self.services.authlib_accounts.clone();
+                let injector = self.services.authlib_injector.clone();
+                let runtime = self.services.runtime.handle().clone();
+                let cancellation = CancellationToken::new();
+                self._launch_task = Some(cx.spawn_in(window, async move |this, cx| {
+                    let result = runtime
+                        .spawn(async move {
+                            let resolved = service
+                                .resolve_launch_account(&account, &cancellation)
+                                .await?;
+                            let artifact = injector.ensure(&cancellation).await?;
+                            Ok::<_, AppError>((resolved, artifact))
+                        })
+                        .await;
+                    let _ = this.update_in(cx, move |view, window, cx| {
+                        view.launch_resolving = false;
+                        match result {
+                            Ok(Ok((resolved, artifact))) => {
+                                view.update_resolved_authlib(&resolved, window, cx);
+                                if let Some(warning) = resolved.persistence_warning.as_ref() {
+                                    window.push_notification(
+                                        Notification::warning(warning.clone()).title("账户"),
+                                        cx,
+                                    );
+                                }
+                                if !view.can_start_operation() {
+                                    window.push_notification(
+                                        Notification::warning(
+                                            "已有任务或内容操作正在运行，请等待完成或先停止它。",
+                                        )
+                                        .title("无法启动游戏"),
+                                        cx,
+                                    );
+                                } else {
+                                    let authlib = AuthlibLaunchConfig {
+                                        jar_path: artifact.path,
+                                        api_root: resolved.account.api_root().to_owned(),
+                                        prefetched_metadata: resolved.prefetched_metadata.clone(),
+                                    };
+                                    view.spawn_launch(
+                                        resolved.launch,
+                                        version_id,
+                                        server,
+                                        Some(authlib),
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            }
+                            Ok(Err(error)) => {
+                                window.push_notification(
+                                    Notification::error(authlib_launch_error_message(&error))
+                                        .title("无法启动游戏"),
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                window.push_notification(
+                                    Notification::error(format!("后台任务失败: {error}"))
+                                        .title("无法启动游戏"),
+                                    cx,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    });
+                }));
+            }
         }
     }
 
@@ -2488,6 +2671,7 @@ impl LauncherApp {
         account: LaunchAccount,
         version_id: String,
         server: Option<ServerAddress>,
+        authlib: Option<AuthlibLaunchConfig>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2522,6 +2706,7 @@ impl LauncherApp {
             max_memory_mb,
             additional_jvm_arguments: Vec::new(),
             additional_game_arguments: Vec::new(),
+            authlib,
             minecraft_version,
             server,
             resolution,
@@ -2537,6 +2722,30 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) {
         self.apply_microsoft_profile(resolved.profile.clone(), window, cx);
+    }
+
+    fn update_resolved_authlib(
+        &mut self,
+        resolved: &ResolvedAuthlibAccount,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = resolved.account.id();
+        if let Some(existing) = self
+            .accounts
+            .iter_mut()
+            .find(|account| matches!(account, Account::Authlib(account) if account.id() == id))
+        {
+            *existing = Account::Authlib(resolved.account.clone());
+        } else {
+            self.accounts
+                .push(Account::Authlib(resolved.account.clone()));
+        }
+        if self.config.selected_account_id.as_deref() == Some(format!("authlib:{id}").as_str()) {
+            self.config.selected_account = Some(resolved.account.username().to_owned());
+        }
+        self.save_config();
+        cx.notify();
     }
 
     fn spawn_command(
@@ -2925,39 +3134,43 @@ impl LauncherApp {
     fn open_accounts_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
-            let (accounts, heads, selected, selected_kind) = view
+            let (accounts, heads, selected_id) = view
                 .upgrade()
                 .map(|view| {
                     let this = view.read(cx);
                     (
                         this.accounts.clone(),
                         this.account_heads.clone(),
-                        this.config.selected_account.clone(),
-                        this.config.selected_account_kind,
+                        this.config.selected_account_id.clone(),
                     )
                 })
                 .unwrap_or_default();
 
             let mut list = v_flex().w_full().gap_1().max_h_80().overflow_y_scrollbar();
             for account in accounts.iter() {
-                let account_id = account.uuid();
+                let key = account_key(account);
                 let username = account.username().to_owned();
-                let kind = stored_account_kind(account);
-                let is_selected =
-                    selected.as_deref() == Some(username.as_str()) && selected_kind == kind;
-                let subtitle = if kind == StoredAccountKind::Microsoft {
-                    "正版账户"
-                } else {
-                    "离线账户"
+                let is_selected = selected_id.as_deref() == Some(key.as_str());
+                let subtitle = match account {
+                    Account::Microsoft(_) => "正版账户".to_owned(),
+                    Account::Authlib(account) => format!(
+                        "外置登录 · {}",
+                        account.server_name().unwrap_or("外部认证服务器")
+                    ),
+                    Account::Offline(_) => "离线账户".to_owned(),
                 };
                 let head = heads.get(&account.uuid());
+                let server_url = match account {
+                    Account::Authlib(account) => Some(account.api_root().to_owned()),
+                    _ => None,
+                };
                 let row_view = view.clone();
-                let row_username = username.clone();
+                let row_key = key.clone();
                 let delete_view = view.clone();
                 let delete_account = account.clone();
                 list = list.child(
                     h_flex()
-                        .id(format!("account-row-{account_id}"))
+                        .id(format!("account-row-{key}"))
                         .w_full()
                         .p_2()
                         .gap_3()
@@ -2969,7 +3182,7 @@ impl LauncherApp {
                         .on_click(move |_, window, cx| {
                             if let Some(view) = row_view.upgrade() {
                                 view.update(cx, |this, cx| {
-                                    this.select_account_key(&row_username, kind, cx);
+                                    this.select_account_key(&row_key, cx);
                                     window.close_dialog(cx);
                                     cx.notify();
                                 });
@@ -2992,10 +3205,19 @@ impl LauncherApp {
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
                                         .child(subtitle),
-                                ),
+                                )
+                                .when_some(server_url, |this, url| {
+                                    this.child(
+                                        div()
+                                            .text_xs()
+                                            .truncate()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(url),
+                                    )
+                                }),
                         )
                         .child(
-                            Button::new(format!("account-delete-{account_id}"))
+                            Button::new(format!("account-delete-{key}"))
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::Trash)
@@ -3037,6 +3259,7 @@ impl LauncherApp {
 
             let login_view = view.clone();
             let offline_view = view.clone();
+            let authlib_view = view.clone();
             dialog
                 .title("账户")
                 .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
@@ -3058,6 +3281,19 @@ impl LauncherApp {
                                     if let Some(view) = offline_view.upgrade() {
                                         view.update(cx, |this, cx| {
                                             this.open_offline_account_dialog(false, window, cx)
+                                        });
+                                    }
+                                }),
+                        )
+                        .child(
+                            Button::new("authlib-login")
+                                .outline()
+                                .label("外置登录")
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    if let Some(view) = authlib_view.upgrade() {
+                                        view.update(cx, |this, cx| {
+                                            this.open_authlib_login_dialog(window, cx)
                                         });
                                     }
                                 }),
@@ -3090,7 +3326,7 @@ impl LauncherApp {
                 Some(Account::Offline(account)) => Some(account.username().to_owned()),
                 _ => self.accounts.iter().find_map(|account| match account {
                     Account::Offline(account) => Some(account.username().to_owned()),
-                    Account::Microsoft(_) => None,
+                    Account::Microsoft(_) | Account::Authlib(_) => None,
                 }),
             }
         } else {
@@ -3146,6 +3382,390 @@ impl LauncherApp {
                     }
                 })
         });
+    }
+
+    fn open_authlib_login_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.authlib_login = None;
+        self.authlib_login_cancel = None;
+        self.authlib_custom_server = false;
+        self.authlib_server_select.update(cx, |state, cx| {
+            state.set_selected_index(Some(IndexPath::default().row(0)), window, cx);
+        });
+        for input in [
+            &self.authlib_server_input,
+            &self.authlib_username_input,
+            &self.authlib_password_input,
+        ] {
+            input.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+
+        let view = cx.entity().downgrade();
+        let server_select = self.authlib_server_select.clone();
+        let server_input = self.authlib_server_input.clone();
+        let username_input = self.authlib_username_input.clone();
+        let password_input = self.authlib_password_input.clone();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let (state, custom, selected_server) = view
+                .upgrade()
+                .map(|view| {
+                    let this = view.read(cx);
+                    let selected_server = this
+                        .authlib_server_select
+                        .read(cx)
+                        .selected_index(cx)
+                        .and_then(|index| AUTHLIB_SERVER_PRESETS.get(index.row))
+                        .map(|preset| preset.api_root.to_owned())
+                        .unwrap_or_default();
+                    (
+                        this.authlib_login.clone(),
+                        this.authlib_custom_server,
+                        selected_server,
+                    )
+                })
+                .unwrap_or((None, false, String::new()));
+            let requesting = matches!(state, Some(AuthlibLoginUi::Requesting));
+            let selecting = match state.as_ref() {
+                Some(AuthlibLoginUi::SelectingProfile { login, profiles }) => {
+                    Some((login.clone(), profiles.clone()))
+                }
+                _ => None,
+            };
+            let failed = match state.as_ref() {
+                Some(AuthlibLoginUi::Failed { message }) => Some(message.clone()),
+                _ => None,
+            };
+
+            let content = if let Some((login, profiles)) = selecting.as_ref() {
+                let mut list = v_flex().gap_2().child(
+                    div()
+                        .text_sm()
+                        .font_medium()
+                        .child(format!("{} · 选择角色", login.server().display_name())),
+                );
+                for profile in profiles {
+                    let profile_view = view.clone();
+                    let profile_clone = profile.clone();
+                    list = list.child(
+                        Button::new(format!("authlib-profile-{}", profile.id()))
+                            .outline()
+                            .w_full()
+                            .label(profile.name().to_owned())
+                            .on_click(move |_, window, cx| {
+                                if let Some(view) = profile_view.upgrade() {
+                                    view.update(cx, |this, cx| {
+                                        this.complete_authlib_login_profile(
+                                            profile_clone.clone(),
+                                            window,
+                                            cx,
+                                        )
+                                    });
+                                }
+                            }),
+                    );
+                }
+                list.into_any_element()
+            } else {
+                let mut form = v_flex()
+                    .gap_3()
+                    .child(
+                        v_flex().gap_1().child(field_label("认证服务器")).child(
+                            Select::new(&server_select)
+                                .accessibility_label("认证服务器")
+                                .menu_width(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
+                                .menu_max_h(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
+                                .cleanable(false)
+                                .w_full(),
+                        ),
+                    )
+                    .child(if custom {
+                        v_flex()
+                            .gap_1()
+                            .child(field_label("服务器地址"))
+                            .child(Input::new(&server_input).w_full())
+                            .child(help("支持 HTTP/HTTPS；未填写协议时默认使用 HTTPS。", cx))
+                            .into_any_element()
+                    } else {
+                        v_flex()
+                            .gap_1()
+                            .child(help(format!("API 地址：{selected_server}"), cx))
+                            .into_any_element()
+                    })
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(field_label("邮箱或用户名"))
+                            .child(Input::new(&username_input).w_full()),
+                    )
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(field_label("密码"))
+                            .child(Input::new(&password_input).mask_toggle().w_full())
+                            .child(help("密码只用于本次登录，不会保存。", cx)),
+                    );
+                if let Some(message) = failed {
+                    form = form.child(div().text_xs().text_color(cx.theme().danger).child(message));
+                }
+                if requesting {
+                    form = form.child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                Spinner::new()
+                                    .with_size(Size::Small)
+                                    .color(cx.theme().primary),
+                            )
+                            .child(div().text_sm().child("正在登录…")),
+                    );
+                }
+                form.into_any_element()
+            };
+
+            let mut footer = DialogFooter::new()
+                .child(DialogClose::new().trigger(|button| button.label("取消").outline()));
+            if selecting.is_none() {
+                footer = footer.child(
+                    DialogAction::new()
+                        .child(Button::new("authlib-submit").primary().label("登录")),
+                );
+            }
+
+            let close_view = view.clone();
+            dialog
+                .title("外置登录")
+                .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
+                .child(content)
+                .footer(footer)
+                .on_close(move |_, window, cx| {
+                    if let Some(view) = close_view.upgrade() {
+                        view.update(cx, |this, cx| this.clear_authlib_login(window, cx));
+                    }
+                })
+                .on_ok({
+                    let view = view.clone();
+                    move |_, window, cx| {
+                        let Some(view) = view.upgrade() else {
+                            return true;
+                        };
+                        view.update(cx, |this, cx| {
+                            if matches!(
+                                this.authlib_login,
+                                Some(AuthlibLoginUi::SelectingProfile { .. })
+                            ) || matches!(this.authlib_login, Some(AuthlibLoginUi::Requesting))
+                            {
+                                return false;
+                            }
+                            this.begin_authlib_login(window, cx)
+                        })
+                    }
+                })
+        });
+    }
+
+    fn begin_authlib_login(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if matches!(self.authlib_login, Some(AuthlibLoginUi::Requesting)) {
+            return false;
+        }
+        let server = if self.authlib_custom_server {
+            self.authlib_server_input.read(cx).value().trim().to_owned()
+        } else {
+            self.authlib_server_select
+                .read(cx)
+                .selected_index(cx)
+                .and_then(|index| AUTHLIB_SERVER_PRESETS.get(index.row))
+                .map(|preset| preset.api_root.to_owned())
+                .unwrap_or_default()
+        };
+        if server.is_empty() {
+            window.push_notification(
+                Notification::error("请选择认证服务器或填写服务器地址。").title("无法登录"),
+                cx,
+            );
+            return false;
+        }
+        let username = self
+            .authlib_username_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_owned();
+        let password = self.authlib_password_input.read(cx).value().to_string();
+        if username.is_empty() {
+            window.push_notification(
+                Notification::error("邮箱或用户名不能为空。").title("无法登录"),
+                cx,
+            );
+            return false;
+        }
+        if password.is_empty() {
+            window.push_notification(Notification::error("密码不能为空。").title("无法登录"), cx);
+            return false;
+        }
+
+        self.authlib_login = Some(AuthlibLoginUi::Requesting);
+        let cancellation = CancellationToken::new();
+        self.authlib_login_cancel = Some(cancellation.clone());
+        self.spawn_authlib_login(server, username, password, cancellation, window, cx);
+        cx.notify();
+        true
+    }
+
+    fn spawn_authlib_login(
+        &mut self,
+        server: String,
+        username: String,
+        password: String,
+        cancellation: CancellationToken,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let service = self.services.authlib_accounts.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._authlib_login_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move {
+                    service
+                        .authenticate(&server, &username, &password, &cancellation)
+                        .await
+                })
+                .await;
+            let _ = this.update_in(cx, move |view, window, cx| {
+                if view.authlib_login.is_none() {
+                    return;
+                }
+                match result {
+                    Ok(Ok(login)) => {
+                        if let Some(profile) = login.single_profile().cloned() {
+                            view.complete_authlib_login_with_profile(login, profile, window, cx);
+                        } else if login.available_profiles().is_empty() {
+                            view.fail_authlib_login("该账户没有可用的游戏角色。".to_owned(), cx);
+                        } else {
+                            let profiles = login.available_profiles().to_vec();
+                            view.authlib_login = Some(AuthlibLoginUi::SelectingProfile {
+                                login: Box::new(login),
+                                profiles,
+                            });
+                            view.authlib_login_cancel = None;
+                            cx.notify();
+                        }
+                    }
+                    Ok(Err(error)) => {
+                        view.fail_authlib_login(authlib_login_error_message(&error), cx)
+                    }
+                    Err(error) => view.fail_authlib_login(format!("后台任务失败: {error}"), cx),
+                }
+            });
+        }));
+    }
+
+    fn complete_authlib_login_profile(
+        &mut self,
+        profile: AuthlibProfile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(AuthlibLoginUi::SelectingProfile { login, .. }) = self.authlib_login.clone()
+        else {
+            return;
+        };
+        self.complete_authlib_login_with_profile(*login, profile, window, cx);
+    }
+
+    fn complete_authlib_login_with_profile(
+        &mut self,
+        login: AuthlibLogin,
+        profile: AuthlibProfile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let account_id = self
+            .accounts
+            .iter()
+            .find_map(|account| match account {
+                Account::Authlib(account)
+                    if account.api_root() == login.server().api_root()
+                        && account.uuid() == profile.id() =>
+                {
+                    Some(account.id())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(Uuid::new_v4);
+        let cancellation = self.authlib_login_cancel.clone().unwrap_or_default();
+        self.authlib_login_cancel = Some(cancellation.clone());
+        self.authlib_login = Some(AuthlibLoginUi::Requesting);
+
+        let service = self.services.authlib_accounts.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._authlib_login_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let result = runtime
+                .spawn(async move {
+                    service
+                        .complete_login_with_id(login, &profile, account_id, &cancellation)
+                        .await
+                })
+                .await;
+            let _ = this.update_in(cx, move |view, window, cx| {
+                if view.authlib_login.is_none() {
+                    return;
+                }
+                match result {
+                    Ok(Ok(account)) => {
+                        view.authlib_login = None;
+                        view.authlib_login_cancel = None;
+                        view.add_authlib_account(account, window, cx);
+                        window.close_dialog(cx);
+                        window.push_notification(
+                            Notification::success("外置账户已登录。").title("账户"),
+                            cx,
+                        );
+                    }
+                    Ok(Err(error)) => {
+                        view.fail_authlib_login(authlib_login_error_message(&error), cx)
+                    }
+                    Err(error) => view.fail_authlib_login(format!("后台任务失败: {error}"), cx),
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    fn fail_authlib_login(&mut self, message: String, cx: &mut Context<Self>) {
+        self.authlib_login = Some(AuthlibLoginUi::Failed { message });
+        self.authlib_login_cancel = None;
+        cx.notify();
+    }
+
+    fn clear_authlib_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.authlib_login = None;
+        if let Some(cancellation) = self.authlib_login_cancel.take() {
+            cancellation.cancel();
+        }
+        self.authlib_password_input
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        cx.notify();
+    }
+
+    fn add_authlib_account(
+        &mut self,
+        account: AuthlibAccount,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let id = account.id();
+        self.accounts.retain(
+            |existing| !matches!(existing, Account::Authlib(existing) if existing.id() == id),
+        );
+        self.accounts.push(Account::Authlib(account.clone()));
+        self.config.selected_account = Some(account.username().to_owned());
+        self.config.selected_account_kind = StoredAccountKind::Authlib;
+        self.config.selected_account_id = Some(format!("authlib:{id}"));
+        self.save_config();
+        if self.page == Page::Skin {
+            self.ensure_skin_page(cx);
+        }
+        cx.notify();
     }
 
     fn begin_microsoft_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -3529,7 +4149,7 @@ impl LauncherApp {
                 Account::Microsoft(account) => account
                     .skin_url()
                     .map(|url| (account.uuid(), url.to_owned())),
-                Account::Offline(_) => None,
+                Account::Offline(_) | Account::Authlib(_) => None,
             })
             .collect::<Vec<_>>();
         if pending.is_empty() {
@@ -3676,6 +4296,7 @@ impl LauncherApp {
         self.accounts.push(Account::Microsoft(account.clone()));
         self.config.selected_account = Some(account.username().to_owned());
         self.config.selected_account_kind = StoredAccountKind::Microsoft;
+        self.config.selected_account_id = Some(format!("microsoft:{}", account.uuid()));
         self.save_config();
         self.refresh_account_heads(window, cx);
         if self.page == Page::Skin {
@@ -3691,7 +4312,7 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) {
         let name = account.username().to_owned();
-        let is_microsoft = account.kind() == AccountKind::Microsoft;
+        let kind = account.kind();
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             let clicked_account = account.clone();
@@ -3711,10 +4332,10 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(if is_microsoft {
-                                    "删除后会同时退出该正版账户。"
-                                } else {
-                                    "此操作不会删除游戏文件。"
+                                .child(match kind {
+                                    AccountKind::Microsoft => "删除后会同时退出该正版账户。",
+                                    AccountKind::Authlib => "删除后会同时退出该外置账户。",
+                                    AccountKind::Offline => "此操作不会删除游戏文件。",
                                 }),
                         ),
                 )
@@ -3744,44 +4365,85 @@ impl LauncherApp {
     }
 
     fn delete_account(&mut self, account: Account, window: &mut Window, cx: &mut Context<Self>) {
-        let Account::Microsoft(account) = &account else {
-            self.finish_delete_account(account, window, cx);
-            return;
-        };
-        let account = account.clone();
-        let service = self.services.microsoft_accounts.clone();
-        let runtime = self.services.runtime.handle().clone();
-        self._account_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let result = runtime
-                .spawn({
-                    let service = service.clone();
-                    let account = account.clone();
-                    async move { service.remove_credentials(&account).await }
-                })
-                .await;
-            let _ = this.update_in(cx, move |view, window, cx| {
-                match result {
-                    Ok(Ok(())) => {
-                        view.finish_delete_account(Account::Microsoft(account), window, cx)
-                    }
-                    Ok(Err(error)) => {
-                        window.push_notification(
-                            Notification::error(format!("无法删除系统钥匙串中的登录凭据: {error}"))
-                                .title("无法删除账户"),
-                            cx,
-                        );
-                    }
-                    Err(error) => {
-                        window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("无法删除账户"),
-                            cx,
-                        );
-                    }
-                }
-                cx.notify();
-            });
-        }));
+        match &account {
+            Account::Offline(_) => self.finish_delete_account(account, window, cx),
+            Account::Microsoft(profile) => {
+                let profile = profile.clone();
+                let service = self.services.microsoft_accounts.clone();
+                let runtime = self.services.runtime.handle().clone();
+                self._account_task = Some(cx.spawn_in(window, async move |this, cx| {
+                    let result = runtime
+                        .spawn({
+                            let service = service.clone();
+                            let profile = profile.clone();
+                            async move { service.remove_credentials(&profile).await }
+                        })
+                        .await;
+                    let _ = this.update_in(cx, move |view, window, cx| {
+                        match result {
+                            Ok(Ok(())) => {
+                                view.finish_delete_account(Account::Microsoft(profile), window, cx)
+                            }
+                            Ok(Err(error)) => {
+                                window.push_notification(
+                                    Notification::error(format!(
+                                        "无法删除系统钥匙串中的登录凭据: {error}"
+                                    ))
+                                    .title("无法删除账户"),
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                window.push_notification(
+                                    Notification::error(format!("后台任务失败: {error}"))
+                                        .title("无法删除账户"),
+                                    cx,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    });
+                }));
+            }
+            Account::Authlib(profile) => {
+                let profile = profile.clone();
+                let service = self.services.authlib_accounts.clone();
+                let runtime = self.services.runtime.handle().clone();
+                self._account_task = Some(cx.spawn_in(window, async move |this, cx| {
+                    let result = runtime
+                        .spawn({
+                            let service = service.clone();
+                            let profile = profile.clone();
+                            async move { service.remove_credentials(&profile).await }
+                        })
+                        .await;
+                    let _ = this.update_in(cx, move |view, window, cx| {
+                        match result {
+                            Ok(Ok(())) => {
+                                view.finish_delete_account(Account::Authlib(profile), window, cx)
+                            }
+                            Ok(Err(error)) => {
+                                window.push_notification(
+                                    Notification::error(format!(
+                                        "无法删除系统钥匙串中的登录凭据: {error}"
+                                    ))
+                                    .title("无法删除账户"),
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                window.push_notification(
+                                    Notification::error(format!("后台任务失败: {error}"))
+                                        .title("无法删除账户"),
+                                    cx,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    });
+                }));
+            }
+        }
     }
 
     fn finish_delete_account(
@@ -3810,6 +4472,7 @@ impl LauncherApp {
                 .first()
                 .map(stored_account_kind)
                 .unwrap_or(StoredAccountKind::Offline);
+            self.config.selected_account_id = self.accounts.first().map(account_key);
         }
         self.save_config();
         if self.page == Page::Skin {
@@ -3850,9 +4513,11 @@ impl LauncherApp {
         self.accounts.retain(
             |account| !matches!(account, Account::Offline(account) if account.username() == username),
         );
+        let uuid = account.uuid();
         self.accounts.push(Account::Offline(account));
         self.config.selected_account = Some(username);
         self.config.selected_account_kind = StoredAccountKind::Offline;
+        self.config.selected_account_id = Some(format!("offline:{uuid}"));
         self.save_config();
         window.push_notification(Notification::success("离线账户已保存。").title("账户"), cx);
         cx.notify();
@@ -6494,6 +7159,7 @@ fn account_key(account: &Account) -> String {
     match account {
         Account::Offline(account) => format!("offline:{}", account.uuid()),
         Account::Microsoft(account) => format!("microsoft:{}", account.uuid()),
+        Account::Authlib(account) => format!("authlib:{}", account.id()),
     }
 }
 
@@ -6539,6 +7205,46 @@ fn stored_account_kind(account: &Account) -> StoredAccountKind {
     match account.kind() {
         AccountKind::Offline => StoredAccountKind::Offline,
         AccountKind::Microsoft => StoredAccountKind::Microsoft,
+        AccountKind::Authlib => StoredAccountKind::Authlib,
+    }
+}
+
+fn authlib_login_error_message(error: &AuthlibAccountServiceError) -> String {
+    use AuthlibAccountServiceError as ServiceError;
+    match error {
+        ServiceError::Auth(AuthlibError::Remote { code, message })
+            if code == "ForbiddenOperationException" =>
+        {
+            if message.trim().is_empty() {
+                "登录失败：用户名或密码错误。".to_owned()
+            } else {
+                format!("登录失败：{message}")
+            }
+        }
+        ServiceError::Auth(AuthlibError::InvalidUsername) => "用户名不能为空。".to_owned(),
+        ServiceError::Auth(AuthlibError::InvalidPassword) => "密码不能为空。".to_owned(),
+        ServiceError::Auth(AuthlibError::InvalidServerUrl(message)) => {
+            format!("认证服务器地址无效：{message}")
+        }
+        ServiceError::Auth(AuthlibError::InsecureRedirect) => {
+            "认证服务器尝试从 HTTPS 降级到 HTTP，已拒绝。".to_owned()
+        }
+        ServiceError::Auth(AuthlibError::Cancelled) => "登录已取消。".to_owned(),
+        ServiceError::CredentialsMissing => "外置账户登录已失效，请重新登录。".to_owned(),
+        ServiceError::ProfileSelectionRequired => "该账户有多个角色，请先选择角色。".to_owned(),
+        ServiceError::SecretStore(error) => {
+            format!("系统凭据存储不可用：{error}")
+        }
+        ServiceError::Auth(error) => format!("外置登录失败：{error}"),
+        other => other.to_string(),
+    }
+}
+
+fn authlib_launch_error_message(error: &AppError) -> String {
+    match error {
+        AppError::AuthlibAccount(error) => authlib_login_error_message(error),
+        AppError::AuthlibInjector(error) => format!("无法获取 authlib-injector：{error}"),
+        other => other.to_string(),
     }
 }
 

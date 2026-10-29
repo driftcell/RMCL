@@ -519,6 +519,7 @@ async fn real_loader_launch(installer_url: &str, instance_id: &str, expected: &s
         max_memory_mb: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
+        authlib: None,
         minecraft_version: "1.21.1".to_owned(),
         server: None,
         resolution: None,

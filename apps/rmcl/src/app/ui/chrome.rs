@@ -64,10 +64,13 @@ impl LauncherApp {
             .map(|account| account.username().to_owned())
             .unwrap_or_else(|| "添加账户".to_owned());
         let account_head = account.and_then(|account| self.account_heads.get(&account.uuid()));
-        let account_subtitle = match account.map(|account| account.kind()) {
-            Some(rmcl_auth::AccountKind::Microsoft) => "正版账户",
-            Some(rmcl_auth::AccountKind::Offline) => "离线账户",
-            None => "尚未添加账户",
+        let account_subtitle = match account {
+            Some(rmcl_auth::Account::Microsoft(_)) => "正版账户".to_owned(),
+            Some(rmcl_auth::Account::Offline(_)) => "离线账户".to_owned(),
+            Some(rmcl_auth::Account::Authlib(account)) => {
+                account.server_name().unwrap_or("外置账户").to_owned()
+            }
+            None => "尚未添加账户".to_owned(),
         };
         let selected_is_offline = matches!(account, Some(rmcl_auth::Account::Offline(_)));
 

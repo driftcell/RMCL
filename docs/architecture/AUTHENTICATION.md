@@ -1,8 +1,8 @@
 # 正版账号、令牌与皮肤
 
-状态：Microsoft 设备代码登录、令牌刷新、账户删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认皮肤、本地皮肤库和 MCP 本地库/正版工作流已实现
+状态：Microsoft 设备代码登录、令牌刷新、账户删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认皮肤、本地皮肤库和 MCP 本地库/正版工作流已实现；authlib-injector 外置登录已实现
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 边界
 
@@ -142,6 +142,25 @@ PNG 与链接共用同一条候选流程：
 - 图片直链读取失败：在链接表单内显示原因，并保留本地文件导入路径。
 - 正常登录成功和正常删除账户使用一次成功通知；后台皮肤刷新失败不打扰用户。
 
+## 外置登录（authlib-injector）
+
+RMCL 支持第三方 Yggdrasil 认证服务器，并通过 authlib-injector 在游戏内替换认证与材质端点。协议、服务器列表和皮肤边界见 [authlib-injector 外置登录](../compatibility/AUTHLIB_INJECTOR.md)。
+
+职责划分：
+
+- `rmcl-auth`：API Root 解析（含 ALI）、元数据、登录、validate、refresh、invalidate、角色与令牌类型。
+- `rmcl-app`：账户用例、系统凭据存储、元数据缓存、authlib-injector 下载与 SHA-256 缓存。
+- `rmcl-store`：`authlib_accounts` 元数据和稳定账户 ID，不保存令牌。
+- `rmcl-launch`：`-javaagent`、`side=client`、prefetch 参数和 `user_type = "msa"`。
+- `apps/rmcl`：内置认证服务器选择、自定义 URL、用户名/密码登录、多角色选择、账户切换/删除。
+- `rmcl-mcp`：已有外置账户的列表、选择、启动注入和删除；不通过 MCP 接收密码。
+
+系统凭据存储键为 `authlib:<RMCL 账户 ID>`，值包含 access token、client token 和 user properties。密码只用于一次登录请求，不写入任何持久化位置。启动前 validate 失败会 refresh；refresh 失败要求重新登录，不静默回退离线身份。
+
+内置服务器包含 LittleSkin、红石皮肤站、HelloSkin、MUA 用户中心和 Ely.by；用户仍可填写自定义 API Root。显式 HTTP 地址允许使用，但 HTTPS 不会自动降级到 HTTP。
+
+游戏内皮肤由 authlib-injector 处理。RMCL 不把外置账户交给 Microsoft 皮肤服务，也不提供第三方皮肤上传、切换或披风管理。
+
 ## 配置元数据
 
 ```toml
@@ -155,11 +174,10 @@ uuid = "97fe2bde-352d-454d-adf9-a0f568a50a3b"
 skin_url = "http://textures.minecraft.net/texture/…"
 ```
 
-`selected_account_kind` 区分同名离线账户和正版账户。离线账户仍保存在 `[[accounts]]`，正版账户保存在 `[[microsoft_accounts]]`。令牌不在其中。完整 schema 见 [启动器配置](CONFIGURATION.md)。
+`selected_account_kind` 区分离线、正版和外置账户；`selected_account_id` 是稳定账户键（`offline:<uuid>`、`microsoft:<uuid>` 或 `authlib:<账户 ID>`）。离线账户仍保存在 `[[accounts]]`，正版账户保存在 `[[microsoft_accounts]]`，外置账户保存在 `[[authlib_accounts]]`。令牌不在其中。完整 schema 见 [启动器配置](CONFIGURATION.md)。
 
 ## 当前不包含
 
-- authlib-injector 和第三方 Yggdrasil 登录。
 - 自有 Azure 应用注册和 localhost 授权码回调。
 - 皮肤站网页解析、站点专用适配和任何第三方上传。
 - 披风切换/隐藏；当前只展示激活披风名称。
@@ -179,6 +197,7 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - 皮肤上传、恢复默认、429 冷却、图片直链导入和真实窗口视觉验收仍需使用真实正版账户逐平台手动验证；自动化测试不调用真实换肤接口。
 - 使用正版 Minecraft access token 的真实 Vanilla 启动已由用户在 macOS ARM64 实际验证，游戏可以正常进入运行阶段。
 - Windows 和 Linux 的凭据存储与正版启动仍需平台运行测试。
+- 外置登录使用本地 mock Yggdrasil 服务覆盖 ALI、元数据、登录、validate、refresh、多角色选择、令牌持久化、jar 下载校验、启动注入和 MCP 启动；真实第三方服务端、真实进服、皮肤显示和聊天签名仍需逐平台手工验收。
 
 协议依据：
 
@@ -186,3 +205,5 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - [Minecraft Wiki: Microsoft authentication](https://minecraft.wiki/w/Microsoft_authentication)
 - [Minecraft Wiki: Skin](https://minecraft.wiki/w/Skin)
 - [Minecraft Wiki: Mojang API](https://minecraft.wiki/w/Mojang_API)（profile、upload/change/reset skin，2026-10-27 查阅）
+- [authlib-injector launcher technical specification](https://github.com/yushijinhun/authlib-injector/wiki/%E5%90%AF%E5%8A%A8%E5%99%A8%E6%8A%80%E6%9C%AF%E8%A7%84%E8%8C%83)（2026-10-29 查阅）
+- [authlib-injector download API](https://yushijinhun.github.io/authlib-injector/en/get-authlib-injector.html)（2026-10-29 查阅）

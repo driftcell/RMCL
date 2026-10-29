@@ -1,6 +1,8 @@
 //! Headless application use cases and task orchestration.
 
 mod accounts;
+mod authlib_accounts;
+mod authlib_injector;
 mod catalog;
 mod content;
 mod error;
@@ -29,6 +31,11 @@ pub use accounts::{
     MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, MicrosoftAccountServiceError,
     ResolvedMicrosoftAccount,
 };
+pub use authlib_accounts::{
+    AUTHLIB_KEYRING_SERVICE, AuthlibAccountService, AuthlibAccountServiceError,
+    ResolvedAuthlibAccount,
+};
+pub use authlib_injector::{AuthlibInjectorArtifact, AuthlibInjectorError, AuthlibInjectorService};
 pub use catalog::VersionCatalog;
 pub use content::{
     ContentBatchOutcome, ContentDownloadProgress, ContentGraphInstallRequest, ContentInstallEvent,

@@ -20,10 +20,10 @@ use rmcl_app::{
     set_instance_java_with_guard, set_instance_launch_settings_with_guard, try_lock_repository,
     upsert_server_bookmark,
 };
-use rmcl_auth::{MicrosoftAccount, OfflineAccount, SkinVariant};
+use rmcl_auth::{AuthlibAccount, MicrosoftAccount, OfflineAccount, SkinVariant};
 use rmcl_domain::ServerAddress;
 use rmcl_instance::VersionId;
-use rmcl_launch::LaunchAccount;
+use rmcl_launch::{AuthlibLaunchConfig, LaunchAccount};
 use rmcl_store::{LauncherConfig, StoredAccountKind};
 use rmcp::{
     ErrorData as McpError, Peer, RoleServer, ServerHandler,
@@ -84,8 +84,16 @@ struct TaskWaitParams {
 struct AccountSelectorParams {
     /// Account username.
     username: String,
-    /// Account kind: offline or microsoft.
+    /// Account kind: offline, microsoft, or authlib.
     kind: String,
+    /// Stable account ID from `accounts_list`; required to disambiguate
+    /// identical usernames on different authentication servers.
+    account_id: Option<String>,
+}
+
+struct ResolvedMcpAccount {
+    launch: LaunchAccount,
+    authlib: Option<AuthlibLaunchConfig>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -730,7 +738,7 @@ impl McpServer {
     }
 
     #[tool(
-        description = "List offline and Microsoft accounts without exposing credentials",
+        description = "List offline, Microsoft, and third-party Yggdrasil accounts without exposing credentials",
         output_schema = schema_for_type::<AccountList>(),
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true)
     )]
@@ -740,6 +748,7 @@ impl McpServer {
             items: account_summaries(&config),
             selected_account: config.selected_account.clone(),
             selected_account_kind: account_kind(config.selected_account_kind),
+            selected_account_id: config.selected_account_id.clone(),
         })
     }
 
@@ -754,23 +763,19 @@ impl McpServer {
     ) -> Result<CallToolResult, McpError> {
         self.require_write("accounts_select")?;
         let _repository_guard = self.lock_repository()?;
-        let kind = parse_account_kind(&params.kind)?;
         let mut config = self.context.config_store.load().map_err(internal_error)?;
-        if account_summary(&config, &params.username, kind).is_none() {
-            return Err(not_found(format!(
-                "account `{}` was not found",
-                params.username
-            )));
-        }
-        config.selected_account = Some(params.username.clone());
-        config.selected_account_kind = kind;
+        let account = account_summary_for_selector(&config, &params)?;
+        let account_id = account.id.clone();
+        config.selected_account = Some(account.username);
+        config.selected_account_kind = parse_account_kind(&params.kind)?;
+        config.selected_account_id = Some(account_id.clone());
         self.context
             .config_store
             .save(&config)
             .map_err(internal_error)?;
-        let account = account_summary(&config, &params.username, kind)
-            .ok_or_else(|| internal_error("selected account was not written"))?;
-        structured(AccountWrite { account })
+        structured(AccountWrite {
+            account: account_summary_by_id(&config, &account_id)?,
+        })
     }
 
     #[tool(
@@ -804,19 +809,19 @@ impl McpServer {
         if params.make_current.unwrap_or(false) {
             config.selected_account = Some(stored.username.clone());
             config.selected_account_kind = StoredAccountKind::Offline;
+            config.selected_account_id = Some(format!("offline:{}", canonical_uuid(&stored.uuid)));
         }
         self.context
             .config_store
             .save(&config)
             .map_err(internal_error)?;
         structured(AccountWrite {
-            account: account_summary(&config, &stored.username, StoredAccountKind::Offline)
-                .ok_or_else(|| internal_error("offline account was not written"))?,
+            account: account_summary_by_id(&config, &format!("offline:{}", stored.uuid))?,
         })
     }
 
     #[tool(
-        description = "Delete an offline or Microsoft account and its selected state",
+        description = "Delete an offline, Microsoft, or third-party account and its selected state",
         output_schema = schema_for_type::<AccountDelete>(),
         annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
     )]
@@ -828,23 +833,18 @@ impl McpServer {
         let _repository_guard = self.lock_repository()?;
         let kind = parse_account_kind(&params.kind)?;
         let mut config = self.context.config_store.load().map_err(internal_error)?;
-        if account_summary(&config, &params.username, kind).is_none() {
-            return Err(not_found(format!(
-                "account `{}` was not found",
-                params.username
-            )));
-        }
+        let account = account_summary_for_selector(&config, &params)?;
         match kind {
             StoredAccountKind::Offline => {
                 config
                     .accounts
-                    .retain(|account| account.username != params.username);
+                    .retain(|stored| canonical_uuid(&stored.uuid) != account.uuid);
             }
             StoredAccountKind::Microsoft => {
                 let stored = config
                     .microsoft_accounts
                     .iter()
-                    .find(|account| account.username == params.username)
+                    .find(|stored| canonical_uuid(&stored.uuid) == account.uuid)
                     .ok_or_else(|| not_found("Microsoft account was not found"))?;
                 let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
                 let profile =
@@ -856,13 +856,37 @@ impl McpServer {
                     .map_err(internal_error)?;
                 config
                     .microsoft_accounts
-                    .retain(|account| account.username != params.username);
+                    .retain(|stored| canonical_uuid(&stored.uuid) != account.uuid);
+            }
+            StoredAccountKind::Authlib => {
+                let stored = config
+                    .authlib_accounts
+                    .iter()
+                    .find(|stored| format!("authlib:{}", canonical_uuid(&stored.id)) == account.id)
+                    .ok_or_else(|| not_found("third-party account was not found"))?;
+                let id = Uuid::parse_str(&stored.id).map_err(internal_error)?;
+                let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
+                let profile = AuthlibAccount::new(
+                    id,
+                    stored.username.clone(),
+                    uuid,
+                    stored.api_root.clone(),
+                    stored.server_name.clone(),
+                )
+                .map_err(internal_error)?;
+                self.context
+                    .authlib_accounts
+                    .remove_credentials(&profile)
+                    .await
+                    .map_err(internal_error)?;
+                config.authlib_accounts.retain(|stored| {
+                    format!("authlib:{}", canonical_uuid(&stored.id)) != account.id
+                });
             }
         }
-        if config.selected_account.as_deref() == Some(params.username.as_str())
-            && config.selected_account_kind == kind
-        {
+        if config.selected_account_id.as_deref() == Some(account.id.as_str()) {
             config.selected_account = None;
+            config.selected_account_id = None;
         }
         ensure_account_selection(&mut config);
         self.context
@@ -871,7 +895,7 @@ impl McpServer {
             .map_err(internal_error)?;
         structured(AccountDelete {
             deleted: true,
-            username: params.username,
+            username: account.username,
             kind: account_kind(kind),
         })
     }
@@ -1675,7 +1699,7 @@ impl McpServer {
     ) -> Result<CallToolResult, McpError> {
         self.require_write("instances_launch")?;
         let instance = self.instance(&params.instance_id).await?;
-        let account = self.launch_account(params.account.as_ref()).await?;
+        let resolved_account = self.launch_account(params.account.as_ref()).await?;
         let server = params
             .server
             .as_deref()
@@ -1688,11 +1712,12 @@ impl McpServer {
                 platform: self.context.platform.clone(),
                 source: VersionSource::Existing,
             },
-            account,
+            account: resolved_account.launch,
             java_executable: instance.java.clone(),
             max_memory_mb: instance.max_memory_mb,
             additional_jvm_arguments: params.additional_jvm_arguments.unwrap_or_default(),
             additional_game_arguments: params.additional_game_arguments.unwrap_or_default(),
+            authlib: resolved_account.authlib,
             minecraft_version: instance.minecraft_version.clone(),
             server,
             resolution: instance.window_width.zip(instance.window_height),
@@ -2125,27 +2150,24 @@ impl McpServer {
     async fn launch_account(
         &self,
         selector: Option<&AccountSelectorParams>,
-    ) -> Result<LaunchAccount, McpError> {
+    ) -> Result<ResolvedMcpAccount, McpError> {
         let config = self.context.config_store.load().map_err(internal_error)?;
-        let (selected, kind) = match selector {
-            Some(selector) => (
-                selector.username.as_str(),
-                parse_account_kind(&selector.kind)?,
-            ),
-            None => (
+        let account = match selector {
+            Some(selector) => account_summary_for_selector(&config, selector)?,
+            None => account_summary_by_id(
+                &config,
                 config
-                    .selected_account
+                    .selected_account_id
                     .as_deref()
                     .ok_or_else(|| invalid_input("no account is selected"))?,
-                config.selected_account_kind,
-            ),
+            )?,
         };
-        match kind {
-            StoredAccountKind::Offline => {
+        match account.kind {
+            AccountKind::Offline => {
                 let stored = config
                     .accounts
                     .iter()
-                    .find(|account| account.username == selected)
+                    .find(|stored| canonical_uuid(&stored.uuid) == account.uuid)
                     .ok_or_else(|| {
                         invalid_input("the selected offline account no longer exists")
                     })?;
@@ -2155,13 +2177,16 @@ impl McpServer {
                     }
                     Err(_) => OfflineAccount::new(&stored.username).map_err(internal_error)?,
                 };
-                Ok(LaunchAccount::from_offline(&account))
+                Ok(ResolvedMcpAccount {
+                    launch: LaunchAccount::from_offline(&account),
+                    authlib: None,
+                })
             }
-            StoredAccountKind::Microsoft => {
+            AccountKind::Microsoft => {
                 let stored = config
                     .microsoft_accounts
                     .iter()
-                    .find(|account| account.username == selected)
+                    .find(|stored| canonical_uuid(&stored.uuid) == account.uuid)
                     .ok_or_else(|| {
                         invalid_input("the selected Microsoft account no longer exists")
                     })?;
@@ -2174,7 +2199,50 @@ impl McpServer {
                     .resolve_launch_account(&profile, &tokio_util::sync::CancellationToken::new())
                     .await
                     .map_err(internal_error)?;
-                Ok(resolved.launch)
+                Ok(ResolvedMcpAccount {
+                    launch: resolved.launch,
+                    authlib: None,
+                })
+            }
+            AccountKind::Authlib => {
+                let stored = config
+                    .authlib_accounts
+                    .iter()
+                    .find(|stored| format!("authlib:{}", canonical_uuid(&stored.id)) == account.id)
+                    .ok_or_else(|| {
+                        invalid_input("the selected third-party account no longer exists")
+                    })?;
+                let id = Uuid::parse_str(&stored.id).map_err(internal_error)?;
+                let uuid = Uuid::parse_str(&stored.uuid).map_err(internal_error)?;
+                let profile = AuthlibAccount::new(
+                    id,
+                    stored.username.clone(),
+                    uuid,
+                    stored.api_root.clone(),
+                    stored.server_name.clone(),
+                )
+                .map_err(internal_error)?;
+                let cancellation = tokio_util::sync::CancellationToken::new();
+                let resolved = self
+                    .context
+                    .authlib_accounts
+                    .resolve_launch_account(&profile, &cancellation)
+                    .await
+                    .map_err(internal_error)?;
+                let artifact = self
+                    .context
+                    .authlib_injector
+                    .ensure(&cancellation)
+                    .await
+                    .map_err(internal_error)?;
+                Ok(ResolvedMcpAccount {
+                    launch: resolved.launch,
+                    authlib: Some(AuthlibLaunchConfig {
+                        jar_path: artifact.path,
+                        api_root: resolved.account.api_root().to_owned(),
+                        prefetched_metadata: resolved.prefetched_metadata,
+                    }),
+                })
             }
         }
     }
@@ -2447,6 +2515,7 @@ fn account_kind(kind: StoredAccountKind) -> AccountKind {
     match kind {
         StoredAccountKind::Offline => AccountKind::Offline,
         StoredAccountKind::Microsoft => AccountKind::Microsoft,
+        StoredAccountKind::Authlib => AccountKind::Authlib,
     }
 }
 
@@ -2454,77 +2523,140 @@ fn parse_account_kind(value: &str) -> Result<StoredAccountKind, McpError> {
     match value {
         "offline" => Ok(StoredAccountKind::Offline),
         "microsoft" => Ok(StoredAccountKind::Microsoft),
+        "authlib" | "yggdrasil" => Ok(StoredAccountKind::Authlib),
         _ => Err(invalid_input(format!(
-            "unsupported account kind `{value}`; expected offline or microsoft"
+            "unsupported account kind `{value}`; expected offline, microsoft, or authlib"
         ))),
     }
 }
 
+fn stored_account_kind(kind: AccountKind) -> StoredAccountKind {
+    match kind {
+        AccountKind::Offline => StoredAccountKind::Offline,
+        AccountKind::Microsoft => StoredAccountKind::Microsoft,
+        AccountKind::Authlib => StoredAccountKind::Authlib,
+    }
+}
+
 fn account_summaries(config: &LauncherConfig) -> Vec<AccountSummary> {
+    let selected = |id: String, kind: AccountKind, username: &str| {
+        config.selected_account_id.as_deref() == Some(id.as_str())
+            || (config.selected_account_id.is_none()
+                && config.selected_account_kind == stored_account_kind(kind)
+                && config.selected_account.as_deref() == Some(username))
+    };
     config
         .accounts
         .iter()
-        .map(|account| AccountSummary {
-            username: account.username.clone(),
-            uuid: account.uuid.clone(),
-            kind: AccountKind::Offline,
-            skin_url: None,
-            selected: config.selected_account_kind == StoredAccountKind::Offline
-                && config.selected_account.as_deref() == Some(account.username.as_str()),
+        .map(|account| {
+            let id = format!("offline:{}", canonical_uuid(&account.uuid));
+            AccountSummary {
+                id: id.clone(),
+                username: account.username.clone(),
+                uuid: account.uuid.clone(),
+                kind: AccountKind::Offline,
+                skin_url: None,
+                server_name: None,
+                server_url: None,
+                selected: selected(id, AccountKind::Offline, &account.username),
+            }
         })
-        .chain(
-            config
-                .microsoft_accounts
-                .iter()
-                .map(|account| AccountSummary {
-                    username: account.username.clone(),
-                    uuid: account.uuid.clone(),
-                    kind: AccountKind::Microsoft,
-                    skin_url: account.skin_url.clone(),
-                    selected: config.selected_account_kind == StoredAccountKind::Microsoft
-                        && config.selected_account.as_deref() == Some(account.username.as_str()),
-                }),
-        )
+        .chain(config.microsoft_accounts.iter().map(|account| {
+            let id = format!("microsoft:{}", canonical_uuid(&account.uuid));
+            AccountSummary {
+                id: id.clone(),
+                username: account.username.clone(),
+                uuid: account.uuid.clone(),
+                kind: AccountKind::Microsoft,
+                skin_url: account.skin_url.clone(),
+                server_name: None,
+                server_url: None,
+                selected: selected(id, AccountKind::Microsoft, &account.username),
+            }
+        }))
+        .chain(config.authlib_accounts.iter().map(|account| {
+            let id = format!("authlib:{}", canonical_uuid(&account.id));
+            AccountSummary {
+                id: id.clone(),
+                username: account.username.clone(),
+                uuid: account.uuid.clone(),
+                kind: AccountKind::Authlib,
+                skin_url: None,
+                server_name: account.server_name.clone(),
+                server_url: Some(account.api_root.clone()),
+                selected: selected(id, AccountKind::Authlib, &account.username),
+            }
+        }))
         .collect()
 }
 
-fn account_summary(
-    config: &LauncherConfig,
-    username: &str,
-    kind: StoredAccountKind,
-) -> Option<AccountSummary> {
+fn canonical_uuid(value: &str) -> String {
+    Uuid::parse_str(value)
+        .map(|uuid| uuid.to_string())
+        .unwrap_or_else(|_| value.to_owned())
+}
+
+fn account_summary_by_id(config: &LauncherConfig, id: &str) -> Result<AccountSummary, McpError> {
     account_summaries(config)
         .into_iter()
-        .find(|account| account.username == username && account.kind == account_kind(kind))
+        .find(|account| account.id == id)
+        .ok_or_else(|| not_found(format!("account `{id}` was not found")))
+}
+
+fn account_summary_for_selector(
+    config: &LauncherConfig,
+    selector: &AccountSelectorParams,
+) -> Result<AccountSummary, McpError> {
+    let kind = parse_account_kind(&selector.kind)?;
+    let summaries = account_summaries(config);
+    if let Some(id) = selector.account_id.as_deref() {
+        let account = summaries
+            .into_iter()
+            .find(|account| account.id == id)
+            .ok_or_else(|| not_found(format!("account `{id}` was not found")))?;
+        if account.kind != account_kind(kind) {
+            return Err(invalid_input(format!(
+                "account `{id}` is not a {} account",
+                selector.kind
+            )));
+        }
+        return Ok(account);
+    }
+    let matches = summaries
+        .into_iter()
+        .filter(|account| {
+            account.username == selector.username && account.kind == account_kind(kind)
+        })
+        .collect::<Vec<_>>();
+    match matches.len() {
+        0 => Err(not_found(format!(
+            "account `{}` was not found",
+            selector.username
+        ))),
+        1 => Ok(matches.into_iter().next().expect("one match")),
+        _ => Err(invalid_input(
+            "multiple accounts share this username; pass account_id",
+        )),
+    }
 }
 
 fn ensure_account_selection(config: &mut LauncherConfig) {
-    let selected_exists = match config.selected_account_kind {
-        StoredAccountKind::Offline => config.selected_account.as_ref().is_some_and(|selected| {
-            config
-                .accounts
-                .iter()
-                .any(|account| &account.username == selected)
-        }),
-        StoredAccountKind::Microsoft => config.selected_account.as_ref().is_some_and(|selected| {
-            config
-                .microsoft_accounts
-                .iter()
-                .any(|account| &account.username == selected)
-        }),
-    };
-    if selected_exists {
+    if let Some(id) = config.selected_account_id.as_deref()
+        && let Ok(account) = account_summary_by_id(config, id)
+    {
+        config.selected_account = Some(account.username);
+        config.selected_account_kind = stored_account_kind(account.kind);
         return;
     }
-    if let Some(account) = config.accounts.first() {
-        config.selected_account = Some(account.username.clone());
-        config.selected_account_kind = StoredAccountKind::Offline;
-    } else if let Some(account) = config.microsoft_accounts.first() {
-        config.selected_account = Some(account.username.clone());
-        config.selected_account_kind = StoredAccountKind::Microsoft;
+
+    if let Some(account) = account_summaries(config).into_iter().next() {
+        config.selected_account = Some(account.username);
+        config.selected_account_kind = stored_account_kind(account.kind);
+        config.selected_account_id = Some(account.id);
     } else {
         config.selected_account = None;
         config.selected_account_kind = StoredAccountKind::Offline;
+        config.selected_account_id = None;
     }
 }
 

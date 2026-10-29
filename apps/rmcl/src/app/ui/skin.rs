@@ -118,6 +118,7 @@ impl LauncherApp {
 
         let account = self.selected_microsoft_account().cloned();
         let has_account = account.is_some();
+        let selected_is_authlib = matches!(self.selected_account(), Some(Account::Authlib(_)));
         let refresh_view = cx.entity().downgrade();
         let refresh_button = Button::new("skin-refresh")
             .label("刷新")
@@ -147,8 +148,16 @@ impl LauncherApp {
                 let open_accounts = cx.entity().downgrade();
                 this.child(empty_state(
                     IconName::Shirt,
-                    "皮肤需要正版账户",
-                    "离线账户没有官方皮肤。登录 Microsoft 账户后即可查看和更换。",
+                    if selected_is_authlib {
+                        "皮肤由认证服务器管理"
+                    } else {
+                        "皮肤需要正版账户"
+                    },
+                    if selected_is_authlib {
+                        "外置登录账户的皮肤会在游戏内由 authlib-injector 自动加载；RMCL 暂不提供上传或更换。"
+                    } else {
+                        "离线账户没有官方皮肤。登录 Microsoft 账户后即可查看和更换。"
+                    },
                     Button::new("skin-open-accounts")
                         .label("管理账户…")
                         .primary()

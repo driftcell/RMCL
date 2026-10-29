@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use rmcl_auth::OfflineAccount;
+use rmcl_auth::{AuthlibAccount, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_install::{InstallPlan, PlannedFile, PlannedFileKind};
 use rmcl_instance::{IsolationMode, MinecraftLayout, VersionId};
 use rmcl_java::{JavaRuntime, JavaRuntimeSource};
-use rmcl_launch::{LaunchAccount, LaunchError, LaunchOptions, LaunchPlan};
+use rmcl_launch::{AuthlibLaunchConfig, LaunchAccount, LaunchError, LaunchOptions, LaunchPlan};
 use rmcl_minecraft::GameVersion;
 use url::Url;
 use uuid::Uuid;
@@ -464,6 +464,85 @@ fn microsoft_account_factory_preserves_token_and_profile() {
     assert_eq!(account.user_type, "msa");
     assert_eq!(account.user_properties, "{}");
     assert!(!format!("{account:?}").contains("minecraft-access"));
+}
+
+#[test]
+fn authlib_account_factory_preserves_token_and_properties() {
+    let account = AuthlibAccount::new(
+        Uuid::new_v4(),
+        "Steve",
+        Uuid::parse_str("5627dd98e6be3c21b8a8e92344183641").unwrap(),
+        "https://example.com/api/yggdrasil/",
+        Some("Example".to_owned()),
+    )
+    .unwrap();
+    let launch = LaunchAccount::from_authlib(
+        &account,
+        "third-party-token",
+        r#"{"preferredLanguage":["zh_CN"]}"#,
+    );
+
+    assert_eq!(launch.username, "Steve");
+    assert_eq!(launch.uuid, account.uuid());
+    assert_eq!(launch.access_token, "third-party-token");
+    assert_eq!(launch.user_type, "msa");
+    assert_eq!(launch.user_properties, r#"{"preferredLanguage":["zh_CN"]}"#);
+    assert!(!format!("{launch:?}").contains("third-party-token"));
+}
+
+#[test]
+fn authlib_injector_arguments_are_added_before_the_main_class() {
+    let temporary = tempfile::tempdir().unwrap();
+    let jar = temporary.path().join("authlib-injector.jar");
+    std::fs::write(&jar, b"jar").unwrap();
+    let mut options = options();
+    options.authlib = Some(AuthlibLaunchConfig {
+        jar_path: jar.clone(),
+        api_root: "https://example.com/api/yggdrasil/".to_owned(),
+        prefetched_metadata: Some("eyJtZXRhIjp7fX0=".to_owned()),
+    });
+
+    let plan = LaunchPlan::from_options(&modern_version(), options).unwrap();
+    let javaagent = format!(
+        "-javaagent:{}={}",
+        std::path::absolute(&jar).unwrap().display(),
+        "https://example.com/api/yggdrasil/"
+    );
+    let injector_index = plan
+        .jvm_arguments
+        .iter()
+        .position(|argument| argument == &javaagent)
+        .expect("javaagent argument");
+    assert!(
+        plan.jvm_arguments
+            .iter()
+            .any(|argument| argument == "-Dauthlibinjector.side=client")
+    );
+    assert!(
+        plan.jvm_arguments.iter().any(|argument| {
+            argument == "-Dauthlibinjector.yggdrasil.prefetched=eyJtZXRhIjp7fX0="
+        })
+    );
+    assert!(injector_index < plan.jvm_arguments.len());
+    assert_eq!(
+        plan.jvm_arguments[injector_index + 1],
+        "-Dauthlibinjector.side=client"
+    );
+}
+
+#[test]
+fn missing_authlib_injector_jar_is_rejected() {
+    let mut options = options();
+    options.authlib = Some(AuthlibLaunchConfig {
+        jar_path: PathBuf::from("does-not-exist/authlib-injector.jar"),
+        api_root: "https://example.com/api/yggdrasil/".to_owned(),
+        prefetched_metadata: None,
+    });
+
+    assert!(matches!(
+        LaunchPlan::from_options(&modern_version(), options),
+        Err(LaunchError::AuthlibInjectorMissing { .. })
+    ));
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 状态：当前核心行为已实现；真实游戏验证范围见末节
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 边界与输入
 
@@ -46,9 +46,20 @@ manifest 存在但 `arguments.jvm` 为空列表时保持空列表，不隐式恢
 
 - 离线账户通过 `from_offline` 保留玩家名和 profile UUID，并在每次调用时生成新的随机 UUID v4 紧凑 token。
 - 正版账户通过 `from_microsoft` 使用已解析的 Minecraft access token、profile UUID 和玩家名。
-- 正版和离线账户的 `user_type` 当前均为 `msa`，`user_properties` 为 `{}`。
+- 外置登录账户通过 `from_authlib` 使用 Yggdrasil access token、profile UUID、玩家名和 user properties。
+- 离线、正版和外置账户的 `user_type` 当前均为 `msa`；离线/正版 `user_properties` 为 `{}`，外置账户使用登录响应中的用户属性。
 
-Microsoft refresh token 和 Minecraft access token 的生命周期由 `rmcl-app` 管理，`rmcl-launch` 不读取配置或系统钥匙串。正版 token 刷新和失败语义见 [正版账号、令牌与皮肤](AUTHENTICATION.md)。
+Microsoft refresh token、Minecraft access token 和第三方 Yggdrasil 令牌的生命周期由 `rmcl-app` 管理，`rmcl-launch` 不读取配置或系统钥匙串。正版 token 刷新和失败语义见 [正版账号、令牌与皮肤](AUTHENTICATION.md)，外置登录见 [authlib-injector 外置登录](../compatibility/AUTHLIB_INJECTOR.md)。
+
+外置登录启动时，`LaunchOptions.authlib` 携带 jar 路径、规范化 API Root 和 Base64 元数据；启动计划在主类之前加入：
+
+```text
+-javaagent:<jar>=<api_root>
+-Dauthlibinjector.side=client
+-Dauthlibinjector.yggdrasil.prefetched=<Base64(原始元数据)>
+```
+
+jar 缺失或 API Root 为空时在 spawn 前返回结构化错误。`-Dauthlibinjector.yggdrasil.prefetched` 使用当前 authlib-injector 支持的键，不使用旧的 `org.to2mbn...` 键。
 
 - `command_line()` 是真实执行参数，包含秘密，不得用于诊断输出。
 - `diagnostic_command_line()` 将 token 替换为 `<redacted>`。

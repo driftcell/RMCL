@@ -2,7 +2,7 @@
 
 状态：服务器收藏、Java Edition Server List Ping、MOTD/人数/延迟、图标缓存、`_minecraft._tcp` SRV 解析、Quick Play/legacy 进服、精选服务器发现、直接进服、首页快速连接和 MCP 收藏/状态接口已实现；Bedrock、动态服务器目录和 `servers.dat` 导入导出尚未实现
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 边界
 
@@ -132,7 +132,7 @@ Sidebar“游戏”组新增“联机”页，页面内分为“收藏 / 发现�
 - 不持久化每个实例的默认服务器；“进入”只启动一次，不创建实例。
 - 不自动创建或安装精选服务器实例；需要特定加载器或 Mod 的服务器需用户自行准备实例。
 - 状态查询不认证，也不能证明白名单、Mod、版本、正版认证或代理允许加入。
-- 不支持 authlib-injector 第三方认证服务器。
+- 一键进服使用当前选中账户；外置登录账户会按 [authlib-injector 外置登录](../compatibility/AUTHLIB_INJECTOR.md) 注入 Java Agent，服务器本身仍必须正确配置对应认证服务。
 
 ## 验证
 

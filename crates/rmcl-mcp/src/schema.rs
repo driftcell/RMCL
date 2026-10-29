@@ -1008,14 +1008,18 @@ pub enum InstanceDeleteResult {
 pub enum AccountKind {
     Offline,
     Microsoft,
+    Authlib,
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
 pub struct AccountSummary {
+    pub id: String,
     pub username: String,
     pub uuid: String,
     pub kind: AccountKind,
     pub skin_url: Option<String>,
+    pub server_name: Option<String>,
+    pub server_url: Option<String>,
     pub selected: bool,
 }
 
@@ -1024,6 +1028,7 @@ pub struct AccountList {
     pub items: Vec<AccountSummary>,
     pub selected_account: Option<String>,
     pub selected_account_kind: AccountKind,
+    pub selected_account_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
