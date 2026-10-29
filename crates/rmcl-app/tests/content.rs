@@ -1327,6 +1327,113 @@ async fn real_modrinth_required_dependency_chain_installs() {
 }
 
 #[tokio::test]
+#[ignore = "downloads a resource pack and shader pack from the live Modrinth API"]
+async fn real_modrinth_resource_and_shader_packs_install_and_activate() {
+    let client = ModrinthClient::official().unwrap();
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write_fabric_mod(&instance.mods_dir().join("iris.jar"), "iris", "1.8.0");
+    let installer = ContentInstaller::official(DownloadConfig::default()).unwrap();
+
+    let resource_version = client
+        .version("aQjwvDfY", &CancellationToken::new())
+        .await
+        .unwrap();
+    let resource_kind = ContentKind::ResourcePack;
+    let resource_file = resource_version
+        .installable_file(resource_kind)
+        .unwrap()
+        .clone();
+    installer
+        .install(
+            ContentInstallRequest {
+                instance: instance.clone(),
+                kind: resource_kind,
+                file: resource_file.clone(),
+                display_name: "Fresh Animations".to_owned(),
+                conflict: ConflictPolicy::Rename,
+                replace: None,
+            },
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let shader_version = client
+        .version("Bqen1mJX", &CancellationToken::new())
+        .await
+        .unwrap();
+    let shader_kind = ContentKind::ShaderPack;
+    let shader_file = shader_version
+        .installable_file(shader_kind)
+        .unwrap()
+        .clone();
+    let shader = installer
+        .install(
+            ContentInstallRequest {
+                instance: instance.clone(),
+                kind: shader_kind,
+                file: shader_file,
+                display_name: "Complementary Reimagined".to_owned(),
+                conflict: ConflictPolicy::Rename,
+                replace: None,
+            },
+            CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let library = scan_instance_content(instance.clone()).await.unwrap();
+    let inspection = inspect_content(&instance, &library);
+    assert!(
+        inspection
+            .resource_packs
+            .values()
+            .any(|pack| !pack.metadata.description.is_empty())
+    );
+    assert!(
+        inspection
+            .shader_packs
+            .values()
+            .any(|pack| pack.has_shaders_directory)
+    );
+    assert_eq!(inspection.shader_loader, Some(ShaderLoader::Iris));
+
+    set_instance_content_enabled(
+        instance.clone(),
+        resource_kind,
+        RepositoryPath::new("FreshAnimations_v1.11.1_1.20+.zip").unwrap(),
+        true,
+    )
+    .await
+    .unwrap();
+    assert!(
+        std::fs::read_to_string(instance.options_path())
+            .unwrap()
+            .contains("FreshAnimations_v1.11.1_1.20+.zip")
+    );
+
+    let shader_name = shader.content.relative_path.as_str().to_owned();
+    set_instance_shader_pack(
+        instance.clone(),
+        ShaderLoader::Iris,
+        Some(shader_name.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_instance_shader_pack(instance, ShaderLoader::Iris)
+            .await
+            .unwrap()
+            .unwrap()
+            .active,
+        Some(shader_name)
+    );
+}
+
+#[tokio::test]
 async fn content_task_exposes_subject_and_completes() {
     let bytes = b"remote mod".to_vec();
     let (base, server) = mod_server(bytes.clone()).await;
