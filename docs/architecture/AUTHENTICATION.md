@@ -155,7 +155,7 @@ RMCL 支持第三方 Yggdrasil 认证服务器，并通过 authlib-injector 在�
 - `apps/rmcl`：内置认证服务器选择、自定义 URL、用户名/密码登录、多角色选择、账户切换/删除。
 - `rmcl-mcp`：已有外置账户的列表、选择、启动注入和删除；不通过 MCP 接收密码。
 
-系统凭据存储键为 `authlib:<RMCL 账户 ID>`，值包含 access token、client token 和 user properties。密码只用于一次登录请求，不写入任何持久化位置。启动前 validate 失败会 refresh；refresh 失败要求重新登录，不静默回退离线身份。
+系统凭据存储键为 `authlib:<RMCL 账户 ID>`，值包含 access token、client token 和 user properties。密码只用于一次登录请求，不写入任何持久化位置。启动前 validate 失败会 refresh；refresh 失败要求重新登录，不静默回退离线身份。提交登录后对话框保持打开并显示进行中状态，成功后才关闭；失败和取消信息在对话框内显示，不通过关闭弹窗隐式丢弃任务。
 
 内置服务器包含 LittleSkin、红石皮肤站、HelloSkin、MUA 用户中心和 Ely.by；用户仍可填写自定义 API Root。显式 HTTP 地址允许使用，但 HTTPS 不会自动降级到 HTTP。
 

@@ -187,7 +187,7 @@ impl LauncherApp {
                         |this| {
                             this.child(warning_banner(
                                 "当前实例没有光影加载器",
-                                "光影包可以下载到 shaderpacks 目录，但需要 Iris、Oculus 或 OptiFine 才会在游戏中生效。",
+                                "下载后需要 Iris、Oculus 或 OptiFine 才能生效。",
                                 cx,
                             ))
                         },
