@@ -2388,10 +2388,10 @@ impl LauncherApp {
         if page == Page::Agent {
             let scroller = self.agent.conversation.scroller.clone();
             let count = scroller.read(cx).item_count();
-            if count > 0 {
+            if count > 1 {
                 let following = scroller.read(cx).is_following_tail();
                 scroller.update(cx, |scroller, cx| {
-                    let _ = scroller.remeasure_items(count - 1..count, cx);
+                    let _ = scroller.remeasure_items(count - 2..count, cx);
                     if following {
                         scroller.scroll_to_end(cx);
                     }
