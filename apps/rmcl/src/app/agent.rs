@@ -296,6 +296,7 @@ impl super::LauncherApp {
             account_type: match self.selected_account().map(|account| account.kind()) {
                 Some(rmcl_auth::AccountKind::Microsoft) => "正版".to_owned(),
                 Some(rmcl_auth::AccountKind::Offline) => "离线".to_owned(),
+                Some(rmcl_auth::AccountKind::Authlib) => "外置登录".to_owned(),
                 None => "未登录".to_owned(),
             },
             rmcl_version: env!("CARGO_PKG_VERSION").to_owned(),

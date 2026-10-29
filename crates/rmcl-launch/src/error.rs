@@ -12,6 +12,12 @@ pub enum LaunchError {
     InvalidArguments(String),
     #[error("invalid classpath: {0}")]
     InvalidClasspath(String),
+    #[error("authlib-injector jar is missing: `{path}`")]
+    AuthlibInjectorMissing { path: String },
+    #[error("authlib-injector jar path must not contain `=`: `{path}`")]
+    AuthlibInjectorPathContainsEquals { path: String },
+    #[error("authlib-injector API root cannot be blank")]
+    AuthlibApiRootBlank,
     #[error("launch path is not valid UTF-8: `{0}`")]
     NonUtf8Path(String),
     #[error("failed to resolve launch path `{path}` as an absolute path: {source}")]

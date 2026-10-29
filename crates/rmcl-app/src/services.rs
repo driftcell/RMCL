@@ -10,10 +10,11 @@ use rmcl_store::{
 use tokio::runtime::{Builder, Runtime};
 
 use crate::{
-    AppError, ContentInstaller, ForgeInstaller, InstanceCreator, JavaService, JavaServiceConfig,
-    LoaderCatalog, MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, ModMetadataCache,
-    ModrinthClient, RemoteIconCache, ServerIconCache, ServerStatusClient, SkinCache, SkinLibrary,
-    SkinUrlClient, TaskManager, UpdateClient, VanillaInstaller, VersionCatalog,
+    AppError, AuthlibAccountService, AuthlibInjectorService, ContentInstaller, ForgeInstaller,
+    InstanceCreator, JavaService, JavaServiceConfig, LoaderCatalog, MICROSOFT_KEYRING_SERVICE,
+    MicrosoftAccountService, ModMetadataCache, ModrinthClient, RemoteIconCache, ServerIconCache,
+    ServerStatusClient, SkinCache, SkinLibrary, SkinUrlClient, TaskManager, UpdateClient,
+    VanillaInstaller, VersionCatalog,
 };
 
 /// Shared headless services used by the desktop UI and external protocols.
@@ -29,6 +30,8 @@ pub struct AppContext {
     pub minecraft_root: PathBuf,
     pub java_store: PathBuf,
     pub microsoft_accounts: MicrosoftAccountService,
+    pub authlib_accounts: AuthlibAccountService,
+    pub authlib_injector: AuthlibInjectorService,
     pub skins: SkinCache,
     pub skin_library: SkinLibrary,
     pub skin_urls: SkinUrlClient,
@@ -91,12 +94,23 @@ impl AppContext {
             256,
         );
         let secrets = Arc::new(KeyringSecretStore::new(MICROSOFT_KEYRING_SERVICE)?);
-        let microsoft_accounts = MicrosoftAccountService::new(secrets)?;
+        let microsoft_accounts = MicrosoftAccountService::new(secrets.clone())?;
         let config_dir = config_store
             .path()
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
+        let authlib_accounts = AuthlibAccountService::new(
+            secrets,
+            config_dir
+                .join("cache")
+                .join("authlib-injector")
+                .join("metadata"),
+        )?;
+        let authlib_injector = AuthlibInjectorService::new(
+            mirror.clone(),
+            config_dir.join("cache").join("authlib-injector"),
+        )?;
         let skins = SkinCache::new(config_dir.join("cache").join("skins"));
         let skin_library = SkinLibrary::new(config_dir.join("skins").join("library"));
         let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
@@ -119,6 +133,8 @@ impl AppContext {
             minecraft_root: config.minecraft_root.clone(),
             java_store: config.java_store.clone(),
             microsoft_accounts,
+            authlib_accounts,
+            authlib_injector,
             skins,
             skin_library,
             skin_urls,

@@ -132,6 +132,10 @@ pub enum AppError {
     Launch(#[from] rmcl_launch::LaunchError),
     #[error("Microsoft authentication is unavailable: {0}")]
     MicrosoftAuth(#[from] rmcl_auth::MicrosoftAuthError),
+    #[error("third-party authentication is unavailable: {0}")]
+    AuthlibAccount(#[from] crate::AuthlibAccountServiceError),
+    #[error("authlib-injector is unavailable: {0}")]
+    AuthlibInjector(#[from] crate::AuthlibInjectorError),
     #[error(transparent)]
     Store(#[from] rmcl_store::StoreError),
     #[error("system credential storage is unavailable: {0}")]

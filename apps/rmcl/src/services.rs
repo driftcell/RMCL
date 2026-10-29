@@ -7,11 +7,11 @@ use std::{
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use rmcl_agent::{AGENT_KEYRING_SERVICE, AgentKeyStore, AgentService};
 use rmcl_app::AppContext;
-use rmcl_auth::{MicrosoftAccount, OfflineAccount};
+use rmcl_auth::{AuthlibAccount, MicrosoftAccount, OfflineAccount};
 use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
-    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
-    StoredOfflineAccount, default_java_store, default_minecraft_root,
+    CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredAuthlibAccount,
+    StoredMicrosoftAccount, StoredOfflineAccount, default_java_store, default_minecraft_root,
 };
 use uuid::Uuid;
 
@@ -131,7 +131,11 @@ impl Bootstrap {
         };
         config.schema_version = CONFIG_SCHEMA_VERSION;
 
-        if !config_existed && config.accounts.is_empty() && config.microsoft_accounts.is_empty() {
+        if !config_existed
+            && config.accounts.is_empty()
+            && config.microsoft_accounts.is_empty()
+            && config.authlib_accounts.is_empty()
+        {
             select_offline_account(
                 &mut config,
                 OfflineAccount::new("Steve").map_err(|e| e.to_string())?,
@@ -204,6 +208,29 @@ pub fn load_microsoft_account(stored: &StoredMicrosoftAccount) -> Option<Microso
     })
 }
 
+pub fn stored_authlib_account(account: &AuthlibAccount) -> StoredAuthlibAccount {
+    StoredAuthlibAccount {
+        id: account.id().to_string(),
+        username: account.username().to_owned(),
+        uuid: account.uuid().to_string(),
+        api_root: account.api_root().to_owned(),
+        server_name: account.server_name().map(str::to_owned),
+    }
+}
+
+pub fn load_authlib_account(stored: &StoredAuthlibAccount) -> Option<AuthlibAccount> {
+    let id = Uuid::parse_str(&stored.id).ok()?;
+    let uuid = Uuid::parse_str(&stored.uuid).ok()?;
+    AuthlibAccount::new(
+        id,
+        stored.username.clone(),
+        uuid,
+        stored.api_root.clone(),
+        stored.server_name.clone(),
+    )
+    .ok()
+}
+
 fn select_offline_account(config: &mut LauncherConfig, account: OfflineAccount) {
     config
         .accounts
@@ -211,36 +238,126 @@ fn select_offline_account(config: &mut LauncherConfig, account: OfflineAccount) 
     config.accounts.push(stored_account(&account));
     config.selected_account = Some(account.username().to_owned());
     config.selected_account_kind = StoredAccountKind::Offline;
+    config.selected_account_id = Some(format!("offline:{}", account.uuid()));
 }
 
 fn ensure_selected_account(config: &mut LauncherConfig) {
-    let exists = match config.selected_account_kind {
-        StoredAccountKind::Offline => config.selected_account.as_ref().is_some_and(|selected| {
-            config
-                .accounts
-                .iter()
-                .any(|account| account.username == *selected)
-        }),
-        StoredAccountKind::Microsoft => config.selected_account.as_ref().is_some_and(|selected| {
-            config
-                .microsoft_accounts
-                .iter()
-                .any(|account| account.username == *selected)
-        }),
-    };
-    if exists {
+    if let Some(id) = config.selected_account_id.as_deref()
+        && let Some((username, kind, canonical_id)) = stored_selection_by_id(config, id)
+    {
+        config.selected_account = Some(username);
+        config.selected_account_kind = kind;
+        config.selected_account_id = Some(canonical_id);
         return;
     }
+
+    if let Some(selected) = config.selected_account.as_deref() {
+        let stored = match config.selected_account_kind {
+            StoredAccountKind::Offline => config
+                .accounts
+                .iter()
+                .find(|account| account.username == selected)
+                .map(|account| {
+                    (
+                        account.username.clone(),
+                        StoredAccountKind::Offline,
+                        format!("offline:{}", account.uuid),
+                    )
+                }),
+            StoredAccountKind::Microsoft => config
+                .microsoft_accounts
+                .iter()
+                .find(|account| account.username == selected)
+                .map(|account| {
+                    (
+                        account.username.clone(),
+                        StoredAccountKind::Microsoft,
+                        format!("microsoft:{}", account.uuid),
+                    )
+                }),
+            StoredAccountKind::Authlib => config
+                .authlib_accounts
+                .iter()
+                .find(|account| account.username == selected)
+                .map(|account| {
+                    (
+                        account.username.clone(),
+                        StoredAccountKind::Authlib,
+                        format!("authlib:{}", account.id),
+                    )
+                }),
+        };
+        if let Some((username, kind, id)) = stored {
+            config.selected_account = Some(username);
+            config.selected_account_kind = kind;
+            config.selected_account_id = Some(id);
+            return;
+        }
+    }
+
     if let Some(account) = config.accounts.first() {
         config.selected_account = Some(account.username.clone());
         config.selected_account_kind = StoredAccountKind::Offline;
+        config.selected_account_id = Some(format!("offline:{}", account.uuid));
     } else if let Some(account) = config.microsoft_accounts.first() {
         config.selected_account = Some(account.username.clone());
         config.selected_account_kind = StoredAccountKind::Microsoft;
+        config.selected_account_id = Some(format!("microsoft:{}", account.uuid));
+    } else if let Some(account) = config.authlib_accounts.first() {
+        config.selected_account = Some(account.username.clone());
+        config.selected_account_kind = StoredAccountKind::Authlib;
+        config.selected_account_id = Some(format!("authlib:{}", account.id));
     } else {
         config.selected_account = None;
         config.selected_account_kind = StoredAccountKind::Offline;
+        config.selected_account_id = None;
     }
+}
+
+fn stored_selection_by_id(
+    config: &LauncherConfig,
+    id: &str,
+) -> Option<(String, StoredAccountKind, String)> {
+    if let Some(raw) = id.strip_prefix("offline:") {
+        let target = Uuid::parse_str(raw).ok()?;
+        return config.accounts.iter().find_map(|account| {
+            let uuid = Uuid::parse_str(&account.uuid).ok()?;
+            (uuid == target).then(|| {
+                (
+                    account.username.clone(),
+                    StoredAccountKind::Offline,
+                    format!("offline:{uuid}"),
+                )
+            })
+        });
+    }
+    if let Some(raw) = id.strip_prefix("microsoft:") {
+        let target = Uuid::parse_str(raw).ok()?;
+        return config.microsoft_accounts.iter().find_map(|account| {
+            let uuid = Uuid::parse_str(&account.uuid).ok()?;
+            (uuid == target).then(|| {
+                (
+                    account.username.clone(),
+                    StoredAccountKind::Microsoft,
+                    format!("microsoft:{uuid}"),
+                )
+            })
+        });
+    }
+    if let Some(raw) = id.strip_prefix("authlib:") {
+        let target = Uuid::parse_str(raw).ok()?;
+        return config.authlib_accounts.iter().find_map(|account| {
+            let account_id = Uuid::parse_str(&account.id).ok()?;
+            (account_id == target).then(|| {
+                (
+                    account.username.clone(),
+                    StoredAccountKind::Authlib,
+                    format!("authlib:{account_id}"),
+                )
+            })
+        });
+    }
+    None
 }
 
 fn should_save_on_start(config_existed: bool, has_overrides: bool, warning: Option<&str>) -> bool {
@@ -421,6 +538,41 @@ mod tests {
     }
 
     #[test]
+    fn authlib_accounts_round_trip_their_stable_id() {
+        let id = Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        let uuid = Uuid::parse_str("5627dd98-e6be-3c21-b8a8-e92344183641").unwrap();
+        let account = AuthlibAccount::new(
+            id,
+            "Steve",
+            uuid,
+            "https://example.com/api/yggdrasil/",
+            Some("Example".to_owned()),
+        )
+        .unwrap();
+        let stored = stored_authlib_account(&account);
+        let loaded = load_authlib_account(&stored).unwrap();
+
+        assert_eq!(loaded.id(), account.id());
+        assert_eq!(loaded.username(), account.username());
+        assert_eq!(loaded.uuid(), account.uuid());
+        assert_eq!(loaded.api_root(), account.api_root());
+        assert_eq!(loaded.server_name(), account.server_name());
+    }
+
+    #[test]
+    fn damaged_authlib_ids_disable_the_account() {
+        let stored = StoredAuthlibAccount {
+            id: "not-a-uuid".to_owned(),
+            username: "Steve".to_owned(),
+            uuid: "5627dd98-e6be-3c21-b8a8-e92344183641".to_owned(),
+            api_root: "https://example.com/api/yggdrasil/".to_owned(),
+            server_name: None,
+        };
+
+        assert!(load_authlib_account(&stored).is_none());
+    }
+
+    #[test]
     fn damaged_microsoft_uuid_disables_the_account() {
         let stored = StoredMicrosoftAccount {
             username: "HowDoesAuthWork".to_owned(),
@@ -429,6 +581,27 @@ mod tests {
         };
 
         assert!(load_microsoft_account(&stored).is_none());
+    }
+
+    #[test]
+    fn missing_selection_falls_back_to_an_authlib_account() {
+        let mut config = LauncherConfig::default();
+        config.authlib_accounts.push(StoredAuthlibAccount {
+            id: "11111111-1111-4111-8111-111111111111".to_owned(),
+            username: "Steve".to_owned(),
+            uuid: "5627dd98-e6be-3c21-b8a8-e92344183641".to_owned(),
+            api_root: "https://example.com/api/yggdrasil/".to_owned(),
+            server_name: Some("Example".to_owned()),
+        });
+
+        ensure_selected_account(&mut config);
+
+        assert_eq!(config.selected_account.as_deref(), Some("Steve"));
+        assert_eq!(config.selected_account_kind, StoredAccountKind::Authlib);
+        assert_eq!(
+            config.selected_account_id.as_deref(),
+            Some("authlib:11111111-1111-4111-8111-111111111111")
+        );
     }
 
     #[test]
@@ -444,5 +617,9 @@ mod tests {
 
         assert_eq!(config.selected_account.as_deref(), Some("HowDoesAuthWork"));
         assert_eq!(config.selected_account_kind, StoredAccountKind::Microsoft);
+        assert_eq!(
+            config.selected_account_id.as_deref(),
+            Some("microsoft:986dec87-b7ec-47ff-89ff-033fdb95c4b5")
+        );
     }
 }

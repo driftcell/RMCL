@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 8;
+pub const CONFIG_SCHEMA_VERSION: u32 = 9;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,8 +21,12 @@ pub struct LauncherConfig {
     pub selected_version: Option<String>,
     pub selected_account: Option<String>,
     pub selected_account_kind: StoredAccountKind,
+    /// Stable account identity. Legacy fields above remain for display and
+    /// migration from schema 8 and earlier.
+    pub selected_account_id: Option<String>,
     pub accounts: Vec<StoredOfflineAccount>,
     pub microsoft_accounts: Vec<StoredMicrosoftAccount>,
+    pub authlib_accounts: Vec<StoredAuthlibAccount>,
     pub servers: Vec<StoredServer>,
     pub auto_install_java: bool,
     pub auto_check_updates: bool,
@@ -44,8 +48,10 @@ impl Default for LauncherConfig {
             selected_version: None,
             selected_account: None,
             selected_account_kind: StoredAccountKind::Offline,
+            selected_account_id: None,
             accounts: Vec::new(),
             microsoft_accounts: Vec::new(),
+            authlib_accounts: Vec::new(),
             servers: Vec::new(),
             auto_install_java: true,
             auto_check_updates: true,
@@ -75,6 +81,20 @@ pub struct StoredMicrosoftAccount {
     pub skin_url: Option<String>,
 }
 
+/// A third-party Yggdrasil account.
+///
+/// `id` is launcher-generated and stable across player-name changes. Tokens
+/// live in the operating system secret store, never in this file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredAuthlibAccount {
+    pub id: String,
+    pub username: String,
+    pub uuid: String,
+    pub api_root: String,
+    #[serde(default)]
+    pub server_name: Option<String>,
+}
+
 /// A launcher-owned server bookmark. The address remains a string so one bad
 /// entry cannot make the whole configuration unreadable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +110,7 @@ pub enum StoredAccountKind {
     #[default]
     Offline,
     Microsoft,
+    Authlib,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -137,6 +158,33 @@ pub enum LauncherVisibility {
 pub struct AppearanceConfig {
     pub theme: ThemePreference,
     pub accent: AccentColor,
+}
+
+fn canonical_uuid(value: &str) -> String {
+    uuid::Uuid::parse_str(value)
+        .map(|uuid| uuid.to_string())
+        .unwrap_or_else(|_| value.to_owned())
+}
+
+fn derive_selected_account_id(config: &LauncherConfig) -> Option<String> {
+    let selected = config.selected_account.as_deref()?;
+    match config.selected_account_kind {
+        StoredAccountKind::Offline => config
+            .accounts
+            .iter()
+            .find(|account| account.username == selected)
+            .map(|account| format!("offline:{}", canonical_uuid(&account.uuid))),
+        StoredAccountKind::Microsoft => config
+            .microsoft_accounts
+            .iter()
+            .find(|account| account.username == selected)
+            .map(|account| format!("microsoft:{}", canonical_uuid(&account.uuid))),
+        StoredAccountKind::Authlib => config
+            .authlib_accounts
+            .iter()
+            .find(|account| account.username == selected)
+            .map(|account| format!("authlib:{}", canonical_uuid(&account.id))),
+    }
 }
 
 /// Reads and atomically writes one launcher configuration file.
@@ -196,10 +244,14 @@ impl ConfigStore {
         let mut config = config;
         // Schema 1 predates Microsoft account metadata, schema 3 adds server
         // bookmarks, schema 4 adds update checks, schema 5 adds the download
-        // source, and schema 6 adds disabled-by-default loopback MCP settings.
+        // source, schema 6 adds disabled-by-default loopback MCP settings, and
+        // schema 9 adds stable account IDs plus third-party Yggdrasil accounts.
         // Every new field has a safe default.
         if config.schema_version < CONFIG_SCHEMA_VERSION {
             config.schema_version = CONFIG_SCHEMA_VERSION;
+        }
+        if config.selected_account_id.is_none() {
+            config.selected_account_id = derive_selected_account_id(&config);
         }
         Ok(config)
     }
@@ -316,6 +368,16 @@ mod tests {
         }
     }
 
+    fn authlib_account(id: &str, username: &str, uuid: &str) -> StoredAuthlibAccount {
+        StoredAuthlibAccount {
+            id: id.to_owned(),
+            username: username.to_owned(),
+            uuid: uuid.to_owned(),
+            api_root: "https://example.com/api/yggdrasil/".to_owned(),
+            server_name: Some("Example".to_owned()),
+        }
+    }
+
     fn server(id: &str, name: &str, address: &str) -> StoredServer {
         StoredServer {
             id: id.to_owned(),
@@ -369,10 +431,16 @@ mod tests {
             selected_version: Some("1.21.1".to_owned()),
             selected_account: Some("HowDoesAuthWork".to_owned()),
             selected_account_kind: StoredAccountKind::Microsoft,
+            selected_account_id: Some("microsoft:986dec87-b7ec-47ff-89ff-033fdb95c4b5".to_owned()),
             accounts: vec![account("Steve", "5627dd98-e6be-3c21-b8a8-e92344183641")],
             microsoft_accounts: vec![microsoft_account(
                 "HowDoesAuthWork",
                 "986dec87-b7ec-47ff-89ff-033fdb95c4b5",
+            )],
+            authlib_accounts: vec![authlib_account(
+                "11111111-1111-4111-8111-111111111111",
+                "Alex",
+                "36532b5e-c442-3dbb-a24c-c7e55d0f979a",
             )],
             servers: vec![server("server-1", "生存服", "play.example.com")],
             auto_install_java: false,
@@ -518,6 +586,38 @@ java_store = "/tmp/java"
         assert!(config.agent_model.is_empty());
         assert_eq!(config.agent_base_url, None);
         assert_eq!(config.agent_proxy, None);
+    }
+
+    #[test]
+    fn schema_eight_is_upgraded_with_stable_selection_and_empty_authlib_accounts() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 8
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+selected_account = "Steve"
+selected_account_kind = "offline"
+auto_install_java = true
+launcher_visibility = "keep_visible"
+
+[[accounts]]
+username = "Steve"
+uuid = "5627dd98-e6be-3c21-b8a8-e92344183641"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert!(config.authlib_accounts.is_empty());
+        assert_eq!(
+            config.selected_account_id.as_deref(),
+            Some("offline:5627dd98-e6be-3c21-b8a8-e92344183641")
+        );
     }
 
     #[test]

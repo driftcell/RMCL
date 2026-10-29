@@ -5,8 +5,8 @@ mod error;
 
 pub use config::{
     AccentColor, AppearanceConfig, CONFIG_SCHEMA_VERSION, ConfigStore, DownloadSourcePreference,
-    LauncherConfig, LauncherVisibility, StoredAccountKind, StoredMicrosoftAccount,
-    StoredOfflineAccount, StoredServer, ThemePreference, default_config_path, default_java_store,
-    default_minecraft_root, home_directory,
+    LauncherConfig, LauncherVisibility, StoredAccountKind, StoredAuthlibAccount,
+    StoredMicrosoftAccount, StoredOfflineAccount, StoredServer, ThemePreference,
+    default_config_path, default_java_store, default_minecraft_root, home_directory,
 };
 pub use error::StoreError;

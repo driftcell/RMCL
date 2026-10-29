@@ -8,15 +8,20 @@ use std::{
     time::Duration,
 };
 
-use axum::{Json, Router, routing::get};
-use rmcl_app::{
-    ContentInstaller, JavaService, JavaServiceConfig, LoaderCatalog, LoaderCatalogConfig,
-    ModrinthClient, ModrinthConfig, TaskManager, VanillaInstaller, VanillaSources, VersionCatalog,
+use axum::{
+    Json, Router,
+    http::StatusCode,
+    routing::{get, post},
 };
-use rmcl_auth::{MicrosoftCredentials, MicrosoftEndpoints};
-use rmcl_net::DownloadConfig;
+use rmcl_app::{
+    AuthlibAccountService, AuthlibInjectorService, ContentInstaller, JavaService,
+    JavaServiceConfig, LoaderCatalog, LoaderCatalogConfig, ModrinthClient, ModrinthConfig,
+    TaskManager, VanillaInstaller, VanillaSources, VersionCatalog,
+};
+use rmcl_auth::{AuthlibClient, AuthlibCredentials, MicrosoftCredentials, MicrosoftEndpoints};
+use rmcl_net::{DownloadConfig, MirrorHealth, MirrorPreference};
 use rmcl_platform::{MemorySecretStore, SecretStore};
-use rmcl_store::{ConfigStore, LauncherConfig, StoredMicrosoftAccount};
+use rmcl_store::{ConfigStore, LauncherConfig, StoredAuthlibAccount, StoredMicrosoftAccount};
 #[cfg(unix)]
 use rmcp::{
     ClientHandler, ServiceExt,
@@ -1391,6 +1396,7 @@ fn account_tools_create_select_launch_and_delete_offline_accounts() {
                 .accounts_select(Parameters(AccountSelectorParams {
                     username: "Steve".to_owned(),
                     kind: "offline".to_owned(),
+                    account_id: None,
                 }))
                 .await
                 .unwrap(),
@@ -1401,10 +1407,11 @@ fn account_tools_create_select_launch_and_delete_offline_accounts() {
             .launch_account(Some(&AccountSelectorParams {
                 username: "Alex".to_owned(),
                 kind: "offline".to_owned(),
+                account_id: None,
             }))
             .await
             .unwrap();
-        assert_eq!(launch.username, "Alex");
+        assert_eq!(launch.launch.username, "Alex");
         let accounts = structured(server.accounts_list().await.unwrap());
         assert_eq!(accounts["selected_account"], "Steve");
         assert_eq!(accounts["selected_account_kind"], "offline");
@@ -1415,6 +1422,7 @@ fn account_tools_create_select_launch_and_delete_offline_accounts() {
                 .accounts_delete(Parameters(AccountSelectorParams {
                     username: "Steve".to_owned(),
                     kind: "offline".to_owned(),
+                    account_id: None,
                 }))
                 .await
                 .unwrap(),
@@ -1427,12 +1435,148 @@ fn account_tools_create_select_launch_and_delete_offline_accounts() {
             .accounts_delete(Parameters(AccountSelectorParams {
                 username: "Steve".to_owned(),
                 kind: "offline".to_owned(),
+                account_id: None,
             }))
             .await
             .unwrap_err();
         assert_eq!(missing.data.as_ref().unwrap()["code"], "not_found");
     });
     drop(server);
+    shutdown_context(context);
+}
+
+#[test]
+fn authlib_account_tools_launch_with_injector_and_delete_credentials() {
+    let temporary = TempDir::new().unwrap();
+    let context = test_context(&temporary, ModrinthClient::official().unwrap());
+    let mut owned = match Arc::try_unwrap(context) {
+        Ok(context) => context,
+        Err(_) => panic!("test context should have one owner"),
+    };
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}/api/yggdrasil/");
+    let router = Router::new()
+        .route(
+            "/api/yggdrasil/",
+            get(|| async {
+                Json(json!({
+                    "meta": {"serverName": "Mock Skin"},
+                    "skinDomains": ["example.invalid"]
+                }))
+            }),
+        )
+        .route(
+            "/api/yggdrasil/authserver/validate",
+            post(|| async { StatusCode::NO_CONTENT }),
+        );
+    let handle = owned.runtime.spawn(async move {
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let id = Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+    let uuid = Uuid::parse_str("5627dd98-e6be-3c21-b8a8-e92344183641").unwrap();
+    let _account = AuthlibAccount::new(
+        id,
+        "Steve",
+        uuid,
+        base.clone(),
+        Some("Mock Skin".to_owned()),
+    )
+    .unwrap();
+    let secrets = Arc::new(MemorySecretStore::default());
+    let credentials = AuthlibCredentials::new("access-token", "client-token", "{}");
+    secrets
+        .set(
+            &format!("authlib:{id}"),
+            &serde_json::to_string(&credentials).unwrap(),
+        )
+        .unwrap();
+    owned.authlib_accounts = AuthlibAccountService::with_auth(
+        AuthlibClient::new().unwrap(),
+        secrets.clone(),
+        temporary.path().join("authlib-metadata"),
+    );
+
+    let injector_cache = temporary.path().join("authlib-injector");
+    std::fs::create_dir_all(&injector_cache).unwrap();
+    let jar = injector_cache.join("authlib-injector-56.jar");
+    std::fs::write(&jar, b"jar").unwrap();
+    std::fs::write(
+        injector_cache.join("authlib-injector-56.json"),
+        serde_json::to_vec(&json!({
+            "build_number": 56,
+            "version": "1.2.8",
+            "sha256": hex::encode(sha2::Sha256::digest(b"jar")),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    owned.authlib_injector = AuthlibInjectorService::with_endpoints(
+        Arc::new(MirrorHealth::new(MirrorPreference::Official)),
+        &injector_cache,
+        Url::parse("http://127.0.0.1:1/artifact/latest.json").unwrap(),
+    )
+    .unwrap();
+
+    let mut config = owned.config_store.load().unwrap();
+    config.selected_account = Some("Steve".to_owned());
+    config.selected_account_kind = StoredAccountKind::Authlib;
+    config.selected_account_id = Some(format!("authlib:{id}"));
+    config.authlib_accounts = vec![StoredAuthlibAccount {
+        id: id.to_string(),
+        username: "Steve".to_owned(),
+        uuid: uuid.to_string(),
+        api_root: base,
+        server_name: Some("Mock Skin".to_owned()),
+    }];
+    owned.config_store.save(&config).unwrap();
+    let context = Arc::new(owned);
+    let server = McpServer::new(context.clone());
+
+    context.runtime.block_on(async {
+        let accounts = structured(server.accounts_list().await.unwrap());
+        assert_eq!(accounts["items"][0]["kind"], "authlib");
+        assert_eq!(accounts["items"][0]["id"], format!("authlib:{id}"));
+        assert_eq!(accounts["selected_account_id"], format!("authlib:{id}"));
+
+        let selected = structured(
+            server
+                .accounts_select(Parameters(AccountSelectorParams {
+                    username: "Steve".to_owned(),
+                    kind: "authlib".to_owned(),
+                    account_id: Some(format!("authlib:{id}")),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(selected["account"]["selected"], true);
+
+        let launch = server.launch_account(None).await.unwrap();
+        assert_eq!(launch.launch.username, "Steve");
+        assert_eq!(launch.launch.user_type, "msa");
+        assert_eq!(launch.launch.access_token, "access-token");
+        assert_eq!(launch.authlib.as_ref().unwrap().jar_path, jar);
+
+        let deleted = structured(
+            server
+                .accounts_delete(Parameters(AccountSelectorParams {
+                    username: "Steve".to_owned(),
+                    kind: "authlib".to_owned(),
+                    account_id: Some(format!("authlib:{id}")),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(deleted["deleted"], true);
+        assert!(secrets.get(&format!("authlib:{id}")).unwrap().is_none());
+    });
+
+    drop(server);
+    handle.abort();
     shutdown_context(context);
 }
 

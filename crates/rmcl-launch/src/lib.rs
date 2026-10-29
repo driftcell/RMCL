@@ -7,7 +7,7 @@ mod plan;
 mod process;
 mod tokenizer;
 
-pub use account::LaunchAccount;
+pub use account::{AuthlibLaunchConfig, LaunchAccount};
 pub use error::LaunchError;
 pub use options::LaunchOptions;
 pub use plan::LaunchPlan;

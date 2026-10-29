@@ -72,6 +72,9 @@ impl MirrorSource {
                 }
             }
             "meta.fabricmc.net" => self.with_path(official, "/fabric-meta", None),
+            "authlib-injector.yushi.moe" => {
+                self.with_path(official, "/mirrors/authlib-injector", None)
+            }
             _ => None,
         }
     }
@@ -174,6 +177,10 @@ mod tests {
             (
                 "https://meta.fabricmc.net/v2/versions/loader/1.21.1",
                 "/fabric-meta/v2/versions/loader/1.21.1",
+            ),
+            (
+                "https://authlib-injector.yushi.moe/artifact/latest.json",
+                "/mirrors/authlib-injector/artifact/latest.json",
             ),
         ];
         for (source, path) in cases {

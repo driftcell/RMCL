@@ -70,6 +70,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
         max_memory_mb: None,
         additional_jvm_arguments: Vec::new(),
         additional_game_arguments: Vec::new(),
+        authlib: None,
         minecraft_version: "1.21.1".to_owned(),
         server: None,
         resolution: None,

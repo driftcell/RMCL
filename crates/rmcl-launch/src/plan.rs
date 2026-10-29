@@ -83,6 +83,9 @@ impl LaunchPlan {
             .map_err(|path| LaunchError::NonUtf8Path(path.to_string_lossy().into_owned()))?;
         let placeholders = placeholders(version, &options, &classpath)?;
         let mut jvm_arguments = supporting_jvm_arguments(&options);
+        if let Some(authlib) = &options.authlib {
+            jvm_arguments.extend(authlib_jvm_arguments(authlib)?);
+        }
         jvm_arguments.extend(match &version.arguments {
             Some(arguments) => {
                 evaluate_arguments(&arguments.jvm, &options.platform, &options.features)?
@@ -186,7 +189,39 @@ fn make_paths_absolute(options: &mut LaunchOptions) -> Result<(), LaunchError> {
     for library in &mut options.libraries {
         *library = absolute_path(library)?;
     }
+    if let Some(authlib) = &mut options.authlib {
+        authlib.jar_path = absolute_path(&authlib.jar_path)?;
+    }
     Ok(())
+}
+
+fn authlib_jvm_arguments(config: &crate::AuthlibLaunchConfig) -> Result<Vec<String>, LaunchError> {
+    if config.api_root.trim().is_empty() {
+        return Err(LaunchError::AuthlibApiRootBlank);
+    }
+    let path = utf8_path(&config.jar_path)?;
+    if path.contains('=') {
+        return Err(LaunchError::AuthlibInjectorPathContainsEquals {
+            path: path.to_owned(),
+        });
+    }
+    if !config.jar_path.is_file() {
+        return Err(LaunchError::AuthlibInjectorMissing {
+            path: path.to_owned(),
+        });
+    }
+    let mut arguments = vec![
+        format!("-javaagent:{path}={}", config.api_root.trim()),
+        "-Dauthlibinjector.side=client".to_owned(),
+    ];
+    if let Some(prefetched) = config.prefetched_metadata.as_deref()
+        && !prefetched.is_empty()
+    {
+        arguments.push(format!(
+            "-Dauthlibinjector.yggdrasil.prefetched={prefetched}"
+        ));
+    }
+    Ok(arguments)
 }
 
 fn validate_launch_paths(options: &LaunchOptions) -> Result<(), LaunchError> {

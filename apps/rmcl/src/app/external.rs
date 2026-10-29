@@ -5,13 +5,17 @@ use rmcl_store::LauncherConfig;
 pub fn merge_external_config(current: &mut LauncherConfig, external: LauncherConfig) -> bool {
     let accounts_changed = current.accounts != external.accounts
         || current.microsoft_accounts != external.microsoft_accounts
+        || current.authlib_accounts != external.authlib_accounts
         || current.selected_account != external.selected_account
-        || current.selected_account_kind != external.selected_account_kind;
+        || current.selected_account_kind != external.selected_account_kind
+        || current.selected_account_id != external.selected_account_id;
     if accounts_changed {
         current.accounts = external.accounts;
         current.microsoft_accounts = external.microsoft_accounts;
+        current.authlib_accounts = external.authlib_accounts;
         current.selected_account = external.selected_account;
         current.selected_account_kind = external.selected_account_kind;
+        current.selected_account_id = external.selected_account_id;
     }
     if current.selected_version != external.selected_version {
         current.selected_version = external.selected_version;
