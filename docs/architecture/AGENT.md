@@ -62,6 +62,7 @@
 - 三点等待动画用 GPUI `with_animation` 自己实现；系统开启减少动态效果时显示静态点。
 - 当前活动使用 `Marker`：运行中 `loading(true)` + `MarkerLoadingStyle::Shimmer`，完成显示绿色 `CircleCheck`，失败显示红色 `CircleX`，跳过显示 `CircleStop`。
 - 同一位置原地切换活动内容，不做反复淡入淡出；并行工具调用可同时列出多个步骤。
+- 工具步骤摘要只显示实例名、游戏或加载器版本、内容路径、服务器地址等用户可识别的值；`task_id`、revision、幂等键和 Modrinth version ID 不进入界面，无法识别的参数不回退为原始 JSON。
 - 已完成步骤折叠为“已完成 N 个步骤 · 时长”，位于该回合最终回复上方；失败时自动展开。
 - 展开/收起步骤会 remeasure 当前行；回合结束后先 append 再观察 `TextViewState`，并在下一帧 remeasure 最后一行，避免虚拟列表高度过期导致滚轮停不到底部。
 - 有 `task_id` 时直接读取同一 `TaskManager` 快照显示进度条，不让模型轮询进度。
