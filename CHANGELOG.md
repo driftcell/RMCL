@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/driftcell/RMCL/compare/v0.10.1...v0.11.0) - 2026-10-29
+
+### Added
+
+- *(auth)* add authlib-injector external login ([#108](https://github.com/driftcell/RMCL/pull/108))
+
 ## [0.10.1](https://github.com/driftcell/RMCL/compare/v0.10.0...v0.10.1) - 2026-10-29
 
 ### Fixed
