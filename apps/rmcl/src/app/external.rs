@@ -1,7 +1,7 @@
 use rmcl_store::LauncherConfig;
 
-/// Applies only external data that MCP can currently modify. Local service
-/// settings and editor-owned values stay in the existing configuration.
+/// Applies only external data that MCP can currently modify. Local preferences
+/// and editor-owned values stay in the existing configuration.
 pub fn merge_external_config(current: &mut LauncherConfig, external: LauncherConfig) -> bool {
     let accounts_changed = current.accounts != external.accounts
         || current.microsoft_accounts != external.microsoft_accounts
@@ -34,8 +34,6 @@ mod tests {
     #[test]
     fn external_config_merge_preserves_local_settings() {
         let mut current = LauncherConfig {
-            mcp_enabled: true,
-            mcp_port: 40000,
             auto_install_java: false,
             auto_check_updates: false,
             download_source: DownloadSourcePreference::Mirror,
@@ -70,8 +68,6 @@ mod tests {
         assert_eq!(current.selected_account.as_deref(), Some("Alex"));
         assert_eq!(current.accounts, external.accounts);
         assert_eq!(current.servers, external.servers);
-        assert!(current.mcp_enabled);
-        assert_eq!(current.mcp_port, 40000);
         assert!(!current.auto_install_java);
         assert!(!current.auto_check_updates);
         assert_eq!(current.download_source, DownloadSourcePreference::Mirror);

@@ -8,7 +8,6 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
 use rmcl_agent::{AGENT_KEYRING_SERVICE, AgentKeyStore, AgentService};
 use rmcl_app::AppContext;
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
-use rmcl_mcp::{McpHttpService, McpHttpStatus};
 use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
     CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
@@ -18,7 +17,6 @@ use uuid::Uuid;
 
 pub(crate) struct Services {
     pub(crate) context: Arc<AppContext>,
-    pub(crate) mcp: McpHttpService,
     pub(crate) agent: Arc<AgentService>,
 }
 
@@ -28,25 +26,12 @@ impl Services {
         config_store: ConfigStore,
     ) -> Result<Arc<Self>, rmcl_app::AppError> {
         let context = AppContext::new(config, config_store)?;
-        let mcp = McpHttpService::new(context.clone());
         let agent_secrets = Arc::new(KeyringSecretStore::new(AGENT_KEYRING_SERVICE)?);
         let agent = Arc::new(AgentService::new(
             context.clone(),
             AgentKeyStore::new(agent_secrets),
         ));
-        Ok(Arc::new(Self {
-            context,
-            mcp,
-            agent,
-        }))
-    }
-
-    pub(crate) fn mcp_status(&self) -> McpHttpStatus {
-        self.mcp.status()
-    }
-
-    pub(crate) async fn reconcile_mcp(&self, enabled: bool, port: u16) -> McpHttpStatus {
-        self.mcp.reconcile(enabled, port).await
+        Ok(Arc::new(Self { context, agent }))
     }
 }
 
