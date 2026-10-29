@@ -214,7 +214,7 @@ impl StatusServer {
 struct StatusParams {
     /// What the assistant is doing right now, in the user's language.
     message: String,
-    /// Optional extra detail.
+    /// Optional short detail; never include JSON, task IDs, or file paths.
     detail: Option<String>,
 }
 

@@ -465,57 +465,86 @@ fn confirm_label(name: &str) -> &'static str {
     }
 }
 
+/// Builds the short, user-facing description shown next to a tool step.
+///
+/// Only values the user can recognize are included. Task IDs, revisions,
+/// idempotency keys and Modrinth version IDs stay internal, and an unknown
+/// argument shape yields no summary instead of raw JSON.
 fn summarize_tool(name: &str, args: &str) -> String {
     let value: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
-    if value.as_object().is_some_and(|object| object.is_empty()) {
-        return String::new();
-    }
-    let text = |key: &str| value.get(key).and_then(serde_json::Value::as_str);
-    let version = text("base_version_id").or_else(|| text("version_id"));
-    if matches!(
-        name,
-        "content_install" | "content_update" | "content_set_enabled" | "content_delete"
-    ) {
-        let target = text("relative_path")
-            .or_else(|| text("project_id"))
-            .or_else(|| text("instance_id"));
-        let instance = text("instance_id");
-        return match (target, version, instance) {
-            (Some(target), Some(version), Some(instance)) => {
-                format!("{target} · {version} · {instance}")
-            }
-            (Some(target), Some(version), None) => format!("{target} · {version}"),
-            (Some(target), None, Some(instance)) => format!("{target} · {instance}"),
-            (Some(target), None, None) => target.to_owned(),
-            (None, Some(version), Some(instance)) => format!("{version} · {instance}"),
-            (None, Some(version), None) => version.to_owned(),
-            (None, None, _) => truncate(args, 120),
-        };
-    }
-    let id = text("instance_id")
-        .or_else(|| text("task_id"))
-        .or_else(|| text("project_id"))
-        .or_else(|| text("relative_path"));
-    let query = text("query").or_else(|| text("game_version"));
-    match (name, id, version, query) {
-        ("instances_create", Some(id), Some(version), _) => format!("{id} · {version}"),
-        ("instances_create", Some(id), None, _) => id.to_owned(),
-        ("content_search" | "versions_list" | "loaders_list", _, _, Some(query)) => {
-            query.to_owned()
+    let text = |key: &str| text_field(&value, key);
+    let owned = |key: &str| text(key).map(str::to_owned);
+    match name {
+        "instances_get" | "instances_update" | "instances_repair" | "instances_delete" => {
+            text("instance_id").unwrap_or_default().to_owned()
         }
-        (_, Some(id), _, _) => id.to_owned(),
-        _ => truncate(args, 120),
+        "instances_create" => join_parts([
+            owned("instance_id"),
+            owned("base_version_id"),
+            loader_summary(value.get("loader")),
+        ]),
+        "instances_launch" => join_parts([owned("instance_id"), owned("server")]),
+        "content_list" => join_parts([owned("instance_id"), owned("kind")]),
+        "content_search" => owned("query").unwrap_or_default(),
+        "content_versions" => {
+            join_parts([owned("project_id"), owned("game_version"), owned("loader")])
+        }
+        "content_install" => join_parts([owned("instance_id"), owned("kind")]),
+        "content_update" | "content_delete" => {
+            join_parts([owned("relative_path"), owned("instance_id")])
+        }
+        "content_set_enabled" => {
+            let state = value
+                .get("enabled")
+                .and_then(serde_json::Value::as_bool)
+                .map(|enabled| if enabled { "启用" } else { "禁用" }.to_owned());
+            join_parts([state, owned("relative_path"), owned("instance_id")])
+        }
+        "versions_list" => text("query")
+            .or_else(|| text("version_type"))
+            .unwrap_or_default()
+            .to_owned(),
+        "loaders_list" => join_parts([owned("kind"), owned("game_version")]),
+        "java_ensure" => {
+            let major = value
+                .get("major_version")
+                .and_then(serde_json::Value::as_u64)
+                .map(|major| format!("Java {major}"));
+            join_parts([owned("component"), major])
+        }
+        "servers_ping" => owned("address").unwrap_or_default(),
+        "skins_profile" => owned("username").unwrap_or_default(),
+        // Task tools take opaque task IDs and have no user-recognizable target.
+        "tasks_get" | "tasks_wait" | "tasks_logs" | "tasks_cancel" => String::new(),
+        _ => String::new(),
     }
 }
 
-fn truncate(value: &str, max: usize) -> String {
-    let mut chars = value.chars();
-    let text = chars.by_ref().take(max).collect::<String>();
-    if chars.next().is_some() {
-        format!("{text}…")
-    } else {
-        text
+fn text_field<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+}
+
+fn loader_summary(loader: Option<&serde_json::Value>) -> Option<String> {
+    let loader = loader?;
+    let kind = text_field(loader, "kind")?;
+    Some(match text_field(loader, "version") {
+        Some(version) => format!("{kind} {version}"),
+        None => kind.to_owned(),
+    })
+}
+
+fn join_parts(parts: impl IntoIterator<Item = Option<String>>) -> String {
+    let mut joined = Vec::new();
+    for part in parts.into_iter().flatten() {
+        if !joined.contains(&part) {
+            joined.push(part);
+        }
     }
+    joined.join(" · ")
 }
 
 #[cfg(test)]
@@ -543,7 +572,14 @@ mod tests {
                 "instances_create",
                 r#"{"instance_id":"26.3","base_version_id":"26.3"}"#
             ),
-            "26.3 · 26.3"
+            "26.3"
+        );
+        assert_eq!(
+            summarize_tool(
+                "instances_create",
+                r#"{"instance_id":"fabric","base_version_id":"1.21.1","loader":{"kind":"fabric","version":"0.16.9"}}"#
+            ),
+            "fabric · 1.21.1 · fabric 0.16.9"
         );
         assert_eq!(summarize_tool("java_list", "{}"), "");
         assert_eq!(
@@ -562,16 +598,66 @@ mod tests {
                 "content_update",
                 r#"{"instance_id":"fabric","relative_path":"mods/sodium.jar","version_id":"v2"}"#
             ),
-            "mods/sodium.jar · v2 · fabric"
+            "mods/sodium.jar · fabric"
         );
         assert_eq!(
             summarize_tool(
                 "content_install",
-                r#"{"instance_id":"fabric","project_id":"sodium","version_id":"v2"}"#
+                r#"{"instance_id":"fabric","kind":"mod","version_id":"v2"}"#
             ),
-            "sodium · v2 · fabric"
+            "fabric · mod"
+        );
+        assert_eq!(
+            summarize_tool(
+                "content_set_enabled",
+                r#"{"instance_id":"fabric","relative_path":"mods/sodium.jar","enabled":false}"#
+            ),
+            "禁用 · mods/sodium.jar · fabric"
+        );
+        assert_eq!(
+            summarize_tool(
+                "servers_ping",
+                r#"{"server_id":"opaque","address":"play.example.com"}"#
+            ),
+            "play.example.com"
+        );
+        assert_eq!(
+            summarize_tool("servers_ping", r#"{"server_id":"opaque"}"#),
+            ""
+        );
+        assert_eq!(
+            summarize_tool(
+                "java_ensure",
+                r#"{"component":"java-runtime-delta","major_version":21}"#
+            ),
+            "java-runtime-delta · Java 21"
+        );
+        assert_eq!(
+            summarize_tool("skins_profile", r#"{"username":"Steve"}"#),
+            "Steve"
         );
         assert!(tool_label("tasks_wait").contains("等待"));
+    }
+
+    #[test]
+    fn tool_summaries_hide_internal_ids_and_never_render_json() {
+        for name in ["tasks_get", "tasks_wait", "tasks_logs", "tasks_cancel"] {
+            assert_eq!(
+                summarize_tool(
+                    name,
+                    r#"{"task_id":7,"revision":"abc","idempotency_key":"secret"}"#
+                ),
+                ""
+            );
+        }
+        assert_eq!(
+            summarize_tool(
+                "content_install",
+                r#"{"instance_id":"fabric","version_id":"opaque"}"#
+            ),
+            "fabric"
+        );
+        assert_eq!(summarize_tool("unknown_tool", r#"{"task_id":7}"#), "");
     }
 
     #[test]
