@@ -804,7 +804,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("{} 已启用 · 重启游戏后生效", loader.label())),
+                                .child(format!("{} 已启用 · 下次启动生效", loader.label())),
                         ),
                 )
             })
