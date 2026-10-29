@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 工作流
 
@@ -124,7 +124,7 @@ CI 编译和测试通过不等于图形界面或真实游戏启动验证通过�
 
 标签 `v*` 触发的 `.github/workflows/release.yml` 负责多平台发布构建，包含版本一致性校验、四平台原生构建、草稿 Release、`SHA256SUMS` 和 `CHANGELOG.md` 提取的 release notes；不会替代 CI 测试。发布流程、产物命名和签名边界见 [平台与分发](../release/DISTRIBUTION.md)。
 
-release-plz 在 `main` 上准备 release PR，并在合并后创建 tag；它需要 `RELEASE_PLZ_TOKEN` 才能触发 release workflow。分支保护和 PR 流程见 [分支、PR 与发布](RELEASING.md)。
+release-plz 使用内置 `github.token` 在 `main` 上准备 release PR，并在自动合并后创建 tag。Release PR 的三平台 CI 由维护者准备发布时人工批准；tag 创建后由 release job 显式 dispatch release workflow，不再依赖个人 PAT 或 tag push 事件接力。分支保护和 PR 流程见 [分支、PR 与发布](RELEASING.md)。
 
 ## 首次云端验证
 

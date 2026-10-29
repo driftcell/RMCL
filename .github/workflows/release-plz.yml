@@ -23,63 +23,60 @@ jobs:
     if: github.repository == 'driftcell/RMCL'
     runs-on: ubuntu-24.04
     steps:
-      - name: Check release token
-        id: token
-        shell: bash
-        env:
-          RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
-        run: |
-          if [[ -z "${RELEASE_PLZ_TOKEN}" ]]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::RELEASE_PLZ_TOKEN is not configured; skipping release-plz."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check out repository
-        if: steps.token.outputs.configured == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          token: ${{ github.token }}
 
       - name: Run release-plz release-pr
-        if: steps.token.outputs.configured == 'true'
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
   release:
     name: Tag merged release
     if: github.repository == 'driftcell/RMCL'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: write
     steps:
-      - name: Check release token
-        id: token
-        shell: bash
-        env:
-          RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
-        run: |
-          if [[ -z "${RELEASE_PLZ_TOKEN}" ]]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::RELEASE_PLZ_TOKEN is not configured; skipping release-plz."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Check out repository
-        if: steps.token.outputs.configured == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          token: ${{ github.token }}
 
       - name: Run release-plz release
-        if: steps.token.outputs.configured == 'true'
+        id: release-plz
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Tags pushed with github.token do not trigger another workflow by push event.
+      - name: Trigger release build
+        if: steps.release-plz.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(jq 'length' <<< "${RELEASES}")" == "0" ]]; then
+            echo "release-plz reported a release without release metadata" >&2
+            exit 1
+          fi
+
+          while IFS= read -r release_tag; do
+            if [[ -z "${release_tag}" ]]; then
+              echo "release-plz returned an empty release tag" >&2
+              exit 1
+            fi
+            gh workflow run release.yml --repo "${GITHUB_REPOSITORY}" --ref "${release_tag}"
+          done < <(jq -r '.[].tag // empty' <<< "${RELEASES}")
