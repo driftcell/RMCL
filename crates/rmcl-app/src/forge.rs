@@ -18,6 +18,7 @@ use rmcl_net::{
     DownloadConfig, DownloadError, DownloadExecutor, DownloadReport, DownloadStatus, MirrorHealth,
     ProgressStage, progress_channel,
 };
+use rmcl_platform::HideConsoleWindow as _;
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 use tokio::process::Command;
@@ -926,6 +927,7 @@ async fn run_processor(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    command.hide_console_window();
     let child = command.spawn().map_err(|source| AppError::Io {
         operation: "start loader processor",
         path: java.to_path_buf(),

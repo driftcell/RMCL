@@ -9074,6 +9074,7 @@ dependencies = [
  "rmcl-instance",
  "rmcl-minecraft",
  "rmcl-net",
+ "rmcl-platform",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -9095,6 +9096,7 @@ dependencies = [
  "rmcl-instance",
  "rmcl-java",
  "rmcl-minecraft",
+ "rmcl-platform",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -9170,6 +9172,7 @@ version = "0.1.0"
 dependencies = [
  "keyring",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

@@ -13,6 +13,7 @@ use flate2::read::GzDecoder;
 use reqwest::{Client, header};
 use rmcl_archive::{ArchiveExtractor, ExtractionLimits};
 use rmcl_domain::ExtractionPlan;
+use rmcl_platform::HideConsoleWindow as _;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -538,11 +539,7 @@ pub fn spawn_apply_helper(plan: &UpdatePlan) -> Result<(), UpdateError> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        command.creation_flags(0x0800_0000);
-    }
+    command.hide_console_window();
     command.spawn().map_err(|source| UpdateError::Io {
         operation: "spawn update helper",
         path: helper,
@@ -775,14 +772,13 @@ fn launch_target(target: &Path, arguments: &[String]) -> Result<(), UpdateError>
     }
     #[cfg(not(target_os = "macos"))]
     {
-        Command::new(target)
-            .args(arguments)
-            .spawn()
-            .map_err(|source| UpdateError::Io {
-                operation: "restart updated application",
-                path: target.to_path_buf(),
-                source,
-            })?;
+        let mut command = Command::new(target);
+        command.args(arguments).hide_console_window();
+        command.spawn().map_err(|source| UpdateError::Io {
+            operation: "restart updated application",
+            path: target.to_path_buf(),
+            source,
+        })?;
     }
     Ok(())
 }

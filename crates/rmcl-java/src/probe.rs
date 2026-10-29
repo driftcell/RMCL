@@ -5,6 +5,7 @@ use std::{
 };
 
 use rmcl_domain::{Architecture, OperatingSystem};
+use rmcl_platform::HideConsoleWindow as _;
 use tempfile::TempDir;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -64,6 +65,7 @@ pub async fn probe_with_config(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    command.hide_console_window();
     let mut child = command.spawn().map_err(|source| JavaError::Spawn {
         path: executable.display().to_string(),
         source,

@@ -11,6 +11,7 @@ reqwest.workspace = true
 rmcl-instance.workspace = true
 rmcl-minecraft.workspace = true
 rmcl-net.workspace = true
+rmcl-platform.workspace = true
 serde.workspace = true
 sha1.workspace = true
 serde_json.workspace = true

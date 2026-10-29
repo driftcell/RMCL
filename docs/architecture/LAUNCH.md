@@ -72,6 +72,8 @@ jar 缺失或 API Root 为空时在 spawn 前返回结构化错误。`-Dauthlibi
 
 `GameProcess` 使用 Tokio `Command` 直接启动 Java，不经过 shell。工作目录取自计划，环境变量按传入映射叠加，stdin 连接空设备，stdout/stderr 分别收集。
 
+Windows GUI 模式在 `FreeConsole` 之后启动 Java，因此子进程通过 `rmcl_platform::HideConsoleWindow` 设置 `CREATE_NO_WINDOW`；否则 Windows 会为没有控制台可继承的 console-subsystem 子进程新建一个与游戏同生命周期的控制台窗口。Java 探测、Forge/NeoForge installer processor 和更新 helper 使用同一规则。
+
 - 每个进程使用容量 64 的有界日志通道，反压作用于日志读取任务。
 - 日志按行交付，保留 stdout/stderr 来源，去除行尾换行，非法 UTF-8 使用替换字符。
 - `next_event()` 在全部日志排空后才返回 `GameEvent::Exit`；只有退出事件已经返回后，后续调用才返回 `None`。
