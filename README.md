@@ -21,6 +21,47 @@
 
 RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit 构建原生桌面界面。支持正版与离线账户、Vanilla 和主流加载器、实例隔离、Mod 管理、服务器收藏、皮肤更换与自动更新。
 
+## 界面预览
+
+<table>
+  <tr>
+    <th align="left">主页与快速启动</th>
+    <th align="left">新建实例</th>
+  </tr>
+  <tr>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="web/public/screenshots/home-dark.webp">
+        <img src="web/public/screenshots/home-light.webp" alt="RMCL 主页，展示当前实例、收藏服务器与快速启动" width="100%">
+      </picture>
+    </td>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="web/public/screenshots/instances-dark.webp">
+        <img src="web/public/screenshots/instances-light.webp" alt="RMCL 新建实例页面，展示 Minecraft 版本与加载器选择" width="100%">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <th align="left">联机发现</th>
+    <th align="left">下载游戏</th>
+  </tr>
+  <tr>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="web/public/screenshots/servers-dark.webp">
+        <img src="web/public/screenshots/servers-light.webp" alt="RMCL 联机发现页面，展示服务器状态与一键进入" width="100%">
+      </picture>
+    </td>
+    <td>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="web/public/screenshots/downloads-dark.webp">
+        <img src="web/public/screenshots/downloads-light.webp" alt="RMCL 下载游戏页面，展示官方版本列表与安装操作" width="100%">
+      </picture>
+    </td>
+  </tr>
+</table>
+
 ## 下载
 
 Release 构建由 GitHub Actions 生成，发布在 [Releases](https://github.com/driftcell/RMCL/releases)。

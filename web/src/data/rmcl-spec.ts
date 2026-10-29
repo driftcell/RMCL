@@ -1,7 +1,11 @@
-import downloadsShotUrl from "../../public/screenshots/downloads.webp";
-import homeShotUrl from "../../public/screenshots/home.webp";
-import instancesShotUrl from "../../public/screenshots/instances.webp";
-import serversShotUrl from "../../public/screenshots/servers.webp";
+import downloadsDarkShotUrl from "../../public/screenshots/downloads-dark.webp";
+import downloadsLightShotUrl from "../../public/screenshots/downloads-light.webp";
+import homeDarkShotUrl from "../../public/screenshots/home-dark.webp";
+import homeLightShotUrl from "../../public/screenshots/home-light.webp";
+import instancesDarkShotUrl from "../../public/screenshots/instances-dark.webp";
+import instancesLightShotUrl from "../../public/screenshots/instances-light.webp";
+import serversDarkShotUrl from "../../public/screenshots/servers-dark.webp";
+import serversLightShotUrl from "../../public/screenshots/servers-light.webp";
 
 export type AccentKey = "emerald" | "ocean" | "violet" | "amber" | "rose";
 export type ThemeMode = "light" | "dark";
@@ -204,7 +208,8 @@ export interface ChapterSpec {
   lead: string;
   pills: string[];
   screenshot?: {
-    url: string;
+    lightUrl: string;
+    darkUrl: string;
     caption: string;
   };
   callouts: CalloutSpec[];
@@ -221,7 +226,8 @@ export const CHAPTERS: ChapterSpec[] = [
     lead: "自动检测并配好所需 Java，支持微软正版皮肤头像与离线账号随时切换，让你把时间留给游戏本身。",
     pills: ["自动准备 Java", "正版与离线双模", "最近实例直达"],
     screenshot: {
-      url: homeShotUrl,
+      lightUrl: homeLightShotUrl,
+      darkUrl: homeDarkShotUrl,
       caption: "主页：一键启动当前实例，快捷切换账号与最近版本",
     },
     callouts: [
@@ -244,7 +250,8 @@ export const CHAPTERS: ChapterSpec[] = [
     lead: "点选 Vanilla、Fabric、Quilt、Forge 或 NeoForge 自动安装，每个实例拥有独立的存档、Mod 与光影文件夹。",
     pills: ["5 大主流加载器", "默认版本隔离", "共用底层省空间"],
     screenshot: {
-      url: instancesShotUrl,
+      lightUrl: instancesLightShotUrl,
+      darkUrl: instancesDarkShotUrl,
       caption: "新建实例：选择游戏版本与加载器，稳定版优先推荐",
     },
     callouts: [
@@ -267,7 +274,8 @@ export const CHAPTERS: ChapterSpec[] = [
     lead: "内置精选服务器发现与个人收藏夹，实时查看在线人数与毫秒延迟，点击「进入」直接拉起游戏连入服务器。",
     pills: ["实时人数与延迟", "点击直连进服", "个人收藏自动刷新"],
     screenshot: {
-      url: serversShotUrl,
+      lightUrl: serversLightShotUrl,
+      darkUrl: serversDarkShotUrl,
       caption: "联机发现：未进游戏即可查看服务器状态，一键直达",
     },
     callouts: [
@@ -290,7 +298,8 @@ export const CHAPTERS: ChapterSpec[] = [
     lead: "涵盖 Mojang 官方 920+ 个正式版、快照与旧版；内置 Modrinth 模组、资源包与光影搜索，自动配齐所需前置。",
     pills: ["920+ 官方版本", "Modrinth 在线搜装", "前置 Mod 自动补齐"],
     screenshot: {
-      url: downloadsShotUrl,
+      lightUrl: downloadsLightShotUrl,
+      darkUrl: downloadsDarkShotUrl,
       caption: "下载游戏：按正式版、快照、旧版清晰筛选，一键安装",
     },
     callouts: [
