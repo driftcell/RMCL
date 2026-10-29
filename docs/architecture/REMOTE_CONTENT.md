@@ -47,6 +47,7 @@
 - 预检在下载前按主文件 SHA-1 缓存远程 JAR 元数据到 `cache/mod-metadata/`；文件缺少 SHA-1 或超过 16 MiB 时跳过远程元数据解析，回退到项目级匹配。
 - Fabric/Quilt 的版本谓词使用 `semver` crate；Forge/NeoForge 的 Maven 范围由本地小型解析器处理，版本排序委托 `mvn_version` 的 Maven `ComparableVersion`。
 - 已安装前置版本满足主 Mod 声明的范围时，预检标记为已安装并从安装批次跳过；版本不满足时仍安装 Modrinth 解析出的依赖版本并警告。
+- 主 Mod 元数据中的 `breaks`/`conflicts` 按声明范围匹配已安装版本，范围外不阻止安装；无范围表示所有版本冲突，缺少版本或无法解析版本/范围时保守保留冲突。
 - 依赖图中只有 `required` 会被自动解析；Modrinth 的 optional 只计数，incompatible 做“已安装则阻止”的预检。
 
 ## 安装流程
@@ -58,7 +59,7 @@
    - 按项目 slug/标题规范化后匹配本地 Mod ID；
    - 输出每个前置的“已安装 / 已安装但禁用 / 已安装其他版本 / 将安装 / 冲突”状态。
 3. 已安装相同 Mod ID 和相同版本的必需前置从安装批次中跳过，避免重复复制；已安装其他版本时仍安装所需版本并给出警告。
-4. `incompatible` 依赖对应的 Mod 已安装时阻止安装并列出冲突；optional 只计数，不自动安装。
+4. Modrinth 的 `incompatible` 依赖对应的 Mod 已安装时阻止安装并列出冲突；optional 只计数，不自动安装。
 5. 光影包安装时检测 `iris`、`oculus` 或 `optifine`；缺失时警告“文件可以安装但不会生效”。
 6. UI 从版本列表选择可安装文件，要求文件名是单一安全路径组件且 URL 为 HTTP(S)。
 7. 缺少 SHA-1 的文件拒绝安装。
@@ -114,11 +115,11 @@ MCP `content_update` 复用相同的远程版本解析、依赖预检和 `Conten
 
 - 只接入 Modrinth，尚未接入 CurseForge。
 - 内容可以安装到 Fabric/Quilt/Forge/NeoForge 实例；加载器本身由 [实例创建](LOADERS.md) 安装。
-- 只自动安装 required 依赖；optional、incompatible 和 embedded 依赖不自动安装。incompatible 只做“已安装则阻止”的预检，不做完整依赖版本约束求解。
+- 只自动安装 required 依赖；optional、incompatible 和 embedded 依赖不自动安装。Modrinth 的 incompatible 只做“已安装则阻止”的预检，不做完整依赖版本约束求解。
 - 本地 Mod 元数据支持 Fabric/Quilt/Forge/NeoForge 常见字段和 legacy Forge 的 `mcmod.info` 基础字段；不执行 Mod 代码，也不解析所有可选/嵌套元数据。
 - 远程元数据只预检主 Mod 文件（上限 16 MiB）；依赖文件仍按 Modrinth 项目/版本信息判断，不逐个下载依赖 JAR。
 - 前置匹配优先使用远程主 Mod 元数据中的真实 Mod ID 和版本范围；元数据缺失时回退到 Modrinth 项目 slug/标题与本地 Mod ID 的规范化比较。
-- 版本范围支持常见 Fabric/Quilt semver 谓词和 Forge/NeoForge Maven 区间；不实现完整 SAT、版本回退、可选依赖选择和所有特殊 qualifier。
+- 前置和本地元数据冲突的版本范围支持常见 Fabric/Quilt semver 谓词和 Forge/NeoForge Maven 区间；不实现完整 SAT、版本回退、可选依赖选择和所有特殊 qualifier。
 - 已安装版本只做字符串/范围比较；同一 Mod ID 不同版本会给出警告并按 Modrinth 依赖安装所需版本。
 - 依赖去重按版本 ID；已安装识别结合文件名/SHA-1 和本地 Mod ID/版本，不做全局文件哈希索引和更新检查。
 - 远程项目图标通过 HTTPS 下载到配置目录的 `cache/remote-icons/`，只接受公开地址和图片内容；缓存按 URL SHA-256 命名，源图尺寸上限 2048×2048，超过 256×256 的图片会缩略后写成 PNG。
@@ -131,7 +132,7 @@ MCP `content_update` 复用相同的远程版本解析、依赖预检和 `Conten
 
 - `rmcl-content` 使用本地 axum mock 覆盖搜索 facets/index/分页、项目版本解析、单版本/单项目查询、primary file 选择、依赖解析、API 错误和请求取消；元数据测试覆盖 Fabric/Quilt/Forge JAR 解析、依赖/冲突字段、缺失元数据和重复 Mod ID；版本匹配测试覆盖 semver 谓词、Maven 区间和 Forge 版本排序。
 - `rmcl-app` 覆盖远程图标 URL 校验、PNG/WebP 解码与缩略、原子缓存、重复 URL 不重复下载和私网地址拒绝。
-- `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过、已安装前置预检和跳过、远程主 JAR 元数据范围判断、元数据缓存、替换后相对路径/启停保持，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。
+- `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过、已安装前置预检和跳过、远程主 JAR 的前置与冲突版本范围判断、元数据缓存、替换后相对路径/启停保持，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。Sodium/Fabric API 冲突范围误报的排查见[调查记录](../../notes/agent/sodium_false_incompatible.md)。
 - `rmcl-mcp` 覆盖更新 dry-run 的 `installed_different_version`、真实替换、重复 key 重放、同版本拒绝和依赖去重。
 - `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的搜索、项目版本切换、安装进度和取消仍需在 macOS、Windows、Linux 逐平台验收。
 - 2026-10-25 使用真实 `https://api.modrinth.com/` 做了只读 smoke：带 `project_type:mod`、`versions:1.21.1`、`categories:fabric` facets 的搜索返回 Sodium；Sodium 项目在 `1.21.1` + `fabric` 下的版本列表包含 `primary` 文件、SHA-1/SHA-512 和 size，字段与客户端 DTO 一致。

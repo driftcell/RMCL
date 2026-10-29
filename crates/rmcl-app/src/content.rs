@@ -567,6 +567,20 @@ pub async fn preflight_content_install(
             let Some(installed_mod) = installed.find(&conflict.id) else {
                 continue;
             };
+            // Missing or unparsable versions stay conflicts because preflight
+            // cannot prove that the installed pair is safe.
+            if let (Some(requirement), Some(installed_version)) = (
+                conflict.version_requirement.as_deref(),
+                installed_mod.metadata.version.as_deref(),
+            ) && !version_satisfies(
+                installed_version,
+                requirement,
+                metadata.loader.version_style(),
+            )
+            .unwrap_or(true)
+            {
+                continue;
+            }
             if incompatible
                 .iter()
                 .any(|item| item.file_name == installed_mod.file_name)

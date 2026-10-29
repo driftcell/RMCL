@@ -61,7 +61,7 @@ pub struct ModMetadata {
     pub name: Option<String>,
     pub loader: ModMetadataLoader,
     pub dependencies: Vec<ModDependency>,
-    /// Declared breaks/conflicts. Presence means the two mods cannot coexist.
+    /// Declared breaks/conflicts, optionally limited to matching installed versions.
     pub conflicts: Vec<ModDependency>,
 }
 
