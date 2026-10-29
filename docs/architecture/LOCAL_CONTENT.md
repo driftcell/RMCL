@@ -1,8 +1,8 @@
 # 本地内容管理
 
-状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现，Mod JAR 元数据索引供安装预检使用；Modrinth 远程下载、推荐和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖自动选择和整合包尚未实现
+状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；资源包 `pack.mcmeta`/图标解析、格式兼容判断、优先级调整、光影包结构校验和加载器类型化检测已提供核心 API，Mod JAR 元数据索引供安装预检使用；Modrinth 远程下载、推荐和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖自动选择和整合包尚未实现
 
-日期：2026-10-26
+日期：2026-10-29
 
 ## 边界
 
@@ -26,6 +26,15 @@
 - `ContentWarning`：符号链接、无效名称、不可读取条目、`options.txt` 错误或整类扫描失败。
 
 扫描不会因为一个损坏条目而隐藏整个列表；无法读取的条目进入警告。内容目录不存在时按空目录处理。
+
+## 包元数据与兼容性
+
+- `read_resource_pack_metadata` 同时支持 ZIP 和文件夹资源包，读取 `pack.mcmeta` 中的 `pack_format`、`supported_formats`（对象或数组）、`min_format`/`max_format` 回退和描述文本组件；支持 1.21.9+ 的 `[major, minor]` 格式对，描述中的 `§` 格式码会转为纯文本，`pack.png` 以受大小限制的原始字节返回。
+- `ResourcePackMetadata::compatibility` 与目标资源格式比较；目标格式未知时返回 `Unknown`，不猜测兼容性。
+- 目标资源格式由 `read_client_resource_pack_format` 从 client JAR 的 `version.json` 读取：现代客户端使用 `pack_version.resource_major` 和 `resource_minor`，旧客户端支持数字 `pack_version`。`rmcl-app::resource_pack_format` 会沿加载器实例的 `jar` 或 `inherits_from` 找到基础 client JAR。
+- `read_shader_pack_metadata` 校验 `shaders/` 目录并读取可选的 `shaders/pack.json` 描述；不执行 shader 代码。
+- `ShaderLoader` 将 Iris、Oculus、OptiFine 类型化；只有已启用的加载器 Mod 才算光影加载器，`.disabled` 不计入。
+- `move_resource_pack` 在 `options.txt` 的 `resourcePacks` 列表中移动已启用资源包；数组末尾优先级更高，未启用资源包返回结构化错误。
 
 ## 扫描规则
 
@@ -99,8 +108,9 @@
 - Modrinth 远程下载已由 [远程内容与 Modrinth](REMOTE_CONTENT.md) 提供；CurseForge 尚未接入。
 - 本地内容列表仍只显示文件名、路径和大小；安装预检会解析 Fabric/Quilt/Forge/NeoForge Mod 元数据，见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，但列表本身尚未展示真实名称、图标或版本。
 - 尚未计算本地文件哈希，因此不能做远程识别或更新检查。
-- 尚未检查资源包 `pack_format` 兼容性，也不自动修改 `incompatibleResourcePacks` 的兼容判断。
+- `pack_format` 兼容判断和资源包元数据 API 已提供，但尚未接入 GPUI 列表展示、导入/下载后的兼容性提示和 `incompatibleResourcePacks` 自动修正。
 - 资源包启用格式的版本推断是启发式；空列表的旧版本可能被写成现代 `file/` 格式，需要后续按精确版本表修正。
+- 光影包目前只校验结构和加载器状态；尚未读写 Iris/OptiFine 的启用配置，也没有界面级“当前光影”切换。
 - 尚未支持从文件夹导入资源包/光影，只管理已存在的文件夹。
 - 尚未实现内容更新、批量启用、拖放导入和整合包安装。
 - 加载器安装见 [版本继承、加载器安装与实例创建](LOADERS.md)；当前支持 Fabric/Quilt 和现代 Forge/NeoForge installer。
@@ -108,5 +118,6 @@
 ## 验证
 
 - `rmcl-content` 覆盖 Mod 根目录/一层子目录/禁用项、资源包文件和文件夹、光影文件/文件夹、符号链接跳过、同名改名、拒绝覆盖、Mod 切换、`options.txt` 现代/旧格式、损坏选项不重写、删除与目录删除限制。
+- 新增覆盖资源包 ZIP/文件夹元数据、`supported_formats` 对象/数组、`min_format`/`max_format` 回退、元数据大小限制、client JAR `pack_version`、光影包结构与描述、资源包优先级移动，以及禁用光影加载器不计入检测。
 - `rmcl-app` 集成测试覆盖 `spawn_blocking` 包装下的导入、扫描、禁用和删除链路。
 - `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的文件选择、标签切换和导入/删除交互仍需在 macOS、Windows、Linux 逐平台验收。

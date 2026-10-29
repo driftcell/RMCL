@@ -4,10 +4,11 @@ use axum::{Json, Router, response::IntoResponse, routing::get};
 use rmcl_app::{
     AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
     ContentInstallRequest, ContentInstaller, ContentKind, ContentSource, IsolationMode,
-    ModMetadataCache, ModrinthClient, ModrinthConfig, RemoteDependency, RemoteDependencyKind,
-    RemoteFile, RemoteVersion, TaskKind, TaskManager, TaskPhase, TaskProgress, TaskStatus,
-    TaskSubject, VanillaInstaller, delete_instance_content, import_instance_content,
-    preflight_content_install, resolve_content_install_batch, scan_installed_mods,
+    ModMetadataCache, ModrinthClient, ModrinthConfig, PackFormat, RemoteDependency,
+    RemoteDependencyKind, RemoteFile, RemoteVersion, ResourcePackOrder, TaskKind, TaskManager,
+    TaskPhase, TaskProgress, TaskStatus, TaskSubject, VanillaInstaller, delete_instance_content,
+    import_instance_content, move_instance_resource_pack, preflight_content_install,
+    resolve_content_install_batch, resource_pack_format, scan_installed_mods,
     scan_instance_content, set_instance_content_enabled,
 };
 use rmcl_domain::Sha1Hash;
@@ -76,6 +77,75 @@ fn fabric_mod_bytes_with_breaks(id: &str, version: &str, breaks: serde_json::Val
     let path = temporary.path().join("mod.jar");
     write_fabric_mod_with_metadata(&path, id, version, json!({}), breaks);
     std::fs::read(path).unwrap()
+}
+
+fn write_zip_entry(path: &Path, name: &str, contents: &[u8]) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let file = std::fs::File::create(path).unwrap();
+    let mut archive = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    archive.start_file(name, options).unwrap();
+    archive.write_all(contents).unwrap();
+    archive.finish().unwrap();
+}
+
+#[test]
+fn resource_pack_format_uses_the_loader_base_client_jar() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join(".minecraft");
+    let base = instance(&root);
+    write(
+        &base.version_json_path(),
+        br#"{"id":"1.21.1","jar":"1.21.1"}"#,
+    );
+    write_zip_entry(
+        &base.client_jar_path_for(None),
+        "version.json",
+        br#"{"id":"1.21.1","pack_version":{"resource_major":34,"resource_minor":0}}"#,
+    );
+    assert_eq!(resource_pack_format(&base), Some(PackFormat::new(34, 0)));
+
+    let loader = MinecraftLayout::new(&root).instance(
+        VersionId::new("fabric-1.21.1").unwrap(),
+        IsolationMode::Isolated,
+    );
+    write(
+        &loader.version_json_path(),
+        br#"{"id":"fabric-1.21.1","inheritsFrom":"1.21.1","jar":"1.21.1"}"#,
+    );
+    assert_eq!(resource_pack_format(&loader), Some(PackFormat::new(34, 0)));
+}
+
+#[test]
+fn resource_pack_format_is_unknown_without_client_metadata() {
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    assert_eq!(resource_pack_format(&instance), None);
+}
+
+#[tokio::test]
+async fn applies_resource_pack_priority_through_the_app_wrapper() {
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write(&instance.resourcepacks_dir().join("a.zip"), b"a");
+    write(&instance.resourcepacks_dir().join("b.zip"), b"b");
+    write(
+        &instance.options_path(),
+        b"resourcePacks:[\"file/a.zip\",\"file/b.zip\"]\n",
+    );
+
+    move_instance_resource_pack(
+        instance.clone(),
+        RepositoryPath::new("a.zip").unwrap(),
+        ResourcePackOrder::HigherPriority,
+    )
+    .await
+    .unwrap();
+    assert!(
+        std::fs::read_to_string(instance.options_path())
+            .unwrap()
+            .contains("resourcePacks:[\"file/b.zip\",\"file/a.zip\"]")
+    );
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {
@@ -208,6 +278,60 @@ async fn downloads_verifies_and_imports_remote_content() {
         .await
         .unwrap();
     assert_eq!(second.content.relative_path.as_str(), "example (1).jar");
+    server.abort();
+}
+
+#[tokio::test]
+async fn installs_remote_resource_and_shader_packs() {
+    let bytes = b"remote pack".to_vec();
+    let (base, server) = mod_server(bytes.clone()).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let installer = ContentInstaller::official(DownloadConfig::default()).unwrap();
+
+    for (kind, filename) in [
+        (ContentKind::ResourcePack, "pack.zip"),
+        (ContentKind::ShaderPack, "shader.zip"),
+    ] {
+        let outcome = installer
+            .install(
+                ContentInstallRequest {
+                    instance: instance.clone(),
+                    kind,
+                    file: RemoteFile {
+                        filename: filename.to_owned(),
+                        url: base.join("mod.jar").unwrap(),
+                        size: Some(bytes.len() as u64),
+                        sha1: Some(sha1(&bytes)),
+                        primary: true,
+                    },
+                    display_name: filename.to_owned(),
+                    conflict: ConflictPolicy::Rename,
+                    replace: None,
+                },
+                CancellationToken::new(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.content.relative_path.as_str(), filename);
+        assert_eq!(outcome.content.enabled, kind == ContentKind::ShaderPack);
+    }
+
+    set_instance_content_enabled(
+        instance.clone(),
+        ContentKind::ResourcePack,
+        RepositoryPath::new("pack.zip").unwrap(),
+        true,
+    )
+    .await
+    .unwrap();
+    assert!(
+        std::fs::read_to_string(instance.options_path())
+            .unwrap()
+            .contains("resourcePacks:[\"file/pack.zip\"]")
+    );
     server.abort();
 }
 

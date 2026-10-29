@@ -43,9 +43,9 @@ pub use content::{
     ContentInstallRequest, ContentInstaller, ContentPreflightItem, ContentPreflightStatus,
     ModMetadataCache, ModMetadataFetch, delete_instance_content,
     delete_instance_content_with_guard, import_instance_content,
-    import_instance_content_with_guard, preflight_content_install, resolve_content_install_batch,
-    resolve_content_install_order, scan_instance_content, set_instance_content_enabled,
-    set_instance_content_enabled_with_guard,
+    import_instance_content_with_guard, move_instance_resource_pack, preflight_content_install,
+    resolve_content_install_batch, resolve_content_install_order, resource_pack_format,
+    scan_instance_content, set_instance_content_enabled, set_instance_content_enabled_with_guard,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};
@@ -76,10 +76,12 @@ pub use remote_icons::{MAX_REMOTE_ICON_BYTES, RemoteIconCache, RemoteIconError};
 pub use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, ContentSource, ContentWarning, InstalledMod,
     InstalledModIndex, LocalContent, ModDependency, ModMetadata, ModMetadataError,
-    ModMetadataLoader, ModrinthClient, ModrinthConfig, RemoteContentError, RemoteDependency,
-    RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
-    RemoteSort, RemoteVersion, read_mod_metadata, recommended_version, replace_content_file,
-    scan_installed_mods,
+    ModMetadataLoader, ModrinthClient, ModrinthConfig, PackFormat, PackFormatRange,
+    RemoteContentError, RemoteDependency, RemoteDependencyKind, RemoteFile, RemoteProject,
+    RemoteSearchPage, RemoteSearchQuery, RemoteSort, RemoteVersion, ResourcePackCompatibility,
+    ResourcePackMetadata, ResourcePackOrder, ShaderLoader, ShaderPackMetadata,
+    read_client_resource_pack_format, read_mod_metadata, read_resource_pack_metadata,
+    read_shader_pack_metadata, recommended_version, replace_content_file, scan_installed_mods,
 };
 pub use rmcl_instance::{
     InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,

@@ -7,12 +7,14 @@ use std::{
 
 use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, InstalledMod, InstalledModIndex, LocalContent,
-    ModDependency, ModMetadata, ModrinthClient, RemoteDependency, RemoteDependencyKind, RemoteFile,
-    RemoteProject, RemoteVersion, delete_content, import_file, read_mod_metadata,
-    replace_content_file, scan_library, set_content_enabled, version_satisfies,
+    ModDependency, ModMetadata, ModrinthClient, PackFormat, RemoteDependency, RemoteDependencyKind,
+    RemoteFile, RemoteProject, RemoteVersion, ResourcePackOrder, delete_content, import_file,
+    move_resource_pack, read_mod_metadata, replace_content_file, scan_library, set_content_enabled,
+    version_satisfies,
 };
 use rmcl_domain::DownloadRequest;
-use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath};
+use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath, VersionId};
+use rmcl_minecraft::GameVersion;
 use rmcl_net::{DownloadConfig, DownloadExecutor, DownloadStatus, ProgressStage, progress_channel};
 use sha1::{Digest, Sha1};
 use tempfile::NamedTempFile;
@@ -22,6 +24,26 @@ use tokio_util::sync::CancellationToken;
 use crate::{AppError, RepositoryWriteGuard, try_lock_repository};
 
 const MAX_PREFLIGHT_JAR_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads the resource-pack format of an instance from its client JAR.
+///
+/// Loader instances point at the base client JAR through `version.json`'s
+/// `jar` field. Missing metadata yields `None`; the caller should surface
+/// compatibility as unknown rather than guessing.
+pub fn resource_pack_format(instance: &InstanceLayout) -> Option<PackFormat> {
+    let text = fs::read_to_string(instance.version_json_path()).ok()?;
+    let version = GameVersion::from_json(&text).ok()?;
+    let jar_id = version
+        .jar
+        .as_deref()
+        .or(version.inherits_from.as_deref())
+        .filter(|jar| !jar.trim().is_empty())
+        .unwrap_or_else(|| instance.id().as_str());
+    let jar_id = VersionId::new(jar_id).ok()?;
+    rmcl_content::read_client_resource_pack_format(instance.client_jar_path_for(Some(&jar_id)))
+        .ok()
+        .flatten()
+}
 
 /// Scans all local content directories of one instance.
 pub async fn scan_instance_content(instance: InstanceLayout) -> Result<ContentLibrary, AppError> {
@@ -50,6 +72,18 @@ pub async fn import_instance_content_with_guard(
     _repository_guard: &RepositoryWriteGuard,
 ) -> Result<LocalContent, AppError> {
     tokio::task::spawn_blocking(move || import_file(&instance, kind, source, policy))
+        .await
+        .map_err(|error| AppError::BlockingTask(error.to_string()))?
+        .map_err(AppError::Content)
+}
+
+/// Moves an enabled resource pack in the instance priority list.
+pub async fn move_instance_resource_pack(
+    instance: InstanceLayout,
+    relative_path: RepositoryPath,
+    order: ResourcePackOrder,
+) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || move_resource_pack(&instance, &relative_path, order))
         .await
         .map_err(|error| AppError::BlockingTask(error.to_string()))?
         .map_err(AppError::Content)

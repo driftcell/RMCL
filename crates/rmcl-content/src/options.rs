@@ -11,6 +11,15 @@ use crate::ContentError;
 const RESOURCE_PACKS: &str = "resourcePacks";
 const INCOMPATIBLE_RESOURCE_PACKS: &str = "incompatibleResourcePacks";
 
+/// Direction to move an enabled resource pack in the priority list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourcePackOrder {
+    /// Move toward the end of `resourcePacks`, where the pack overrides more.
+    HigherPriority,
+    /// Move toward the start of `resourcePacks`, where the pack overrides less.
+    LowerPriority,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResourcePackListFormat {
     Modern,
@@ -95,6 +104,31 @@ impl ResourcePackOptions {
         if enabled {
             self.enabled.push(self.format.entry(file_name));
         }
+    }
+
+    pub(crate) fn move_entry(
+        &mut self,
+        file_name: &str,
+        order: ResourcePackOrder,
+    ) -> Result<(), ContentError> {
+        let target = normalize(file_name);
+        let Some(index) = self
+            .enabled
+            .iter()
+            .position(|entry| normalize(entry) == target)
+        else {
+            return Err(ContentError::ResourcePackNotEnabled {
+                file_name: file_name.to_owned(),
+            });
+        };
+        let neighbor = match order {
+            ResourcePackOrder::HigherPriority => index.checked_add(1),
+            ResourcePackOrder::LowerPriority => index.checked_sub(1),
+        };
+        if let Some(neighbor) = neighbor.filter(|neighbor| *neighbor < self.enabled.len()) {
+            self.enabled.swap(index, neighbor);
+        }
+        Ok(())
     }
 
     pub(crate) fn save(&self) -> Result<(), ContentError> {
@@ -291,6 +325,68 @@ mod tests {
         options.save().unwrap();
         let saved = std::fs::read_to_string(&path).unwrap();
         assert!(saved.contains("resourcePacks:[\"file/b.zip\"]"));
+    }
+
+    #[test]
+    fn moves_enabled_packs_in_priority_order() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("options.txt");
+        std::fs::write(
+            &path,
+            "resourcePacks:[\"file/a.zip\",\"file/b.zip\",\"file/c.zip\"]\n",
+        )
+        .unwrap();
+        let mut options = ResourcePackOptions::load(path.clone(), true)
+            .unwrap()
+            .unwrap();
+
+        options
+            .move_entry("a.zip", ResourcePackOrder::HigherPriority)
+            .unwrap();
+        assert_eq!(
+            options.enabled,
+            vec!["file/b.zip", "file/a.zip", "file/c.zip"]
+        );
+        options
+            .move_entry("c.zip", ResourcePackOrder::LowerPriority)
+            .unwrap();
+        assert_eq!(
+            options.enabled,
+            vec!["file/b.zip", "file/c.zip", "file/a.zip"]
+        );
+        options
+            .move_entry("a.zip", ResourcePackOrder::HigherPriority)
+            .unwrap();
+        assert_eq!(
+            options.enabled,
+            vec!["file/b.zip", "file/c.zip", "file/a.zip"]
+        );
+        options
+            .move_entry("b.zip", ResourcePackOrder::LowerPriority)
+            .unwrap();
+        assert_eq!(
+            options.enabled,
+            vec!["file/b.zip", "file/c.zip", "file/a.zip"]
+        );
+
+        options.save().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "resourcePacks:[\"file/b.zip\",\"file/c.zip\",\"file/a.zip\"]\n"
+        );
+    }
+
+    #[test]
+    fn moving_a_disabled_pack_is_rejected() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("options.txt");
+        std::fs::write(&path, "resourcePacks:[\"file/a.zip\"]\n").unwrap();
+        let mut options = ResourcePackOptions::load(path, true).unwrap().unwrap();
+
+        assert!(matches!(
+            options.move_entry("missing.zip", ResourcePackOrder::HigherPriority),
+            Err(ContentError::ResourcePackNotEnabled { .. })
+        ));
     }
 
     #[test]
