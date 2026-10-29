@@ -40,6 +40,7 @@
 
 - [HMCL 参考基线](compatibility/HMCL_BASELINE.md)：固定参考版本、使用方式和参考边界。
 - [离线账号行为](compatibility/OFFLINE_ACCOUNTS.md)：用户名、UUID 与自定义身份语义。
+- [authlib-injector 外置登录](compatibility/AUTHLIB_INJECTOR.md)：内置认证服务器、Yggdrasil 协议、启动注入、下载校验与皮肤边界。
 - [版本元数据行为](compatibility/VERSION_METADATA.md)：清单、规则、参数与当前解析边界。
 - [Minecraft 仓库布局](compatibility/REPOSITORY_LAYOUT.md)：标准目录、安全相对路径和 natives 隔离。
 
@@ -65,6 +66,7 @@
 - [当前未决问题](../notes/bootstrap/open_questions.md)
 - [界面重做与配置记录](../notes/development/ui_redesign.md)
 - [Microsoft 登录与正版皮肤实现记录](../notes/development/microsoft_login.md)
+- [authlib-injector 外置登录实现记录](../notes/development/authlib_injector.md)
 - [官方皮肤页与 3D 预览实现记录](../notes/development/skin_page.md)
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)

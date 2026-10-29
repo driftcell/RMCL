@@ -35,13 +35,13 @@
 
 ### 当前进度（2026-10-26）
 
-已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认和本地皮肤库）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装、自定义实例创建、从已有实例创建加载器实例并复制内容、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/正式版推荐/本地与远程 Mod 元数据索引/版本范围匹配/安装前置预检/必需依赖解析/内容安装任务、服务器收藏与 Java Edition Server List Ping（MOTD、在线人数、延迟、图标和 5 秒自动刷新）、Quick Play/legacy 一键进服、GitHub Release 自动更新（检查、SHA-256、平台包替换、helper 重启）、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java/最大内存/窗口尺寸选择和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge 已在 macOS ARM64 通过真实 installer 和启动到 ModLauncher 初始化的自动化 smoke。authlib-injector、legacy Forge、主菜单/世界加载验收、Java runtime 列表管理界面、实例级任意启动参数、Windows/Linux 真实运行验收、服务器 Bedrock、真实一键进服验收、真实自动更新/重启验收，以及游戏运行时隐藏/恢复的完整真实启动验证仍待完成。CurseForge、可选依赖/冲突求解、更新检查和整合包属于后续里程碑。
+已完成启动器壳、离线与 Microsoft 正版账户（设备代码登录、系统钥匙串令牌、删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认和本地皮肤库）、authlib-injector 外置登录（内置常用认证服务器、稳定账户 ID、Yggdrasil 登录/刷新、authlib-injector 下载校验缓存与启动注入）、已安装版本扫描、实例 manifest 与版本隔离、旧实例显式迁移、版本继承合并、Fabric/Quilt 加载器安装、Forge/NeoForge 现代 processor installer 安装、自定义实例创建、从已有实例创建加载器实例并复制内容、本地 Mod/资源包/光影扫描与导入/删除/启用禁用、Modrinth 搜索/版本/下载/SHA-1 校验/正式版推荐/本地与远程 Mod 元数据索引/版本范围匹配/安装前置预检/必需依赖解析/内容安装任务、服务器收藏与 Java Edition Server List Ping（MOTD、在线人数、延迟、图标和 5 秒自动刷新）、Quick Play/legacy 一键进服、GitHub Release 自动更新（检查、SHA-256、平台包替换、helper 重启）、远程版本目录、安装/快速启动/取消、任务日志、版本修复与删除、实例重命名、单任务互斥、实例级 Java/最大内存/窗口尺寸选择和启动器可见性设置；正版 token 启动真实 Vanilla 已在 macOS ARM64 实际验证。Forge/NeoForge 已在 macOS ARM64 通过真实 installer 和启动到 ModLauncher 初始化的自动化 smoke。legacy Forge、主菜单/世界加载验收、真实第三方认证服务器/进服/皮肤验收、Java runtime 列表管理界面、实例级任意启动参数、Windows/Linux 真实运行验收、服务器 Bedrock、真实一键进服验收、真实自动更新/重启验收，以及游戏运行时隐藏/恢复的完整真实启动验证仍待完成。CurseForge、可选依赖/冲突求解、更新检查和整合包属于后续里程碑。
 
 ## 后续顺序
 
 以下顺序用于控制依赖关系，不表示这些功能已经完成：
 
-1. **M2：账号与主流加载器**：Microsoft、authlib-injector、Fabric、Quilt、Forge、NeoForge。Microsoft、Fabric、Quilt、Forge 和 NeoForge 的现代 installer 已完成；authlib-injector 与 legacy Forge 待完成。
+1. **M2：账号与主流加载器**：Microsoft、authlib-injector、Fabric、Quilt、Forge、NeoForge。Microsoft、authlib-injector、Fabric、Quilt、Forge 和 NeoForge 的现代 installer 已完成；legacy Forge 待完成。
 2. **M3：旧版兼容与更多组件**：旧 Forge、OptiFine、LiteLoader、Cleanroom、Legacy Fabric 等。
 3. **M4：内容与整合包**：Mod、资源包、整合包检索、下载、导入与导出。
 4. **M5：完整产品化**：剩余 HMCL 功能、HMCL 配置导入、完整主题与国际化、自动更新签名/增量更新、安装包。

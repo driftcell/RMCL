@@ -35,7 +35,7 @@
 
 `with_uuid` 支持显式保留存储或用户提供的 UUID。持久化实现必须保存最终 UUID，不能在加载时无条件重新按用户名推导。
 
-最小核心不包含离线皮肤、本地 Yggdrasil 服务、authlib-injector 或额外 JVM agent 参数。
+离线账户核心不包含离线皮肤、本地 Yggdrasil 服务或额外 JVM agent 参数。authlib-injector 外置登录由独立账户类型和启动注入实现，见 [authlib-injector 外置登录](AUTHLIB_INJECTOR.md)。
 
 ## 与正版账户共存
 

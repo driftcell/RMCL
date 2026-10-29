@@ -1,8 +1,8 @@
 # 应用层 Vanilla 安装与启动
 
-状态：`rmcl-app` 安装、安装任务、Java ensure 和游戏任务已实现
+状态：`rmcl-app` 安装、安装任务、Java ensure、游戏任务、外置登录账户和 authlib-injector 缓存已实现
 
-日期：2026-10-27
+日期：2026-10-29
 
 ## 边界
 
@@ -11,6 +11,8 @@
 实例内容的本地扫描与变更由 `rmcl-content` 提供，`rmcl-app` 只提供 `spawn_blocking` 异步包装；见 [本地内容管理](LOCAL_CONTENT.md)。Modrinth 元数据客户端也在 `rmcl-content`，但远程文件下载由 `rmcl-app` 的 `ContentInstaller` 复用 `rmcl-net` 执行，并由 `TaskManager` 以 `ContentInstall` 任务持有下载、取消和进度；见 [远程内容与 Modrinth](REMOTE_CONTENT.md)。
 
 服务器状态查询由 `rmcl-app` 的 `ServerStatusClient` 直接实现 Java Edition Server List Ping，图标由 `ServerIconCache` 按内容哈希缓存；它不注册 `TaskManager` 任务，也不与安装/启动争用实例互斥。一键进服只把类型化服务器目标放入现有 `GameLaunchRequest`，仍由普通游戏任务持有进程、日志和取消；见 [服务器列表与一键进服](SERVERS.md)。
+
+外置登录由 `AuthlibAccountService` 组合 `rmcl-auth` 的 Yggdrasil 客户端、系统凭据存储和元数据缓存；`AuthlibInjectorService` 负责从官方或 BMCLAPI 下载 authlib-injector、校验 SHA-256 并按 build number 缓存。`GameLaunchRequest.authlib` 把已验证的 jar 路径、API Root 和 prefetch 元数据交给启动层。它们不依赖 GPUI，也不把密码写入磁盘。协议与皮肤边界见 [authlib-injector 外置登录](../compatibility/AUTHLIB_INJECTOR.md)。
 
 `VanillaInstallRequest` 要求调用方提供 `.minecraft` 根、精确版本 ID、目标平台和 `VersionSource`：
 
@@ -117,7 +119,7 @@ base 失败时不会下载 assets 或提取 natives；assets 失败时不会提�
 
 ## 当前不包含
 
-- authlib-injector、legacy Forge installer、特殊资产名称重建和自定义镜像源
+- legacy Forge installer、特殊资产名称重建和自定义镜像源
 - 实例复制、导入导出和任意 JVM/游戏启动参数；实例级 Java、内存和窗口设置已实现
 - CurseForge、可选依赖与冲突求解、内容更新检查和整合包
 - 完整修复、native 清理、内容寻址缓存和断点续传

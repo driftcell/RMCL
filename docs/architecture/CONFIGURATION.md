@@ -1,6 +1,6 @@
 # 启动器配置
 
-状态：schema 8 已实现；schema 1/2/3/4/5/6/7 可读取并在内存中升级
+状态：schema 9 已实现；schema 1/2/3/4/5/6/7/8 可读取并在内存中升级
 
 日期：2026-10-29
 
@@ -34,15 +34,16 @@ RMCL 不迁移或合并其他目录中的仓库。
 
 `--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像和完整纹理缓存位于同目录的 `cache/skins/`，本地皮肤库位于 `skins/library/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
-## Schema 8
+## Schema 9
 
 ```toml
-schema_version = 8
+schema_version = 9
 minecraft_root = "/Users/example/Library/Application Support/minecraft"
 java_store = "/Users/example/.rmcl/java"
 selected_version = "1.21.1"
 selected_account = "Podwarden"
 selected_account_kind = "microsoft"
+selected_account_id = "microsoft:97fe2bde-352d-454d-adf9-a0f568a50a3b"
 auto_install_java = true
 auto_check_updates = true
 download_source = "auto"
@@ -61,6 +62,13 @@ username = "Podwarden"
 uuid = "97fe2bde-352d-454d-adf9-a0f568a50a3b"
 skin_url = "http://textures.minecraft.net/texture/…"
 
+[[authlib_accounts]]
+id = "11111111-1111-4111-8111-111111111111"
+username = "Steve"
+uuid = "5627dd98-e6be-3c21-b8a8-e92344183641"
+api_root = "https://littleskin.cn/api/yggdrasil/"
+server_name = "LittleSkin"
+
 [[servers]]
 id = "0f8b0d0e-…"
 name = "生存服"
@@ -76,10 +84,12 @@ accent = "emerald"
 - `minecraft_root`：标准 `.minecraft` 仓库根。修改后重新扫描版本，不移动文件。
 - `java_store`：RMCL 管理的 Java runtime store。启动时读取，修改后需重启。
 - `selected_version`：下一次启动使用的已安装实例目录 ID；不存在时界面回退到第一个有效实例。
-- `selected_account`：当前选中的玩家名。
-- `selected_account_kind`：`offline` 或 `microsoft`。同名离线账户与正版账户通过该字段区分。
+- `selected_account`：当前选中的玩家名，仅用于显示和兼容旧配置。
+- `selected_account_kind`：`offline`、`microsoft` 或 `authlib`。同名账户通过该字段和 `selected_account_id` 区分。
+- `selected_account_id`：稳定账户键。离线为 `offline:<uuid>`，正版为 `microsoft:<uuid>`，外置登录为 `authlib:<账户 ID>`。旧配置读取时从 `selected_account` 和 `selected_account_kind` 推导。
 - `accounts`：离线账户的玩家名和 UUID。UUID 使用离线身份规则生成并持久化；不保存访问令牌。
 - `microsoft_accounts`：正版账户的玩家名、Minecraft profile UUID 和可选的官方皮肤 URL；不保存 refresh token 或 access token。
+- `authlib_accounts`：外置登录账户的 RMCL 账户 ID、玩家名、Yggdrasil profile UUID、规范化 API Root 和服务器显示名；不保存密码、access token 或 client token。
 - 本地皮肤库不写入 `config.toml`；`skins/library/index.json` 只保存皮肤 ID、显示名、模型提示、来源 URL、导入时间和文件名，完整 PNG、合成头像与索引均通过同目录临时文件原子发布。
 - `servers`：启动器级服务器收藏，包含稳定 `id`、显示名称和原始 `host[:port]` 地址。不保存状态、延迟、图标或账号令牌；不绑定实例，进服时使用当前选中实例和账户。
 - `auto_install_java`：缺少兼容 Java 时是否允许下载 Mojang runtime。当前在启动时读取。
@@ -94,15 +104,15 @@ accent = "emerald"
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
-缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–8；0 或更高版本会被拒绝。读取 schema 1/2/3/4/5/6/7 时补齐 `selected_account_kind`、`microsoft_accounts`、空 `servers`、`auto_check_updates`、`download_source` 和 AI 设置，内存中的版本升级为 8，下一次用户修改设置时写回。旧配置中的 GUI MCP 字段按普通未知字段忽略，不会启动服务或保留到下一次写入。
+缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–9；0 或更高版本会被拒绝。读取 schema 1/2/3/4/5/6/7/8 时补齐 `selected_account_kind`、`selected_account_id`、`microsoft_accounts`、`authlib_accounts`、空 `servers`、`auto_check_updates`、`download_source` 和 AI 设置，内存中的版本升级为 9，下一次用户修改设置时写回。旧配置中的 GUI MCP 字段按普通未知字段忽略，不会启动服务或保留到下一次写入。
 
-正版令牌不在 `config.toml` 中，而是通过 `rmcl-platform` 保存到系统凭据存储：
+令牌不在 `config.toml` 中，而是通过 `rmcl-platform` 保存到系统凭据存储：
 
 - 服务名：`com.rmcl.launcher`
-- 键：`microsoft:<无连字符 UUID>`
-- 值：带版本的 JSON，包含 refresh token、缓存的 Minecraft access token 和过期时间
+- 正版键：`microsoft:<无连字符 UUID>`；值包含 refresh token、缓存的 Minecraft access token 和过期时间。
+- 外置登录键：`authlib:<RMCL 账户 ID>`；值包含 Yggdrasil access token、client token 和 user properties。
 
-具体协议和删除语义见 [正版账号、令牌与皮肤](AUTHENTICATION.md)。
+具体协议和删除语义见 [正版账号、令牌与皮肤](AUTHENTICATION.md) 与 [authlib-injector 外置登录](../compatibility/AUTHLIB_INJECTOR.md)。
 
 ## 原子写入
 
@@ -121,7 +131,7 @@ accent = "emerald"
 - 更高 schema：返回 `UnsupportedSchema`，原文件保留。
 - 后续用户主动修改设置时才可能写入当前 schema。
 
-配置文件只包含离线与正版账户元数据、皮肤 URL、服务器收藏、路径和界面偏好，不包含 Microsoft 令牌、密码或认证服务器凭据。正版令牌只存在于系统凭据存储。
+配置文件只包含离线、正版和外置登录账户元数据、皮肤 URL、服务器收藏、路径和界面偏好，不包含 Microsoft/Yggdrasil 令牌、密码或认证服务器凭据。令牌只存在于系统凭据存储。
 
 ## 迁移
 
@@ -164,6 +174,14 @@ Schema 7 → 8：
 - CLI `mcp --stdio` 和 `mcp --http` 不使用上述字段，行为不变；内置 Agent 继续使用进程内 MCP。
 - 旧字段按未知字段忽略，下一次写回时不保留。
 
+Schema 8 → 9：
+
+- 新增 `selected_account_id`，读取时从旧 `selected_account` 和 `selected_account_kind` 推导稳定键。
+- 新增空 `authlib_accounts` 列表；旧账户保持不变。
+- 外置登录令牌不迁移、不写入配置文件；新登录写入系统凭据存储。
+- 其余字段原样保留。
+- 内存中的版本升级为 9；只有用户主动修改设置时才写回文件。
+
 后续升级 schema 时必须：
 
 - 明确旧版本到新版本的字段映射和默认值。
@@ -177,13 +195,14 @@ Schema 7 → 8：
 
 - 默认路径不指向 HMCL 配置。
 - 缺失文件返回默认值。
-- TOML 往返保留离线账户、正版账户、皮肤 URL、选中账户类型、服务器收藏、自动更新设置、下载源、外观和启动器可见性。
+- TOML 往返保留离线账户、正版账户、外置账户、皮肤 URL、稳定选中账户 ID、服务器收藏、自动更新设置、下载源、外观和启动器可见性。
 - Schema 1 文件升级后保留离线账户并补上默认字段。
 - Schema 2 文件升级后补上空服务器列表。
 - Schema 3 文件升级后补上默认开启的自动更新检查。
 - Schema 4 文件升级后补上默认 `auto` 下载源。
 - Schema 6 文件升级后补上默认的 AI 服务商和空的模型/Base URL/代理字段。
+- Schema 8 文件升级后补上稳定选中账户 ID 和空外置账户列表。
 - 损坏 TOML 和更高 schema 不被重写。
 - 覆盖保存后内容可重新读取。
 
-系统凭据存储、头像缓存和跨平台路径权限仍需在 Windows 和 Linux 上做真实运行验证。
+系统凭据存储、头像缓存、外置登录真实服务端和跨平台路径权限仍需在 Windows 和 Linux 上做真实运行验证。

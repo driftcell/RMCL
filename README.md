@@ -19,7 +19,7 @@
   </a>
 </p>
 
-RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit 构建原生桌面界面。支持正版与离线账户、Vanilla 和主流加载器、实例隔离、Mod 管理、服务器收藏、皮肤更换与自动更新。
+RMCL 是一个独立的 Minecraft Java 版启动器，使用 Rust 和 GPUI Kit 构建原生桌面界面。支持正版、离线与 authlib-injector 外置登录账户、Vanilla 和主流加载器、实例隔离、Mod 管理、服务器收藏、皮肤更换与自动更新。
 
 ## 界面预览
 
