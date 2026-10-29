@@ -38,6 +38,8 @@ pub enum ContentError {
     ResourcePackNotEnabled { file_name: String },
     #[error("invalid Minecraft client metadata in `{path}`: {reason}")]
     ClientMetadata { path: PathBuf, reason: String },
+    #[error("invalid shader configuration `{path}`: {reason}")]
+    ShaderConfig { path: PathBuf, reason: String },
     #[error("cannot {operation} for {kind}")]
     UnsupportedOperation {
         kind: ContentKind,

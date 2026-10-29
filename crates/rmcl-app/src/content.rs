@@ -8,8 +8,9 @@ use std::{
 use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, InstalledMod, InstalledModIndex, LocalContent,
     ModDependency, ModMetadata, ModrinthClient, PackFormat, RemoteDependency, RemoteDependencyKind,
-    RemoteFile, RemoteProject, RemoteVersion, ResourcePackOrder, delete_content, import_file,
-    move_resource_pack, read_mod_metadata, replace_content_file, scan_library, set_content_enabled,
+    RemoteFile, RemoteProject, RemoteVersion, ResourcePackOrder, ShaderLoader, ShaderPackSelection,
+    delete_content, import_file, move_resource_pack, read_mod_metadata, read_shader_pack_selection,
+    replace_content_file, scan_library, set_content_enabled, set_shader_pack_selection,
     version_satisfies,
 };
 use rmcl_domain::DownloadRequest;
@@ -75,6 +76,31 @@ pub async fn import_instance_content_with_guard(
         .await
         .map_err(|error| AppError::BlockingTask(error.to_string()))?
         .map_err(AppError::Content)
+}
+
+/// Reads the selected shader pack for an instance's loader.
+pub async fn read_instance_shader_pack(
+    instance: InstanceLayout,
+    loader: ShaderLoader,
+) -> Result<Option<ShaderPackSelection>, AppError> {
+    tokio::task::spawn_blocking(move || read_shader_pack_selection(&instance, loader))
+        .await
+        .map_err(|error| AppError::BlockingTask(error.to_string()))?
+        .map_err(AppError::Content)
+}
+
+/// Selects or disables a shader pack for an instance's loader.
+pub async fn set_instance_shader_pack(
+    instance: InstanceLayout,
+    loader: ShaderLoader,
+    pack: Option<String>,
+) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        set_shader_pack_selection(&instance, loader, pack.as_deref())
+    })
+    .await
+    .map_err(|error| AppError::BlockingTask(error.to_string()))?
+    .map_err(AppError::Content)
 }
 
 /// Moves an enabled resource pack in the instance priority list.
