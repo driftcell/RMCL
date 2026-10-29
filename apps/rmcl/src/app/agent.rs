@@ -34,13 +34,6 @@ pub struct AgentStep {
     pub summary: String,
     pub state: AgentStepState,
     pub error: Option<String>,
-    pub task_id: Option<u64>,
-}
-
-impl AgentStep {
-    pub fn is_running(&self) -> bool {
-        self.state == AgentStepState::Running
-    }
 }
 
 #[derive(Clone)]
@@ -118,20 +111,13 @@ impl AgentActivity {
         }
     }
 
-    fn finish_tool(
-        &mut self,
-        id: u64,
-        state: AgentStepState,
-        error: Option<String>,
-        task_id: Option<u64>,
-    ) {
+    fn finish_tool(&mut self, id: u64, state: AgentStepState, error: Option<String>) {
         let Some(steps) = self.steps_mut() else {
             return;
         };
         if let Some(step) = steps.iter_mut().find(|step| step.id == id) {
             step.state = state;
             step.error = error;
-            step.task_id = task_id;
         }
     }
 }
@@ -769,11 +755,7 @@ impl AgentState {
                 self.update_activity(|activity| activity.set_status(status));
             }
             AgentEvent::ToolStarted {
-                id,
-                label,
-                summary,
-                task_id,
-                ..
+                id, label, summary, ..
             } => {
                 let step = AgentStep {
                     id,
@@ -781,7 +763,6 @@ impl AgentState {
                     summary,
                     state: AgentStepState::Running,
                     error: None,
-                    task_id,
                 };
                 self.update_activity(|activity| activity.start_tool(step));
             }
@@ -790,7 +771,6 @@ impl AgentState {
                 success,
                 skipped,
                 error,
-                task_id,
                 ..
             } => {
                 let state = if skipped {
@@ -801,7 +781,7 @@ impl AgentState {
                     AgentStepState::Failed
                 };
                 if let Some(activity) = self.run.activity_mut() {
-                    activity.finish_tool(id, state, error, task_id);
+                    activity.finish_tool(id, state, error);
                 }
             }
             AgentEvent::Confirmation {
@@ -1074,23 +1054,6 @@ impl AgentState {
             _ => None,
         }
     }
-
-    pub fn active_task_id(&self) -> Option<u64> {
-        self.run.activity().and_then(|activity| {
-            activity
-                .steps()
-                .iter()
-                .rev()
-                .filter(|step| step.is_running())
-                .find_map(|step| step.task_id)
-        })
-    }
-
-    pub fn task_progress(&self, snapshot: Option<&rmcl_app::TaskSnapshot>) -> Option<(f32, bool)> {
-        let task_id = self.active_task_id()?;
-        let snapshot = snapshot.filter(|snapshot| snapshot.id.get() == task_id)?;
-        Some(super::task_progress(Some(snapshot)))
-    }
 }
 
 fn non_empty_value(value: &str) -> Option<String> {
@@ -1113,38 +1076,4 @@ fn is_agent_write_tool(name: &str) -> bool {
             | "java_ensure"
             | "tasks_cancel"
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use rmcl_app::{TaskId, TaskKind, TaskProgress, TaskSnapshot, TaskStatus};
-
-    fn snapshot(progress: Option<TaskProgress>) -> TaskSnapshot {
-        TaskSnapshot {
-            id: TaskId::from_raw(1),
-            kind: TaskKind::InstanceCreate,
-            subject: None,
-            status: TaskStatus::Running,
-            phase: None,
-            progress,
-            error: None,
-            exit: None,
-            stop_requested: false,
-            log_lines: 0,
-        }
-    }
-
-    #[test]
-    fn agent_progress_uses_percent_and_indeterminate_semantics() {
-        let partial = snapshot(Some(TaskProgress::Processors {
-            current: String::new(),
-            completed: 1,
-            total: 4,
-        }));
-        assert_eq!(super::super::task_progress(Some(&partial)), (25.0, false));
-        assert_eq!(
-            super::super::task_progress(Some(&snapshot(None))),
-            (0.0, true)
-        );
-    }
 }

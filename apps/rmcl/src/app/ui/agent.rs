@@ -13,7 +13,6 @@ use gpui_kit::{
         marker::{Marker, MarkerAlignment, MarkerContent, MarkerIcon, MarkerLoadingStyle},
         message::{Message, MessageAlignment, MessageContent},
         message_scroller::MessageScroller,
-        progress::Progress,
         text::TextView,
         v_flex,
     },
@@ -35,9 +34,7 @@ impl LauncherApp {
         let keyless = !self.agent.provider(cx).requires_key();
         let key_missing = !keyless && !matches!(self.agent.settings.key, AgentKeyState::Saved);
         let messages = Rc::new(self.agent.conversation.messages.clone());
-        let progress = self.agent.task_progress(self.log_state.snapshot.as_ref());
-        let active_task_id = self.agent.active_task_id();
-        let activity = self.render_agent_activity(progress, active_task_id, cx);
+        let activity = self.render_agent_activity(cx);
         let confirmation = self.render_agent_confirmation(cx);
         let running = self.agent.run.is_running();
         let view = cx.entity().downgrade();
@@ -245,28 +242,13 @@ impl LauncherApp {
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
                                     .child("Enter 发送 · Shift+Enter 换行"),
-                            )
-                            .child(div().flex_1())
-                            .when_some(progress, |this, (value, indeterminate)| {
-                                this.child(
-                                    div().w_40().child(
-                                        Progress::new("agent-compose-progress")
-                                            .value(value)
-                                            .loading(indeterminate),
-                                    ),
-                                )
-                            }),
+                            ),
                     ),
             )
             .into_any_element()
     }
 
-    fn render_agent_activity(
-        &self,
-        progress: Option<(f32, bool)>,
-        active_task_id: Option<u64>,
-        cx: &App,
-    ) -> AnyElement {
+    fn render_agent_activity(&self, cx: &App) -> AnyElement {
         let activity = match &self.agent.run {
             AgentRunState::Idle => return div().into_any_element(),
             AgentRunState::Starting { .. } | AgentRunState::Thinking { .. } => {
@@ -287,15 +269,16 @@ impl LauncherApp {
                 if let Some(status) = status {
                     content = content.child(status_marker(status, true, cx));
                 }
-                content = content.child(v_flex().w_full().gap_1().children(
-                    steps.iter().rev().take(3).rev().map(|step| {
-                        tool_marker(
-                            step,
-                            progress.filter(|_| step.task_id == active_task_id),
-                            cx,
-                        )
-                    }),
-                ));
+                content = content.child(
+                    v_flex().w_full().gap_1().children(
+                        steps
+                            .iter()
+                            .rev()
+                            .take(3)
+                            .rev()
+                            .map(|step| tool_marker(step, cx)),
+                    ),
+                );
             }
         }
         content.into_any_element()
@@ -433,7 +416,7 @@ fn render_agent_reply(
                 v_flex()
                     .w_full()
                     .gap_1()
-                    .children(reply.steps.iter().map(|step| tool_marker(step, None, cx))),
+                    .children(reply.steps.iter().map(|step| tool_marker(step, cx))),
             );
         }
     }
@@ -480,7 +463,7 @@ fn status_marker(status: &AgentStatusLine, loading: bool, cx: &App) -> AnyElemen
     marker.into_any_element()
 }
 
-fn tool_marker(step: &AgentStep, progress: Option<(f32, bool)>, cx: &App) -> AnyElement {
+fn tool_marker(step: &AgentStep, cx: &App) -> AnyElement {
     let (icon, color, loading) = match step.state {
         AgentStepState::Running => (IconName::LoaderCircle, cx.theme().primary, true),
         AgentStepState::Success => (IconName::CircleCheck, cx.theme().success, false),
@@ -512,18 +495,6 @@ fn tool_marker(step: &AgentStep, progress: Option<(f32, bool)>, cx: &App) -> Any
                     .child(error),
             )
         })
-        .when_some(
-            progress.filter(|_| step.state == AgentStepState::Running),
-            |this, (value, indeterminate)| {
-                this.child(
-                    div().pl_6().child(
-                        Progress::new(("agent-step-progress", step.id))
-                            .value(value)
-                            .loading(indeterminate),
-                    ),
-                )
-            },
-        )
         .into_any_element()
 }
 
