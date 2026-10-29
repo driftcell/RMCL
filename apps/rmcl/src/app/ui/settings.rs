@@ -16,7 +16,7 @@ use gpui_kit::{
     *,
 };
 
-use super::super::{LauncherApp, Page};
+use super::super::{LauncherApp, Page, agent::AgentKeyState};
 use super::common::{
     card, display_path, field_label, format_size, help, mono, page_header, section_title,
 };
@@ -25,6 +25,7 @@ use rmcl_store::DownloadSourcePreference;
 
 impl LauncherApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let agent_keyless = !self.agent.provider(cx).requires_key();
         let auto_java_view = cx.entity().downgrade();
         let auto_update_view = cx.entity().downgrade();
         let mcp_view = cx.entity().downgrade();
@@ -272,6 +273,216 @@ impl LauncherApp {
                                         ),
                                     ),
                             ),
+                    )
+                    .child(
+                        card(cx)
+                            .child(section_title(
+                                "AI 助手",
+                                "可使用 Kilo 免费模型，无需 API Key；也可填写自己的 API Key。Key 只保存在系统钥匙串。",
+                                cx,
+                            ))
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_4()
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("服务商"))
+                                            .child(help("模型 ID 可编辑；默认值会随 RMCL 版本更新。", cx)),
+                                    )
+                                    .child(
+                                        div().flex_shrink_0().w(rems(13.5)).child(
+                                            Select::new(&self.agent.settings.provider_select)
+                                                .accessibility_label("AI 服务商")
+                                                .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
+                                                .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
+                                                .cleanable(false)
+                                                .w_full(),
+                                        ),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("模型 ID"))
+                                            .child(Input::new(&self.agent.settings.model_input).w_full()),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label(if agent_keyless {
+                                                "免费通道"
+                                            } else {
+                                                "API Key"
+                                            }))
+                                            .child(if agent_keyless {
+                                                h_flex()
+                                                    .gap_2()
+                                                    .items_center()
+                                                    .child(
+                                                        Tag::success()
+                                                            .small()
+                                                            .child("无需 Key"),
+                                                    )
+                                                    .child(help(
+                                                        "免费模型可能记录对话，请勿发送敏感信息。",
+                                                        cx,
+                                                    ))
+                                                    .into_any_element()
+                                            } else {
+                                                match &self.agent.settings.key {
+                                                    AgentKeyState::Saved => h_flex()
+                                                        .gap_2()
+                                                        .child(help("已保存在系统钥匙串。", cx))
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-remove-key",
+                                                            )
+                                                            .ghost()
+                                                            .small()
+                                                            .label("移除")
+                                                            .on_click(cx.listener(
+                                                                |this, _, _, cx| {
+                                                                    this.remove_agent_key(cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                    AgentKeyState::Unknown
+                                                    | AgentKeyState::Missing
+                                                    | AgentKeyState::Free => h_flex()
+                                                        .gap_2()
+                                                        .child(
+                                                            Input::new(
+                                                                &self.agent.settings.key_input,
+                                                            )
+                                                            .mask_toggle()
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
+                                                            .w_full(),
+                                                        )
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-save-key",
+                                                            )
+                                                            .outline()
+                                                            .small()
+                                                            .label("保存")
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.save_agent_key(window, cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                    AgentKeyState::Error(error) => v_flex()
+                                                        .gap_1()
+                                                        .child(
+                                                            Input::new(
+                                                                &self.agent.settings.key_input,
+                                                            )
+                                                            .mask_toggle()
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
+                                                            .w_full(),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(cx.theme().danger)
+                                                                .child(error.clone()),
+                                                        )
+                                                        .child(
+                                                            Button::new(
+                                                                "settings-agent-save-key",
+                                                            )
+                                                            .outline()
+                                                            .small()
+                                                            .label("保存")
+                                                            .disabled(matches!(
+                                                                self.agent.settings.key,
+                                                                AgentKeyState::Unknown
+                                                            ))
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.save_agent_key(window, cx)
+                                                                },
+                                                            )),
+                                                        )
+                                                        .into_any_element(),
+                                                }
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("Base URL"))
+                                            .child(Input::new(&self.agent.settings.base_url_input).w_full()),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label("代理（可选）"))
+                                            .child(Input::new(&self.agent.settings.proxy_input).w_full()),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child("对话内容和工具结果（包括实例名、路径、玩家名）会发送给所选服务商。"),
+                                    )
+                                    .child(
+                                        Button::new("settings-agent-save")
+                                            .primary()
+                                            .label("保存 AI 设置")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                if let Err(error) = this.save_agent_settings(cx) {
+                                                    this.agent.settings.error = Some(error);
+                                                }
+                                                cx.notify();
+                                            })),
+                                    ),
+                            )
+                            .when_some(self.agent.settings.error.clone(), |this, error| {
+                                this.child(
+                                    div().text_sm().text_color(cx.theme().danger).child(error),
+                                )
+                            }),
                     )
                     .child(
                         card(cx)

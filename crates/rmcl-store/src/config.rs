@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 6;
+pub const CONFIG_SCHEMA_VERSION: u32 = 7;
 pub const DEFAULT_MCP_PORT: u16 = 39271;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
@@ -31,6 +31,10 @@ pub struct LauncherConfig {
     pub launcher_visibility: LauncherVisibility,
     pub mcp_enabled: bool,
     pub mcp_port: u16,
+    pub agent_provider: String,
+    pub agent_model: String,
+    pub agent_base_url: Option<String>,
+    pub agent_proxy: Option<String>,
     pub appearance: AppearanceConfig,
 }
 
@@ -52,6 +56,10 @@ impl Default for LauncherConfig {
             launcher_visibility: LauncherVisibility::default(),
             mcp_enabled: false,
             mcp_port: DEFAULT_MCP_PORT,
+            agent_provider: "kilo".to_owned(),
+            agent_model: String::new(),
+            agent_base_url: None,
+            agent_proxy: None,
             appearance: AppearanceConfig::default(),
         }
     }
@@ -378,6 +386,10 @@ mod tests {
             launcher_visibility: LauncherVisibility::HideWhileRunning,
             mcp_enabled: true,
             mcp_port: 40000,
+            agent_provider: "anthropic".to_owned(),
+            agent_model: "claude-sonnet-5-5".to_owned(),
+            agent_base_url: Some("https://gateway.example/anthropic".to_owned()),
+            agent_proxy: Some("socks5://127.0.0.1:7890".to_owned()),
             ..LauncherConfig::default()
         };
         config.appearance.theme = ThemePreference::Dark;
@@ -490,6 +502,31 @@ launcher_visibility = "keep_visible"
 
         assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
         assert_eq!(config.download_source, DownloadSourcePreference::Auto);
+    }
+
+    #[test]
+    fn schema_six_is_upgraded_with_agent_defaults() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 6
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+mcp_enabled = true
+mcp_port = 40000
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert_eq!(config.agent_provider, "kilo");
+        assert!(config.agent_model.is_empty());
+        assert_eq!(config.agent_base_url, None);
+        assert_eq!(config.agent_proxy, None);
     }
 
     #[test]

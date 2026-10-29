@@ -1,9 +1,16 @@
+mod agent;
 mod external;
 mod skin_service;
 mod skin_viewer;
 mod ui;
 
-use std::{cell::Cell, collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use gpui_kit::{
     assets::IconName,
@@ -34,14 +41,14 @@ use rmcl_app::{
     JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
     MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
     RepositoryPath, ResolvedMicrosoftAccount, ServerIconCache, ServerPingError, ServerStatus,
-    ServerStatusClient, TaskEvent, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
-    TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
-    VersionSource, VersionSummary, delete_installed_version, delete_instance_content,
-    discover_installed_versions, featured_servers, import_instance_content,
-    migrate_instance_to_isolated, preflight_content_install, recommended_version,
-    remove_server_bookmark, rename_instance, scan_installed_mods, scan_instance_content,
-    set_instance_content_enabled, set_instance_java, set_instance_launch_settings,
-    spawn_apply_helper, upsert_server_bookmark,
+    ServerStatusClient, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot,
+    TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest,
+    VersionManifest, VersionSource, VersionSummary, delete_installed_version,
+    delete_instance_content, discover_installed_versions, featured_servers,
+    import_instance_content, migrate_instance_to_isolated, preflight_content_install,
+    recommended_version, remove_server_bookmark, rename_instance, scan_installed_mods,
+    scan_instance_content, set_instance_content_enabled, set_instance_java,
+    set_instance_launch_settings, spawn_apply_helper, upsert_server_bookmark,
 };
 use rmcl_auth::{Account, AccountKind, MicrosoftAccount, MicrosoftAuthError, OfflineAccount};
 use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
@@ -87,6 +94,7 @@ const SERVER_PING_CONCURRENCY: usize = 4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Home,
+    Agent,
     Versions,
     Skin,
     Servers,
@@ -102,6 +110,7 @@ impl Page {
     pub fn title(self) -> &'static str {
         match self {
             Self::Home => "主页",
+            Self::Agent => "AI 助手",
             Self::Versions => "实例",
             Self::Skin => "皮肤",
             Self::Servers => "联机",
@@ -117,6 +126,7 @@ impl Page {
     pub fn subtitle(self) -> &'static str {
         match self {
             Self::Home => "选择一个实例，立即开始游戏。",
+            Self::Agent => "用自然语言管理实例、内容和任务。",
             Self::Versions => "管理已安装的游戏实例与版本。",
             Self::Skin => "查看并更换当前正版账户的官方皮肤。",
             Self::Servers => "",
@@ -132,6 +142,7 @@ impl Page {
     fn icon(self) -> IconName {
         match self {
             Self::Home => IconName::House,
+            Self::Agent => IconName::Bot,
             Self::Versions => IconName::Boxes,
             Self::Skin => IconName::Shirt,
             Self::Servers => IconName::Network,
@@ -428,6 +439,9 @@ pub struct LauncherApp {
     content_request: u64,
     content_query: Entity<InputState>,
     content_browser: ContentBrowserState,
+    agent: agent::AgentState,
+    _agent_task: Option<Task<()>>,
+    _agent_key_task: Option<Task<()>>,
     remote_query: Entity<InputState>,
     remote_sort: RemoteSort,
     content_browser_request: u64,
@@ -509,6 +523,8 @@ pub struct LauncherApp {
     versions_filter: VersionFilter,
     downloads_scroll: VirtualListScrollHandle,
     active_task_version: Option<String>,
+    gui_task_ids: HashSet<TaskId>,
+    deferred_task_terminals: Vec<TaskSnapshot>,
     launcher_hidden: bool,
     logs_attention: bool,
     launch_resolving: bool,
@@ -854,6 +870,7 @@ impl LauncherApp {
             }
         });
 
+        let config_for_agent = config.clone();
         let mut app = Self {
             services: services.clone(),
             page: Page::Home,
@@ -871,6 +888,9 @@ impl LauncherApp {
             content_request: 0,
             content_query,
             content_browser: ContentBrowserState::default(),
+            agent: agent::AgentState::new(window, cx, &config_for_agent),
+            _agent_task: None,
+            _agent_key_task: None,
             remote_query,
             remote_sort: RemoteSort::Relevance,
             content_browser_request: 0,
@@ -950,6 +970,8 @@ impl LauncherApp {
             versions_filter: VersionFilter::All,
             downloads_scroll: VirtualListScrollHandle::new(),
             active_task_version: None,
+            gui_task_ids: HashSet::new(),
+            deferred_task_terminals: Vec::new(),
             launcher_hidden: false,
             logs_attention: false,
             launch_resolving: false,
@@ -970,6 +992,32 @@ impl LauncherApp {
             _appearance_subscription: appearance_subscription,
             _activation_subscription: activation_subscription,
         };
+        let agent_input = app.agent.conversation.input.clone();
+        app._subscriptions.push(cx.subscribe_in(
+            &agent_input,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if matches!(
+                    event,
+                    InputEvent::PressEnter {
+                        secondary: false,
+                        shift: false
+                    }
+                ) {
+                    this.send_agent_message(window, cx);
+                }
+            },
+        ));
+        let agent_provider_select = app.agent.settings.provider_select.clone();
+        app._subscriptions.push(cx.subscribe_in(
+            &agent_provider_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<String>>, window, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    this.set_agent_provider(value, window, cx);
+                }
+            },
+        ));
         app.refresh_account_heads(window, cx);
         app.refresh_microsoft_profiles(window, cx);
         app.refresh_servers(window, cx);
@@ -2222,6 +2270,9 @@ impl LauncherApp {
             self.skin_viewer
                 .update(cx, |viewer, cx| viewer.reset_view(cx));
         }
+        if matches!(page, Page::Agent | Page::Settings) {
+            self.refresh_agent_key_state(cx);
+        }
         cx.notify();
     }
 
@@ -2555,12 +2606,15 @@ impl LauncherApp {
                     let snapshot = manager.snapshot(id).await;
                     let logs = manager.logs(id).await;
                     let _ = this.update_in(cx, |view, window, cx| {
+                        view.gui_task_ids.insert(id);
+                        view.deferred_task_terminals.retain(|task| task.id != id);
                         view.log_state.complete_start(id, snapshot.clone(), logs);
                         if let Some(snapshot) = snapshot
                             && snapshot.status.is_terminal()
                         {
                             view.on_task_terminal(snapshot, window, cx);
                         }
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2572,6 +2626,7 @@ impl LauncherApp {
                             Notification::error(message).title("任务启动失败"),
                             cx,
                         );
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2583,6 +2638,7 @@ impl LauncherApp {
                             Notification::error(message).title("任务启动失败"),
                             cx,
                         );
+                        view.replay_deferred_task_terminals(window, cx);
                         cx.notify();
                     });
                 }
@@ -2614,6 +2670,7 @@ impl LauncherApp {
                 if let Some(snapshot) = snapshot {
                     view.log_state.apply_snapshot(snapshot);
                 }
+                view.replay_deferred_task_terminals(window, cx);
                 match result {
                     Ok(_) => {
                         window.push_notification(
@@ -2656,6 +2713,25 @@ impl LauncherApp {
         window.activate_window();
     }
 
+    fn defer_task_terminal(&mut self, snapshot: TaskSnapshot) {
+        if let Some(existing) = self
+            .deferred_task_terminals
+            .iter_mut()
+            .find(|existing| existing.id == snapshot.id)
+        {
+            *existing = snapshot;
+        } else {
+            self.deferred_task_terminals.push(snapshot);
+        }
+    }
+
+    fn replay_deferred_task_terminals(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let snapshots = std::mem::take(&mut self.deferred_task_terminals);
+        for snapshot in snapshots {
+            self.on_task_terminal(snapshot, window, cx);
+        }
+    }
+
     fn on_task_terminal(
         &mut self,
         snapshot: TaskSnapshot,
@@ -2663,7 +2739,21 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) {
         self.restore_launcher(window, cx);
+        if self.log_state.command_pending
+            && self.log_state.active_id() == Some(snapshot.id)
+            && !self.gui_task_ids.contains(&snapshot.id)
+        {
+            // A very short task can finish before its start call returns the
+            // ID. Keep the terminal snapshot until the pending GUI command
+            // resolves; it may belong to either that command or an Agent.
+            self.defer_task_terminal(snapshot);
+            return;
+        }
         if !self.log_state.mark_terminal_notified(snapshot.id) {
+            return;
+        }
+        if !self.gui_task_ids.remove(&snapshot.id) {
+            self.refresh_after_external_task(&snapshot, window, cx);
             return;
         }
         let version = self.active_task_version.clone();
@@ -6310,6 +6400,7 @@ impl Render for LauncherApp {
             Page::Instance => self.render_instance(cx).into_any_element(),
             Page::CreateInstance => self.render_create_instance(cx).into_any_element(),
             Page::ContentBrowser => self.render_content_browser(cx).into_any_element(),
+            Page::Agent => self.render_agent(cx).into_any_element(),
             Page::Downloads => self.render_downloads(cx).into_any_element(),
             Page::Logs => self.render_logs(cx).into_any_element(),
             Page::Settings => self.render_settings(cx).into_any_element(),
@@ -6840,6 +6931,18 @@ pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
         Some(TaskStatus::Cancelled) => "已取消".to_owned(),
         Some(TaskStatus::Failed) => "任务失败".to_owned(),
         Some(TaskStatus::Exited) => "游戏已退出".to_owned(),
+    }
+}
+
+impl LauncherApp {
+    fn refresh_after_external_task(
+        &mut self,
+        _snapshot: &TaskSnapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.refresh_external_state(window, cx);
+        cx.notify();
     }
 }
 

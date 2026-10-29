@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod chrome;
 pub mod common;
 pub mod content_browser;

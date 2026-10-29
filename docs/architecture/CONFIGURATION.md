@@ -1,6 +1,6 @@
 # 启动器配置
 
-状态：schema 6 已实现；schema 1/2/3/4/5 可读取并在内存中升级
+状态：schema 7 已实现；schema 1/2/3/4/5/6 可读取并在内存中升级
 
 日期：2026-10-28
 
@@ -34,10 +34,10 @@ RMCL 不迁移或合并其他目录中的仓库。
 
 `--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像和完整纹理缓存位于同目录的 `cache/skins/`，本地皮肤库位于 `skins/library/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
-## Schema 6
+## Schema 7
 
 ```toml
-schema_version = 6
+schema_version = 7
 minecraft_root = "/Users/example/Library/Application Support/minecraft"
 java_store = "/Users/example/.rmcl/java"
 selected_version = "1.21.1"
@@ -49,6 +49,10 @@ download_source = "auto"
 launcher_visibility = "keep_visible"
 mcp_enabled = false
 mcp_port = 39271
+agent_provider = "kilo"
+agent_model = ""
+agent_base_url = ""
+agent_proxy = ""
 
 [[accounts]]
 username = "Steve"
@@ -86,10 +90,15 @@ accent = "emerald"
 - `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时隐藏启动器（macOS 隐藏应用，其他平台最小化窗口），任务终态恢复。
 - `mcp_enabled`：是否在 GUI 内启动 loopback、只读 MCP HTTP 服务，默认 `false`。启用或修改端口后立即协调启停，绑定失败只显示错误，不阻止 GUI 启动。
 - `mcp_port`：内嵌 MCP HTTP 端口，默认 `39271`，必须是 1–65535。配置不保存 Bearer token；GUI 不提供无认证写访问。
+- `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `kilo`、`openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。`kilo` 使用无需 Key 的免费通道，其余服务商需要 API Key。未知 ID 会显示错误并阻止发送，不会静默改用其他服务商。
+- `agent_model`：模型 ID；空字符串表示使用所选服务商的默认模型，并持续跟随后续版本的预设更新。模型必须支持工具调用。
+- `agent_base_url`：可选的 OpenAI-compatible 或原生服务商 Base URL；空字符串表示使用服务商默认值。`custom` 模式必须填写。URL 不得内嵌用户名或密码。
+- `agent_proxy`：可选的 AI 请求代理，支持 `http://`、`https://`、`socks5://` 和 `socks5h://`；空字符串表示跟随系统/环境代理。URL 不得内嵌用户名或密码。
+- AI API Key 不写入 `config.toml`，保存在系统凭据存储，服务名为 `com.rmcl.launcher`，键为 `agent:<provider>`，值为 `{ "version": 1, "api_key": "..." }`。`kilo` 免费通道不使用 Keyring。
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
-缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–6；0 或更高版本会被拒绝。读取 schema 1/2/3/4/5 时补齐 `selected_account_kind`、`microsoft_accounts`、空 `servers`、`auto_check_updates`、`download_source` 和安全默认的 MCP 设置，内存中的版本升级为 6，下一次用户修改设置时写回。
+缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–7；0 或更高版本会被拒绝。读取 schema 1/2/3/4/5/6 时补齐 `selected_account_kind`、`microsoft_accounts`、空 `servers`、`auto_check_updates`、`download_source`、MCP 设置和 AI 设置，内存中的版本升级为 7，下一次用户修改设置时写回。
 
 正版令牌不在 `config.toml` 中，而是通过 `rmcl-platform` 保存到系统凭据存储：
 
@@ -151,6 +160,14 @@ Schema 5 → 6 已在读取时实现：
 - 其余字段原样保留，不写入 token。
 - 内存中的版本升级为 6；只有用户主动修改设置时才写回文件。
 
+Schema 6 → 7 已在读取时实现：
+
+- `agent_provider` 默认为 `"kilo"`。
+- `agent_model`、`agent_base_url`、`agent_proxy` 默认为空，由所选服务商的预设补全。
+- AI API Key 不迁移、不写入配置文件；需要 BYOK 的用户重新在设置中保存。Kilo 免费通道不需要 Key。
+- 其余字段原样保留。
+- 内存中的版本升级为 7；只有用户主动修改设置时才写回文件。
+
 后续升级 schema 时必须：
 
 - 明确旧版本到新版本的字段映射和默认值。
@@ -170,6 +187,7 @@ Schema 5 → 6 已在读取时实现：
 - Schema 3 文件升级后补上默认开启的自动更新检查。
 - Schema 4 文件升级后补上默认 `auto` 下载源。
 - Schema 5 文件升级后补上默认停用的 MCP 和端口 `39271`。
+- Schema 6 文件升级后补上默认的 AI 服务商和空的模型/Base URL/代理字段。
 - 损坏 TOML 和更高 schema 不被重写。
 - 覆盖保存后内容可重新读取。
 

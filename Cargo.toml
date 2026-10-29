@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "apps/rmcl",
+    "crates/rmcl-agent",
     "crates/rmcl-app",
     "crates/rmcl-archive",
     "crates/rmcl-auth",
@@ -50,6 +51,7 @@ open = "5"
 rmcp = { version = "3.8", default-features = false, features = ["server", "macros", "schemars", "transport-io", "transport-streamable-http-server"] }
 regex = "1"
 relative-path = "2"
+rmcl-agent = { path = "crates/rmcl-agent" }
 rmcl-app = { path = "crates/rmcl-app" }
 rmcl-archive = { path = "crates/rmcl-archive" }
 rmcl-auth = { path = "crates/rmcl-auth" }
@@ -64,6 +66,7 @@ rmcl-mcp = { path = "crates/rmcl-mcp" }
 rmcl-net = { path = "crates/rmcl-net" }
 rmcl-platform = { path = "crates/rmcl-platform" }
 rmcl-store = { path = "crates/rmcl-store" }
+rig = { version = "0.45", default-features = false, features = ["agent", "derive", "reqwest", "rmcp", "rustls", "socks"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

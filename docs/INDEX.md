@@ -16,6 +16,7 @@
 
 - [目标工作区](architecture/WORKSPACE.md)：多 crate 边界和依赖方向。
 - [执行模型](architecture/EXECUTION_MODEL.md)：任务、下载、安装、启动与修复的核心约束。
+- [内置 AI 助手](architecture/AGENT.md)：BYOK 服务商、系统钥匙串、进程内 MCP、工具确认和 AI 页面。
 - [Model Context Protocol](architecture/MCP.md)：实例与内容 MCP 工具、stdio、Streamable HTTP、revision、幂等和后续安全边界。
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。

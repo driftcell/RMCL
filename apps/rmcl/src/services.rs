@@ -5,9 +5,11 @@ use std::{
 };
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
+use rmcl_agent::{AGENT_KEYRING_SERVICE, AgentKeyStore, AgentService};
 use rmcl_app::AppContext;
 use rmcl_auth::{MicrosoftAccount, OfflineAccount};
 use rmcl_mcp::{McpHttpService, McpHttpStatus};
+use rmcl_platform::KeyringSecretStore;
 use rmcl_store::{
     CONFIG_SCHEMA_VERSION, ConfigStore, LauncherConfig, StoredAccountKind, StoredMicrosoftAccount,
     StoredOfflineAccount, default_java_store, default_minecraft_root,
@@ -17,6 +19,7 @@ use uuid::Uuid;
 pub(crate) struct Services {
     pub(crate) context: Arc<AppContext>,
     pub(crate) mcp: McpHttpService,
+    pub(crate) agent: Arc<AgentService>,
 }
 
 impl Services {
@@ -26,7 +29,16 @@ impl Services {
     ) -> Result<Arc<Self>, rmcl_app::AppError> {
         let context = AppContext::new(config, config_store)?;
         let mcp = McpHttpService::new(context.clone());
-        Ok(Arc::new(Self { context, mcp }))
+        let agent_secrets = Arc::new(KeyringSecretStore::new(AGENT_KEYRING_SERVICE)?);
+        let agent = Arc::new(AgentService::new(
+            context.clone(),
+            AgentKeyStore::new(agent_secrets),
+        ));
+        Ok(Arc::new(Self {
+            context,
+            mcp,
+            agent,
+        }))
     }
 
     pub(crate) fn mcp_status(&self) -> McpHttpStatus {

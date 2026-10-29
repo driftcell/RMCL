@@ -1453,28 +1453,21 @@ fn java_ensure_task_uses_a_managed_runtime_and_completes() {
                 .unwrap(),
         );
         let task_id = started["task_id"].as_u64().unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let task = structured(
-                    server
-                        .tasks_get(Parameters(TaskIdParams { task_id }))
-                        .await
-                        .unwrap(),
-                );
-                match task["status"].as_str().unwrap() {
-                    "completed" => {
-                        assert_eq!(task["kind"], "java_install");
-                        assert_eq!(task["subject"]["type"], "java");
-                        assert_eq!(task["subject"]["major_version"], 21);
-                        break;
-                    }
-                    "failed" | "cancelled" => panic!("Java task failed: {task}"),
-                    _ => tokio::time::sleep(Duration::from_millis(20)).await,
-                }
-            }
-        })
-        .await
-        .unwrap();
+        let waited = structured(
+            server
+                .tasks_wait(Parameters(TaskWaitParams {
+                    task_id,
+                    timeout_seconds: Some(5),
+                }))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(waited["timed_out"], false);
+        let task = &waited["task"];
+        assert_eq!(task["status"], "completed");
+        assert_eq!(task["kind"], "java_install");
+        assert_eq!(task["subject"]["type"], "java");
+        assert_eq!(task["subject"]["major_version"], 21);
     });
     drop(server);
     shutdown_context(context);

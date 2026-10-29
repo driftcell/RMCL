@@ -40,6 +40,10 @@ mod tests {
             auto_check_updates: false,
             download_source: DownloadSourcePreference::Mirror,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
+            agent_provider: "anthropic".to_owned(),
+            agent_model: "claude-test".to_owned(),
+            agent_base_url: Some("https://agent.example".to_owned()),
+            agent_proxy: Some("socks5://127.0.0.1:1080".to_owned()),
             ..LauncherConfig::default()
         };
         current.appearance.theme = ThemePreference::Dark;
@@ -76,6 +80,16 @@ mod tests {
             LauncherVisibility::HideWhileRunning
         );
         assert_eq!(current.appearance.theme, ThemePreference::Dark);
+        assert_eq!(current.agent_provider, "anthropic");
+        assert_eq!(current.agent_model, "claude-test");
+        assert_eq!(
+            current.agent_base_url.as_deref(),
+            Some("https://agent.example")
+        );
+        assert_eq!(
+            current.agent_proxy.as_deref(),
+            Some("socks5://127.0.0.1:1080")
+        );
         assert!(!merge_external_config(&mut current, external));
     }
 }

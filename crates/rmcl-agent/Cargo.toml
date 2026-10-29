@@ -1,0 +1,23 @@
+[package]
+name = "rmcl-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rmcl-app.workspace = true
+rmcl-mcp.workspace = true
+rmcl-platform.workspace = true
+rig.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+rmcl-store.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
