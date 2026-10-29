@@ -7,7 +7,7 @@ use rmcl_app::{
     ModMetadataCache, ModrinthClient, ModrinthConfig, PackFormat, RemoteDependency,
     RemoteDependencyKind, RemoteFile, RemoteVersion, ResourcePackOrder, ShaderLoader, TaskKind,
     TaskManager, TaskPhase, TaskProgress, TaskStatus, TaskSubject, VanillaInstaller,
-    delete_instance_content, import_instance_content, move_instance_resource_pack,
+    delete_instance_content, import_instance_content, inspect_content, move_instance_resource_pack,
     preflight_content_install, read_instance_shader_pack, resolve_content_install_batch,
     resource_pack_format, scan_installed_mods, scan_instance_content, set_instance_content_enabled,
     set_instance_shader_pack,
@@ -122,6 +122,63 @@ fn resource_pack_format_is_unknown_without_client_metadata() {
     let temporary = TempDir::new().unwrap();
     let instance = instance(&temporary.path().join(".minecraft"));
     assert_eq!(resource_pack_format(&instance), None);
+}
+
+#[tokio::test]
+async fn inspects_resource_pack_and_shader_metadata() {
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write(
+        &instance.version_json_path(),
+        br#"{"id":"1.21.1","jar":"1.21.1"}"#,
+    );
+    write_zip_entry(
+        &instance.client_jar_path_for(None),
+        "version.json",
+        br#"{"id":"1.21.1","pack_version":{"resource_major":34}}"#,
+    );
+    write_zip_entry(
+        &instance.resourcepacks_dir().join("pack.zip"),
+        "pack.mcmeta",
+        br#"{"pack":{"pack_format":34,"description":"Example pack"}}"#,
+    );
+    write_zip_entry(
+        &instance.shaderpacks_dir().join("shader.zip"),
+        "shaders/pack.json",
+        br#"{"shaderDescription":"Example shader"}"#,
+    );
+    write(
+        &instance.options_path(),
+        b"resourcePacks:[\"file/pack.zip\"]\n",
+    );
+    write_fabric_mod(&instance.mods_dir().join("iris.jar"), "iris", "1.8.0");
+
+    let library = scan_instance_content(instance.clone()).await.unwrap();
+    let inspection = inspect_content(&instance, &library);
+    assert_eq!(
+        inspection.target_resource_format,
+        Some(PackFormat::new(34, 0))
+    );
+    assert_eq!(inspection.resource_pack_order, vec!["pack.zip".to_owned()]);
+    let pack = inspection
+        .resource_packs
+        .get(&RepositoryPath::new("pack.zip").unwrap())
+        .unwrap();
+    assert_eq!(
+        pack.compatibility,
+        rmcl_content::ResourcePackCompatibility::Compatible
+    );
+    assert_eq!(pack.metadata.description, "Example pack");
+    assert_eq!(
+        inspection
+            .shader_packs
+            .get(&RepositoryPath::new("shader.zip").unwrap())
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("Example shader")
+    );
+    assert_eq!(inspection.shader_loader, Some(ShaderLoader::Iris));
 }
 
 #[tokio::test]

@@ -920,6 +920,18 @@ fn file_name(relative_path: &RepositoryPath) -> &str {
         .unwrap_or_else(|| relative_path.as_str())
 }
 
+/// Returns enabled resource-pack file names in `options.txt` priority order.
+///
+/// The first entry overrides the least; the last entry has the highest
+/// priority.
+pub fn read_resource_pack_order(instance: &InstanceLayout) -> Result<Vec<String>, ContentError> {
+    let options_path = instance.options_path();
+    let modern = modern_hint(instance);
+    Ok(ResourcePackOptions::load(options_path, modern)?
+        .map(|options| options.enabled_file_names())
+        .unwrap_or_default())
+}
+
 /// Moves an enabled resource pack in the `options.txt` priority list.
 ///
 /// Packs later in `resourcePacks` override earlier ones. Moving a pack that is

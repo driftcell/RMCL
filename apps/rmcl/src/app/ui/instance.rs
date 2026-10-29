@@ -14,7 +14,10 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use rmcl_app::{ContentKind, InstalledVersion, LocalContent};
+use rmcl_app::{
+    ContentInspection, ContentKind, InstalledVersion, LocalContent, ResourcePackCompatibility,
+    ResourcePackMetadata, ResourcePackOrder, ShaderLoader, ShaderPackMetadata,
+};
 
 use super::super::{ContentTab, LauncherApp, Page, short_date, version_tile, version_type_label};
 use super::common::{
@@ -56,6 +59,7 @@ impl LauncherApp {
                 .into_any_element();
         };
         let library = self.content_library.as_ref();
+        let inspection = self.content_inspection.as_ref();
         let items = self.filtered_content(cx);
         let pending = self.content_operations_pending();
         let kind = self.content_tab.kind();
@@ -195,7 +199,7 @@ impl LauncherApp {
                                 cx,
                             ))
                             .into_any_element()
-                    } else {
+                    } else if kind == ContentKind::Mod {
                         card(cx)
                             .child(section_title(
                                 self.content_tab.label(),
@@ -210,6 +214,22 @@ impl LauncherApp {
                                     .into_any_element()
                             }))
                             .into_any_element()
+                    } else if kind == ContentKind::ResourcePack {
+                        self.render_resource_pack_gallery(
+                            &items,
+                            inspection,
+                            content_count,
+                            pending,
+                            cx,
+                        )
+                    } else {
+                        self.render_shader_pack_gallery(
+                            &items,
+                            inspection,
+                            content_count,
+                            pending,
+                            cx,
+                        )
                     }),
             )
             .into_any_element()
@@ -491,6 +511,524 @@ impl LauncherApp {
             )
     }
 
+    fn render_resource_pack_gallery(
+        &self,
+        items: &[LocalContent],
+        inspection: Option<&ContentInspection>,
+        counts: (usize, usize),
+        pending: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let order = inspection
+            .map(|inspection| inspection.resource_pack_order.as_slice())
+            .unwrap_or(&[]);
+        let mut items = items.to_vec();
+        items.sort_by(|left, right| {
+            resource_pack_sort_key(left, order).cmp(&resource_pack_sort_key(right, order))
+        });
+        let warning = inspection.and_then(|inspection| inspection.warnings.first().cloned());
+        v_flex()
+            .w_full()
+            .gap_3()
+            .child(section_title(
+                "资源包",
+                &format!("共 {} 个，已启用 {} 个", counts.0, counts.1),
+                cx,
+            ))
+            .when_some(warning, |this, warning| {
+                this.child(warning_banner("内容元数据", &warning, cx))
+            })
+            .child(
+                div()
+                    .w_full()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_4()
+                    .children(items.iter().map(|item| {
+                        self.render_resource_pack_card(item, inspection, order, pending, cx)
+                            .into_any_element()
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn render_resource_pack_card(
+        &self,
+        item: &LocalContent,
+        inspection: Option<&ContentInspection>,
+        order: &[String],
+        pending: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let detail =
+            inspection.and_then(|inspection| inspection.resource_packs.get(&item.relative_path));
+        let title = pack_title(item);
+        let description = detail
+            .map(|detail| detail.metadata.description.clone())
+            .filter(|description| !description.is_empty())
+            .unwrap_or_else(|| "未提供描述".to_owned());
+        let format = resource_pack_format_label(detail.map(|detail| &detail.metadata));
+        let incompatible = detail
+            .is_some_and(|detail| detail.compatibility == ResourcePackCompatibility::Incompatible);
+        let icon = self.content_icons.get(&item.relative_path);
+        let position = order.iter().position(|name| name == item.file_name());
+        let can_raise = item.enabled && position.is_some_and(|index| index + 1 < order.len());
+        let can_lower = item.enabled && position.is_some_and(|index| index > 0);
+        let toggle_relative = item.relative_path.clone();
+        let raise_relative = item.relative_path.clone();
+        let lower_relative = item.relative_path.clone();
+        let delete_relative = item.relative_path.clone();
+        let delete_name = title.clone();
+        let enabled = item.enabled;
+        let path = item.relative_path.as_str().to_owned();
+
+        v_flex()
+            .w_full()
+            .min_w_0()
+            .gap_3()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(if enabled {
+                cx.theme().primary.opacity(0.30)
+            } else {
+                cx.theme().border
+            })
+            .bg(cx.theme().group_box)
+            .p_3()
+            .child(
+                div()
+                    .w_full()
+                    .h_40()
+                    .rounded(cx.theme().radius)
+                    .overflow_hidden()
+                    .bg(if enabled {
+                        cx.theme().primary.opacity(0.10)
+                    } else {
+                        cx.theme().muted.opacity(0.35)
+                    })
+                    .when_some(icon.cloned(), |this, icon| {
+                        this.child(img(icon).size_full().object_fit(ObjectFit::Cover))
+                    })
+                    .when(icon.is_none(), |this| {
+                        this.flex().items_center().justify_center().child(
+                            Icon::new(IconName::Image)
+                                .with_size(Size::Large)
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                    }),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .child(title),
+                            )
+                            .child(if incompatible {
+                                Tag::danger().child(format).small().into_any_element()
+                            } else {
+                                Tag::new()
+                                    .outline()
+                                    .child(format)
+                                    .small()
+                                    .into_any_element()
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .line_clamp(2)
+                            .child(description),
+                    )
+                    .when(incompatible, |this| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().danger)
+                                .child("当前游戏版本可能无法加载该资源包"),
+                        )
+                    }),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_1()
+                    .child(if enabled {
+                        Tag::success().child("已启用").small()
+                    } else {
+                        Tag::new().outline().child("未启用").small()
+                    })
+                    .child(div().flex_1())
+                    .when(enabled, |this| {
+                        this.child(
+                            Button::new(format!("resource-pack-raise-{path}"))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::ChevronUp)
+                                .tooltip("提高优先级")
+                                .accessibility_label("提高优先级")
+                                .disabled(pending || !can_raise)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.change_resource_pack_priority(
+                                        raise_relative.clone(),
+                                        ResourcePackOrder::HigherPriority,
+                                        window,
+                                        cx,
+                                    )
+                                })),
+                        )
+                        .child(
+                            Button::new(format!("resource-pack-lower-{path}"))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::ChevronDown)
+                                .tooltip("降低优先级")
+                                .accessibility_label("降低优先级")
+                                .disabled(pending || !can_lower)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.change_resource_pack_priority(
+                                        lower_relative.clone(),
+                                        ResourcePackOrder::LowerPriority,
+                                        window,
+                                        cx,
+                                    )
+                                })),
+                        )
+                    })
+                    .child(
+                        Button::new(format!("resource-pack-toggle-{path}"))
+                            .ghost()
+                            .xsmall()
+                            .icon(if enabled {
+                                IconName::PowerOff
+                            } else {
+                                IconName::Power
+                            })
+                            .tooltip(if enabled { "禁用" } else { "启用" })
+                            .accessibility_label(if enabled { "禁用" } else { "启用" })
+                            .disabled(pending)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.toggle_content_item(
+                                    ContentKind::ResourcePack,
+                                    toggle_relative.clone(),
+                                    !enabled,
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    )
+                    .child(
+                        Button::new(format!("resource-pack-delete-{path}"))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Trash)
+                            .tooltip("删除")
+                            .accessibility_label("删除")
+                            .disabled(pending)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_delete_content(
+                                    ContentKind::ResourcePack,
+                                    delete_relative.clone(),
+                                    delete_name.clone(),
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    ),
+            )
+    }
+
+    fn render_shader_pack_gallery(
+        &self,
+        items: &[LocalContent],
+        inspection: Option<&ContentInspection>,
+        counts: (usize, usize),
+        pending: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let loader = inspection.and_then(|inspection| inspection.shader_loader);
+        let selection = inspection.and_then(|inspection| inspection.shader_selection.as_ref());
+        let active = selection.and_then(|selection| selection.active.as_deref());
+        let active_enabled = selection.is_some_and(|selection| selection.enabled);
+        let warning = inspection.and_then(|inspection| inspection.warnings.first().cloned());
+        let mut items = items.to_vec();
+        items.sort_by(|left, right| {
+            let left_active = active_enabled && active == Some(left.file_name());
+            let right_active = active_enabled && active == Some(right.file_name());
+            right_active.cmp(&left_active).then_with(|| {
+                left.display_name()
+                    .to_lowercase()
+                    .cmp(&right.display_name().to_lowercase())
+            })
+        });
+
+        v_flex()
+            .w_full()
+            .gap_3()
+            .child(section_title("光影包", &format!("共 {} 个", counts.0), cx))
+            .when_some(warning, |this, warning| {
+                this.child(warning_banner("内容元数据", &warning, cx))
+            })
+            .when(loader.is_none(), |this| {
+                this.child(self.render_shader_loader_missing(cx))
+            })
+            .when_some(loader, |this, loader| {
+                this.child(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .gap_2()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().primary.opacity(0.06))
+                        .px_3()
+                        .py_2()
+                        .child(
+                            Icon::new(IconName::Sparkles)
+                                .small()
+                                .text_color(cx.theme().primary),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!(
+                                    "{} 已启用；光影切换会在下次进入游戏时生效。",
+                                    loader.label()
+                                )),
+                        ),
+                )
+            })
+            .child(
+                div()
+                    .w_full()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_4()
+                    .children(items.iter().map(|item| {
+                        let is_active = active_enabled && active == Some(item.file_name());
+                        self.render_shader_pack_card(
+                            item,
+                            inspection.and_then(|inspection| {
+                                inspection.shader_packs.get(&item.relative_path)
+                            }),
+                            loader,
+                            is_active,
+                            pending,
+                            cx,
+                        )
+                        .into_any_element()
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn render_shader_pack_card(
+        &self,
+        item: &LocalContent,
+        detail: Option<&ShaderPackMetadata>,
+        loader: Option<ShaderLoader>,
+        is_active: bool,
+        pending: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let title = pack_title(item);
+        let description = detail
+            .and_then(|detail| detail.description.clone())
+            .filter(|description| !description.is_empty())
+            .unwrap_or_else(|| "未提供描述".to_owned());
+        let path = item.relative_path.as_str().to_owned();
+        let select_path = item.file_name().to_owned();
+        let delete_relative = item.relative_path.clone();
+        let delete_name = title.clone();
+        let loader_available = loader.is_some();
+
+        v_flex()
+            .w_full()
+            .min_w_0()
+            .gap_3()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(if is_active {
+                cx.theme().primary.opacity(0.45)
+            } else {
+                cx.theme().border
+            })
+            .bg(cx.theme().group_box)
+            .p_3()
+            .child(
+                div()
+                    .w_full()
+                    .h_40()
+                    .rounded(cx.theme().radius)
+                    .overflow_hidden()
+                    .bg(if is_active {
+                        cx.theme().primary.opacity(0.12)
+                    } else {
+                        cx.theme().muted.opacity(0.35)
+                    })
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        Icon::new(IconName::Sparkles)
+                            .with_size(Size::Large)
+                            .text_color(if is_active {
+                                cx.theme().primary
+                            } else {
+                                cx.theme().muted_foreground
+                            }),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .child(title),
+                            )
+                            .when(is_active, |this| {
+                                this.child(Tag::primary().child("使用中").small())
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .line_clamp(2)
+                            .child(description),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(if item.is_directory {
+                                "文件夹".to_owned()
+                            } else {
+                                format_size(item.size.unwrap_or(0))
+                            }),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_1()
+                    .child(div().flex_1())
+                    .child(if is_active {
+                        Button::new(format!("shader-pack-disable-{path}"))
+                            .outline()
+                            .xsmall()
+                            .icon(IconName::PowerOff)
+                            .label("关闭光影")
+                            .disabled(pending || !loader_available)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(loader) = loader {
+                                    this.select_shader_pack(loader, None, window, cx);
+                                }
+                            }))
+                    } else {
+                        Button::new(format!("shader-pack-select-{path}"))
+                            .outline()
+                            .xsmall()
+                            .icon(IconName::Sparkles)
+                            .label("设为当前")
+                            .disabled(pending || !loader_available)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(loader) = loader {
+                                    this.select_shader_pack(
+                                        loader,
+                                        Some(select_path.clone()),
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            }))
+                    })
+                    .child(
+                        Button::new(format!("shader-pack-delete-{path}"))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Trash)
+                            .tooltip("删除")
+                            .accessibility_label("删除")
+                            .disabled(pending)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_delete_content(
+                                    ContentKind::ShaderPack,
+                                    delete_relative.clone(),
+                                    delete_name.clone(),
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    ),
+            )
+    }
+
+    fn render_shader_loader_missing(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .w_full()
+            .gap_2()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(cx.theme().warning.opacity(0.45))
+            .bg(cx.theme().warning.opacity(0.08))
+            .p_3()
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Icon::new(IconName::TriangleAlert)
+                            .small()
+                            .text_color(cx.theme().warning),
+                    )
+                    .child(div().text_sm().font_medium().child("未检测到光影加载器")),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(
+                        "光影包可以下载和管理，但需要 Iris、Oculus 或 OptiFine 才会在游戏中生效。",
+                    ),
+            )
+            .child(
+                Button::new("shader-browse-loader-mods")
+                    .outline()
+                    .small()
+                    .icon(IconName::Globe)
+                    .label("浏览 Mod")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_content_browser(ContentKind::Mod, window, cx)
+                    })),
+            )
+    }
+
     fn render_content_row(
         &self,
         item: &LocalContent,
@@ -602,6 +1140,46 @@ impl LauncherApp {
     }
 }
 
+fn pack_title(item: &LocalContent) -> String {
+    let name = item.display_name();
+    if name.to_ascii_lowercase().ends_with(".zip") {
+        name[..name.len() - 4].to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+fn resource_pack_sort_key(item: &LocalContent, order: &[String]) -> (u8, usize, String) {
+    let position = order.iter().position(|name| name == item.file_name());
+    let group = if item.enabled && position.is_some() {
+        0
+    } else if item.enabled {
+        1
+    } else {
+        2
+    };
+    let rank = position
+        .map(|position| order.len().saturating_sub(position))
+        .unwrap_or(0);
+    (group, rank, item.display_name().to_lowercase())
+}
+
+fn resource_pack_format_label(metadata: Option<&ResourcePackMetadata>) -> String {
+    let Some(metadata) = metadata else {
+        return "格式未知".to_owned();
+    };
+    if let Some(format) = metadata.pack_format {
+        return format!("格式 {format}");
+    }
+    match metadata.supported_formats.as_slice() {
+        [range] if range.min_inclusive == range.max_inclusive => {
+            format!("格式 {}", range.min_inclusive)
+        }
+        [range, ..] => format!("格式 {}–{}", range.min_inclusive, range.max_inclusive),
+        [] => "格式未知".to_owned(),
+    }
+}
+
 fn content_icon(kind: ContentKind) -> IconName {
     match kind {
         ContentKind::Mod => IconName::Package,
@@ -632,8 +1210,74 @@ fn empty_description(kind: ContentKind) -> &'static str {
     match kind {
         ContentKind::Mod => "支持 .jar、.zip 和 .litemod 文件；同名文件会自动改名，不会覆盖。",
         ContentKind::ResourcePack => {
-            "支持 .zip 资源包；导入后可在列表中启用或禁用。文件夹资源包会显示已安装状态。"
+            "支持导入 .zip 资源包；已存在的资源包文件夹也会显示，可启用、禁用并调整覆盖优先级。"
         }
-        ContentKind::ShaderPack => "支持 .zip 光影包或光影文件夹；光影没有统一的启用开关。",
+        ContentKind::ShaderPack => {
+            "支持导入 .zip 光影包；已存在的文件夹也会显示，检测到 Iris、Oculus 或 OptiFine 后可设为当前光影。"
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use rmcl_app::{
+        ContentKind, LocalContent, PackFormat, PackFormatRange, RepositoryPath,
+        ResourcePackMetadata,
+    };
+
+    use super::{pack_title, resource_pack_format_label, resource_pack_sort_key};
+
+    fn local(name: &str, enabled: bool) -> LocalContent {
+        LocalContent {
+            kind: ContentKind::ResourcePack,
+            relative_path: RepositoryPath::new(name).unwrap(),
+            path: PathBuf::from(name),
+            size: None,
+            enabled,
+            is_directory: false,
+        }
+    }
+
+    #[test]
+    fn resource_pack_sort_places_highest_priority_first() {
+        let order = ["a.zip".to_owned(), "b.zip".to_owned(), "c.zip".to_owned()];
+        let mut items = [
+            local("a.zip", true),
+            local("d.zip", false),
+            local("c.zip", true),
+            local("b.zip", true),
+        ];
+        items.sort_by(|left, right| {
+            resource_pack_sort_key(left, &order).cmp(&resource_pack_sort_key(right, &order))
+        });
+        let names = items
+            .iter()
+            .map(LocalContent::display_name)
+            .collect::<Vec<_>>();
+        assert!(names == ["c.zip", "b.zip", "a.zip", "d.zip"]);
+    }
+
+    #[test]
+    fn resource_pack_titles_and_format_labels_are_user_facing() {
+        assert!(pack_title(&local("Cool Pack.ZIP", false)) == "Cool Pack");
+        let metadata = ResourcePackMetadata {
+            pack_format: Some(PackFormat::new(15, 0)),
+            supported_formats: Vec::new(),
+            description: String::new(),
+            icon_png: None,
+        };
+        assert!(resource_pack_format_label(Some(&metadata)) == "格式 15");
+        let range_metadata = ResourcePackMetadata {
+            pack_format: None,
+            supported_formats: vec![PackFormatRange::new(
+                PackFormat::new(97, 1),
+                PackFormat::new(97, 3),
+            )],
+            description: String::new(),
+            icon_png: None,
+        };
+        assert!(resource_pack_format_label(Some(&range_metadata)) == "格式 97.1–97.3");
     }
 }

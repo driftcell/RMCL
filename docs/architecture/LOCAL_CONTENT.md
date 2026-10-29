@@ -80,7 +80,7 @@
 
 ### 光影包
 
-光影包没有原版统一的启用状态。RMCL 只管理文件和文件夹，不修改 Iris/OptiFine 配置。
+光影包没有原版统一的启用状态。RMCL 通过已启用加载器的配置选择当前光影：Iris/Oculus 写入 `shaderPack` 和 `enableShaders`，OptiFine 写入 `optionsshaders.txt` 的 `shaderPack`；不修改光影内部设置或其他加载器配置。
 
 ## 删除
 
@@ -99,20 +99,22 @@
 
 - Mods / 资源包 / 光影包三个标签和数量。
 - 搜索、导入文件、打开内容目录和重新扫描。
-- 文件名、相对路径、大小/文件夹、启用状态。
-- Mod 和资源包的启用/禁用按钮，以及所有条目的删除确认。
-- 扫描警告和错误横幅；导入部分失败时汇总成功和失败数量。
+- Mods 使用列表行，显示文件名、相对路径、大小/文件夹和启用状态。
+- 资源包使用双列封面网格：`pack.png` 封面、真实描述、格式/兼容状态、启用状态和优先级上下移动；Mod 和资源包均提供启用/禁用按钮。
+- 光影包使用双列卡片：`shaders/pack.json` 描述、大小和“使用中”状态；检测到 Iris/Oculus/OptiFine 后可设为当前或关闭光影，缺失加载器时给出安装提示。
+- 所有条目提供删除确认；扫描警告和错误横幅在列表上方显示，导入部分失败时汇总成功和失败数量。
 
 导入按钮统一使用 GPUI 的异步路径选择接口。不能从点击回调里同步调用 `NSOpenPanel::runModal`：嵌套的原生 modal 循环会在 GPUI 仍持有 `App` 可变借用时处理定时器，触发 `RefCell already borrowed` panic。文件操作通过应用层 Tokio runtime 的 `spawn_blocking` 执行，不阻塞 UI 线程。
 
 ## 当前限制
 
 - Modrinth 远程下载已由 [远程内容与 Modrinth](REMOTE_CONTENT.md) 提供；CurseForge 尚未接入。
-- 本地内容列表仍只显示文件名、路径和大小；安装预检会解析 Fabric/Quilt/Forge/NeoForge Mod 元数据，见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，但列表本身尚未展示真实名称、图标或版本。
+- Mods 列表仍只显示文件名、路径和大小；安装预检会解析 Fabric/Quilt/Forge/NeoForge Mod 元数据，见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，但列表本身尚未展示真实名称、图标或版本。
 - 尚未计算本地文件哈希，因此不能做远程识别或更新检查。
-- `pack_format` 兼容判断和资源包元数据 API 已提供，但尚未接入 GPUI 列表展示、导入/下载后的兼容性提示和 `incompatibleResourcePacks` 自动修正。
+- 资源包格式兼容状态已展示，但不会自动修改 `incompatibleResourcePacks`；不兼容包仍允许用户强制启用。
 - 资源包启用格式的版本推断是启发式；空列表的旧版本可能被写成现代 `file/` 格式，需要后续按精确版本表修正。
-- 光影选择配置的读写 API 已提供，但尚未接入 GPUI 的“当前光影”切换；游戏运行中修改配置是否立即生效取决于加载器，RMCL 不承诺热重载。
+- 光影切换写入加载器配置，但游戏运行中修改是否立即生效取决于加载器；RMCL 不承诺热重载。
+- 光影包没有本地预览图；当前卡片使用类型图标，远程项目图标仍只存在于在线内容页。
 - 尚未支持从文件夹导入资源包/光影，只管理已存在的文件夹。
 - 尚未实现内容更新、批量启用、拖放导入和整合包安装。
 - 加载器安装见 [版本继承、加载器安装与实例创建](LOADERS.md)；当前支持 Fabric/Quilt 和现代 Forge/NeoForge installer。
@@ -121,5 +123,5 @@
 
 - `rmcl-content` 覆盖 Mod 根目录/一层子目录/禁用项、资源包文件和文件夹、光影文件/文件夹、符号链接跳过、同名改名、拒绝覆盖、Mod 切换、`options.txt` 现代/旧格式、损坏选项不重写、删除与目录删除限制。
 - 新增覆盖资源包 ZIP/文件夹元数据、`supported_formats` 对象/数组、`min_format`/`max_format` 回退、1.21.9+ `[major, minor]`、元数据大小限制、client JAR `pack_version`、光影包结构与描述、资源包优先级移动、禁用光影加载器不计入检测，以及 Iris/Oculus/OptiFine 光影选择配置的读写、保留未知键和非 ASCII 转义。
-- `rmcl-app` 集成测试覆盖 `spawn_blocking` 包装下的导入、扫描、禁用和删除链路。
-- `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的文件选择、标签切换和导入/删除交互仍需在 macOS、Windows、Linux 逐平台验收。
+- `rmcl-app` 集成测试覆盖 `spawn_blocking` 包装下的导入、扫描、禁用和删除链路，以及资源包/光影元数据 inspection、格式兼容、优先级和光影选择配置。
+- `apps/rmcl` 已编译并通过现有状态测试和资源包排序/格式标签测试；真实窗口中的封面解码、网格布局、加载器缺失提示和交互仍需在 macOS、Windows、Linux 逐平台验收。

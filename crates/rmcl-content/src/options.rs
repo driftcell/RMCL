@@ -89,6 +89,10 @@ impl ResourcePackOptions {
         self.enabled.iter().map(|entry| normalize(entry)).collect()
     }
 
+    pub(crate) fn enabled_file_names(&self) -> Vec<String> {
+        self.enabled.iter().map(|entry| normalize(entry)).collect()
+    }
+
     pub(crate) fn contains(&self, file_name: &str) -> bool {
         let target = normalize(file_name);
         self.enabled

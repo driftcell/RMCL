@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -8,10 +8,12 @@ use std::{
 use rmcl_content::{
     ConflictPolicy, ContentKind, ContentLibrary, InstalledMod, InstalledModIndex, LocalContent,
     ModDependency, ModMetadata, ModrinthClient, PackFormat, RemoteDependency, RemoteDependencyKind,
-    RemoteFile, RemoteProject, RemoteVersion, ResourcePackOrder, ShaderLoader, ShaderPackSelection,
-    delete_content, import_file, move_resource_pack, read_mod_metadata, read_shader_pack_selection,
-    replace_content_file, scan_library, set_content_enabled, set_shader_pack_selection,
-    version_satisfies,
+    RemoteFile, RemoteProject, RemoteVersion, ResourcePackCompatibility, ResourcePackMetadata,
+    ResourcePackOrder, ShaderLoader, ShaderPackMetadata, ShaderPackSelection, delete_content,
+    import_file, move_resource_pack, read_mod_metadata, read_resource_pack_metadata,
+    read_resource_pack_order, read_shader_pack_metadata, read_shader_pack_selection,
+    replace_content_file, scan_installed_mods, scan_library, set_content_enabled,
+    set_shader_pack_selection, version_satisfies,
 };
 use rmcl_domain::DownloadRequest;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath, VersionId};
@@ -44,6 +46,105 @@ pub fn resource_pack_format(instance: &InstanceLayout) -> Option<PackFormat> {
     rmcl_content::read_client_resource_pack_format(instance.client_jar_path_for(Some(&jar_id)))
         .ok()
         .flatten()
+}
+
+/// Resource-pack metadata plus the compatibility result for one instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourcePackInspection {
+    pub metadata: ResourcePackMetadata,
+    pub compatibility: ResourcePackCompatibility,
+}
+
+/// Presentation-neutral metadata derived from a local content scan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContentInspection {
+    pub resource_packs: BTreeMap<RepositoryPath, ResourcePackInspection>,
+    /// Enabled resource-pack names from lowest to highest priority.
+    pub resource_pack_order: Vec<String>,
+    pub shader_packs: BTreeMap<RepositoryPath, ShaderPackMetadata>,
+    pub warnings: Vec<String>,
+    pub target_resource_format: Option<PackFormat>,
+    pub shader_loader: Option<ShaderLoader>,
+    pub shader_selection: Option<ShaderPackSelection>,
+}
+
+/// Inspects resource-pack and shader-pack metadata without extracting archives.
+pub fn inspect_content(instance: &InstanceLayout, library: &ContentLibrary) -> ContentInspection {
+    let target_resource_format = resource_pack_format(instance);
+    let mut inspection = ContentInspection {
+        target_resource_format,
+        ..ContentInspection::default()
+    };
+    for item in &library.items {
+        match item.kind {
+            ContentKind::ResourcePack => match read_resource_pack_metadata(&item.path) {
+                Ok(metadata) => {
+                    let compatibility = metadata.compatibility(target_resource_format);
+                    inspection.resource_packs.insert(
+                        item.relative_path.clone(),
+                        ResourcePackInspection {
+                            metadata,
+                            compatibility,
+                        },
+                    );
+                }
+                Err(error) => inspection.warnings.push(format!(
+                    "无法读取资源包 {} 的元数据：{error}",
+                    item.display_name()
+                )),
+            },
+            ContentKind::ShaderPack => match read_shader_pack_metadata(&item.path) {
+                Ok(metadata) => {
+                    inspection
+                        .shader_packs
+                        .insert(item.relative_path.clone(), metadata);
+                }
+                Err(error) => inspection.warnings.push(format!(
+                    "无法读取光影包 {} 的元数据：{error}",
+                    item.display_name()
+                )),
+            },
+            ContentKind::Mod => {}
+        }
+    }
+
+    if library
+        .items
+        .iter()
+        .any(|item| item.kind == ContentKind::ResourcePack)
+    {
+        match read_resource_pack_order(instance) {
+            Ok(order) => inspection.resource_pack_order = order,
+            Err(error) => inspection
+                .warnings
+                .push(format!("无法读取资源包优先级：{error}")),
+        }
+    }
+
+    let mods = scan_installed_mods(instance);
+    inspection.shader_loader = mods.shader_loader();
+    if let Some(loader) = inspection.shader_loader {
+        match read_shader_pack_selection(instance, loader) {
+            Ok(selection) => inspection.shader_selection = selection,
+            Err(error) => inspection
+                .warnings
+                .push(format!("无法读取光影选择：{error}")),
+        }
+    }
+    inspection
+}
+
+/// Scans local content and inspects pack metadata in one blocking task.
+pub async fn scan_and_inspect_instance_content(
+    instance: InstanceLayout,
+) -> Result<(ContentLibrary, ContentInspection), AppError> {
+    tokio::task::spawn_blocking(move || {
+        let library = scan_library(&instance);
+        let inspection = inspect_content(&instance, &library);
+        (library, inspection)
+    })
+    .await
+    .map_err(|error| AppError::BlockingTask(error.to_string()))
 }
 
 /// Scans all local content directories of one instance.

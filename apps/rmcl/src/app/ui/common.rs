@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use gpui_kit::{
     assets::IconName,
@@ -6,6 +6,7 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
+use image::{Frame, ImageBuffer, Rgba as ImageRgba, RgbaImage};
 use rmcl_store::home_directory;
 
 use super::super::Page;
@@ -30,6 +31,23 @@ pub fn page_header(page: Page, actions: impl IntoElement, cx: &App) -> impl Into
                 }),
         )
         .child(h_flex().gap_2().child(actions))
+}
+
+/// Converts decoded RGBA pixels into the BGRA buffer GPUI expects.
+pub fn render_rgba_image(image: RgbaImage) -> Arc<RenderImage> {
+    let (width, height) = image.dimensions();
+    let mut bytes = image.into_raw();
+    for pixel in bytes.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+    }
+    let Some(buffer) = ImageBuffer::from_raw(width, height, bytes) else {
+        return Arc::new(RenderImage::new(vec![Frame::new(ImageBuffer::from_pixel(
+            1,
+            1,
+            ImageRgba([0, 0, 0, 0]),
+        ))]));
+    };
+    Arc::new(RenderImage::new(vec![Frame::new(buffer)]))
 }
 
 pub fn card(cx: &App) -> Div {

@@ -15,7 +15,6 @@ use gpui_kit::{
     prelude::FluentBuilder,
     *,
 };
-use image::{Frame, ImageBuffer, Rgba as ImageRgba, RgbaImage};
 use rmcl_app::{SkinPreviewRenderer, SkinTexture};
 use rmcl_auth::SkinVariant;
 
@@ -234,7 +233,9 @@ impl SkinViewer {
                     } else {
                         SkinPreviewRenderer::new(width, height)
                     };
-                    render_image(renderer.render(&texture, variant, yaw, pitch, 0.0))
+                    super::ui::common::render_rgba_image(
+                        renderer.render(&texture, variant, yaw, pitch, 0.0),
+                    )
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -399,20 +400,4 @@ impl Render for SkinViewer {
                     ),
             )
     }
-}
-
-fn render_image(image: RgbaImage) -> Arc<RenderImage> {
-    let (width, height) = image.dimensions();
-    let mut bytes = image.into_raw();
-    for pixel in bytes.as_chunks_mut::<4>().0 {
-        pixel.swap(0, 2);
-    }
-    let Some(buffer) = ImageBuffer::from_raw(width, height, bytes) else {
-        return Arc::new(RenderImage::new(vec![Frame::new(ImageBuffer::from_pixel(
-            1,
-            1,
-            ImageRgba([0, 0, 0, 0]),
-        ))]));
-    };
-    Arc::new(RenderImage::new(vec![Frame::new(buffer)]))
 }
