@@ -5,11 +5,12 @@ use rmcl_app::{
     AppError, ConflictPolicy, ContentGraphInstallRequest, ContentInstallPhase,
     ContentInstallRequest, ContentInstaller, ContentKind, ContentSource, IsolationMode,
     ModMetadataCache, ModrinthClient, ModrinthConfig, PackFormat, RemoteDependency,
-    RemoteDependencyKind, RemoteFile, RemoteVersion, ResourcePackOrder, TaskKind, TaskManager,
-    TaskPhase, TaskProgress, TaskStatus, TaskSubject, VanillaInstaller, delete_instance_content,
-    import_instance_content, move_instance_resource_pack, preflight_content_install,
-    resolve_content_install_batch, resource_pack_format, scan_installed_mods,
-    scan_instance_content, set_instance_content_enabled,
+    RemoteDependencyKind, RemoteFile, RemoteVersion, ResourcePackOrder, ShaderLoader, TaskKind,
+    TaskManager, TaskPhase, TaskProgress, TaskStatus, TaskSubject, VanillaInstaller,
+    delete_instance_content, import_instance_content, move_instance_resource_pack,
+    preflight_content_install, read_instance_shader_pack, resolve_content_install_batch,
+    resource_pack_format, scan_installed_mods, scan_instance_content, set_instance_content_enabled,
+    set_instance_shader_pack,
 };
 use rmcl_domain::Sha1Hash;
 use rmcl_instance::{InstanceLayout, MinecraftLayout, RepositoryPath, VersionId};
@@ -146,6 +147,43 @@ async fn applies_resource_pack_priority_through_the_app_wrapper() {
             .unwrap()
             .contains("resourcePacks:[\"file/b.zip\",\"file/a.zip\"]")
     );
+}
+
+#[tokio::test]
+async fn selects_and_disables_a_shader_pack_through_the_app_wrapper() {
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    write(&instance.shaderpacks_dir().join("Nice.zip"), b"shader");
+
+    assert_eq!(
+        read_instance_shader_pack(instance.clone(), ShaderLoader::Iris)
+            .await
+            .unwrap(),
+        None
+    );
+    set_instance_shader_pack(
+        instance.clone(),
+        ShaderLoader::Iris,
+        Some("Nice.zip".to_owned()),
+    )
+    .await
+    .unwrap();
+    let selection = read_instance_shader_pack(instance.clone(), ShaderLoader::Iris)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(selection.active.as_deref(), Some("Nice.zip"));
+    assert!(selection.enabled);
+
+    set_instance_shader_pack(instance.clone(), ShaderLoader::Iris, None)
+        .await
+        .unwrap();
+    let selection = read_instance_shader_pack(instance, ShaderLoader::Iris)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(selection.active.as_deref(), Some("Nice.zip"));
+    assert!(!selection.enabled);
 }
 
 fn sha1(bytes: &[u8]) -> Sha1Hash {

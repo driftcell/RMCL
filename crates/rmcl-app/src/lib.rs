@@ -44,8 +44,9 @@ pub use content::{
     ModMetadataCache, ModMetadataFetch, delete_instance_content,
     delete_instance_content_with_guard, import_instance_content,
     import_instance_content_with_guard, move_instance_resource_pack, preflight_content_install,
-    resolve_content_install_batch, resolve_content_install_order, resource_pack_format,
-    scan_instance_content, set_instance_content_enabled, set_instance_content_enabled_with_guard,
+    read_instance_shader_pack, resolve_content_install_batch, resolve_content_install_order,
+    resource_pack_format, scan_instance_content, set_instance_content_enabled,
+    set_instance_content_enabled_with_guard, set_instance_shader_pack,
 };
 pub use error::{AppError, InstallDownloadFailure};
 pub use featured::{FeaturedServer, FeaturedServerError, featured_servers};
@@ -79,9 +80,10 @@ pub use rmcl_content::{
     ModMetadataLoader, ModrinthClient, ModrinthConfig, PackFormat, PackFormatRange,
     RemoteContentError, RemoteDependency, RemoteDependencyKind, RemoteFile, RemoteProject,
     RemoteSearchPage, RemoteSearchQuery, RemoteSort, RemoteVersion, ResourcePackCompatibility,
-    ResourcePackMetadata, ResourcePackOrder, ShaderLoader, ShaderPackMetadata,
+    ResourcePackMetadata, ResourcePackOrder, ShaderLoader, ShaderPackMetadata, ShaderPackSelection,
     read_client_resource_pack_format, read_mod_metadata, read_resource_pack_metadata,
-    read_shader_pack_metadata, recommended_version, replace_content_file, scan_installed_mods,
+    read_shader_pack_metadata, read_shader_pack_selection, recommended_version,
+    replace_content_file, scan_installed_mods, set_shader_pack_selection,
 };
 pub use rmcl_instance::{
     InstanceLayout, InstanceLoader, InstanceManifest, IsolationMode, LoaderKind, RepositoryPath,

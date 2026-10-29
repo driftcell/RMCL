@@ -7,7 +7,9 @@ mod metadata;
 mod model;
 mod options;
 mod pack;
+mod properties;
 mod remote;
+mod shader;
 mod version_req;
 
 pub use error::ContentError;
@@ -32,6 +34,7 @@ pub use remote::{
     RemoteDependencyKind, RemoteFile, RemoteProject, RemoteSearchPage, RemoteSearchQuery,
     RemoteSort, RemoteVersion, recommended_version,
 };
+pub use shader::{ShaderPackSelection, read_shader_pack_selection, set_shader_pack_selection};
 pub use version_req::{
     VersionRequirement, VersionRequirementError, VersionStyle, version_satisfies,
 };

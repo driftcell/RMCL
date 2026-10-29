@@ -1,6 +1,6 @@
 # 本地内容管理
 
-状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；资源包 `pack.mcmeta`/图标解析、格式兼容判断、优先级调整、光影包结构校验和加载器类型化检测已提供核心 API，Mod JAR 元数据索引供安装预检使用；Modrinth 远程下载、推荐和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖自动选择和整合包尚未实现
+状态：实例级 Mod、资源包和光影的本地扫描、导入、删除与启用/禁用已实现；资源包 `pack.mcmeta`/图标解析、格式兼容判断、优先级调整、光影包结构校验、加载器类型化检测和 Iris/Oculus/OptiFine 光影选择配置读写已提供核心 API，Mod JAR 元数据索引供安装预检使用；Modrinth 远程下载、推荐和必需依赖见 [远程内容与 Modrinth](REMOTE_CONTENT.md)，CurseForge、可选依赖自动选择和整合包尚未实现
 
 日期：2026-10-29
 
@@ -34,6 +34,8 @@
 - 目标资源格式由 `read_client_resource_pack_format` 从 client JAR 的 `version.json` 读取：现代客户端使用 `pack_version.resource_major` 和 `resource_minor`，旧客户端支持数字 `pack_version`。`rmcl-app::resource_pack_format` 会沿加载器实例的 `jar` 或 `inherits_from` 找到基础 client JAR。
 - `read_shader_pack_metadata` 校验 `shaders/` 目录并读取可选的 `shaders/pack.json` 描述；不执行 shader 代码。
 - `ShaderLoader` 将 Iris、Oculus、OptiFine 类型化；只有已启用的加载器 Mod 才算光影加载器，`.disabled` 不计入。
+- `read_shader_pack_selection` / `set_shader_pack_selection` 读写 Iris（`config/iris.properties`）、Oculus（`config/oculus.properties`）和 OptiFine（`optionsshaders.txt`）的光影选择。Iris/Oculus 关闭时保留 `shaderPack` 并写入 `enableShaders=false`；OptiFine 关闭时清空 `shaderPack`。
+- 光影配置按 Java properties 处理：保留注释和未知键，非 ASCII 使用 `\uXXXX` 转义，临时文件同步后原子替换。只修改 `shaderPack` 和 `enableShaders`，不处理光影内部设置。
 - `move_resource_pack` 在 `options.txt` 的 `resourcePacks` 列表中移动已启用资源包；数组末尾优先级更高，未启用资源包返回结构化错误。
 
 ## 扫描规则
@@ -110,7 +112,7 @@
 - 尚未计算本地文件哈希，因此不能做远程识别或更新检查。
 - `pack_format` 兼容判断和资源包元数据 API 已提供，但尚未接入 GPUI 列表展示、导入/下载后的兼容性提示和 `incompatibleResourcePacks` 自动修正。
 - 资源包启用格式的版本推断是启发式；空列表的旧版本可能被写成现代 `file/` 格式，需要后续按精确版本表修正。
-- 光影包目前只校验结构和加载器状态；尚未读写 Iris/OptiFine 的启用配置，也没有界面级“当前光影”切换。
+- 光影选择配置的读写 API 已提供，但尚未接入 GPUI 的“当前光影”切换；游戏运行中修改配置是否立即生效取决于加载器，RMCL 不承诺热重载。
 - 尚未支持从文件夹导入资源包/光影，只管理已存在的文件夹。
 - 尚未实现内容更新、批量启用、拖放导入和整合包安装。
 - 加载器安装见 [版本继承、加载器安装与实例创建](LOADERS.md)；当前支持 Fabric/Quilt 和现代 Forge/NeoForge installer。
@@ -118,6 +120,6 @@
 ## 验证
 
 - `rmcl-content` 覆盖 Mod 根目录/一层子目录/禁用项、资源包文件和文件夹、光影文件/文件夹、符号链接跳过、同名改名、拒绝覆盖、Mod 切换、`options.txt` 现代/旧格式、损坏选项不重写、删除与目录删除限制。
-- 新增覆盖资源包 ZIP/文件夹元数据、`supported_formats` 对象/数组、`min_format`/`max_format` 回退、元数据大小限制、client JAR `pack_version`、光影包结构与描述、资源包优先级移动，以及禁用光影加载器不计入检测。
+- 新增覆盖资源包 ZIP/文件夹元数据、`supported_formats` 对象/数组、`min_format`/`max_format` 回退、1.21.9+ `[major, minor]`、元数据大小限制、client JAR `pack_version`、光影包结构与描述、资源包优先级移动、禁用光影加载器不计入检测，以及 Iris/Oculus/OptiFine 光影选择配置的读写、保留未知键和非 ASCII 转义。
 - `rmcl-app` 集成测试覆盖 `spawn_blocking` 包装下的导入、扫描、禁用和删除链路。
 - `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的文件选择、标签切换和导入/删除交互仍需在 macOS、Windows、Linux 逐平台验收。
