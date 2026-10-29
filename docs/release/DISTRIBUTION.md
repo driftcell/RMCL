@@ -2,7 +2,7 @@
 
 状态：已接受的初始方向
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 构建平台
 
@@ -112,12 +112,12 @@ Runner 标签会随 GitHub 镜像退役而变化：`macos-15-intel` 是当前可
 
 1. 确认目标提交的 CI 已通过；Release workflow 负责构建和分发，不替代 lint、测试和真实运行验收。
 2. 功能/fix PR 合并后，由 release-plz 创建 release PR；检查版本、`CHANGELOG.md` 和 `Cargo.lock`，补充用户可见的 Highlights。
-3. 在 release PR 的 `CI success` 通过后 Squash merge；release-plz 创建与版本一致的 `v<version>` 标签。
-4. 标签触发 `release.yml`；发布 job 从 `CHANGELOG.md` 提取当前版本作为 Release body，生成 `SHA256SUMS` 并发布。
+3. 准备发布时批准 release PR 的待运行 CI，并开启 Squash auto-merge；`CI success` 通过后自动合并，release-plz 创建与版本一致的 `v<version>` 标签。
+4. release job 按 release-plz 输出显式 dispatch `release.yml`；发布 job 从 `CHANGELOG.md` 提取当前版本作为 Release body，生成 `SHA256SUMS` 并发布。
 5. 在 Actions 中确认 `Release` workflow 的四个构建 job 全部成功。
 6. 下载至少一个平台的产物做启动 smoke，再确认 Release 已发布。
 
-release-plz、`RELEASE_PLZ_TOKEN` 和手动兜底流程见 [分支、PR 与发布](../engineering/RELEASING.md)。
+release-plz、内置 Token、人工 CI 批准和手动兜底流程见 [分支、PR 与发布](../engineering/RELEASING.md)。
 
 Linux 构建使用 Ubuntu 24.04，产物面向较新的 glibc 和 GPUI Kit 所需图形库；当前 tar.gz 不捆绑 WebKitGTK、GTK、Vulkan 等系统依赖。需要覆盖旧发行版时，应增加容器化构建或 AppImage，而不是把 Ubuntu 24.04 产物描述成通用二进制。
 

@@ -2,7 +2,7 @@
 
 状态：已启用
 
-日期：2026-10-28
+日期：2026-10-29
 
 ## 分支保护
 
@@ -45,17 +45,16 @@ RMCL 使用单应用发布模型，[release-plz](https://release-plz.dev/) 只�
 
 发布说明以用户价值为中心，不追求自动罗列所有内部 crate 提交。发布负责人根据相邻应用标签之间的 Git 差异，在 release PR 中人工整理和润色功能、修复、兼容性与升级注意事项。相关失败与取舍见 [release-plz 变更检测](../../notes/development/release_plz_change_detection.md)。
 
-### 必需的 PAT
+### 内置 Token、人工 CI 批准与自动合并
 
-GitHub 默认 `GITHUB_TOKEN` 创建的 PR 不会触发其他 PR workflow，release PR 无法满足必需检查。因此 release-plz 需要 `RELEASE_PLZ_TOKEN`：
+release-plz 使用工作流内置的 `github.token`，不依赖个人 PAT。新 release PR 的作者是 `github-actions[bot]`；已有 PR 的作者不会因认证方式变化而改写。
 
-- Fine-grained PAT，仅授权 `driftcell/RMCL`
-- 权限：Contents 读写、Pull requests 读写
-- 保存为 Actions secret `RELEASE_PLZ_TOKEN`
-- 不要提交到仓库或写入日志
-- token 过期或轮换时同步更新 secret
-
-未配置 secret 时 workflow 会输出 notice 并跳过 release-plz，不会让普通 CI 失败。配置后首次运行会创建第一个 release PR。
+- 仓库 Settings → Actions → General 必须允许 GitHub Actions 创建和批准 Pull Request。
+- 准备 release PR 的 job 具有 `contents: write` 和 `pull-requests: write`；打 tag 并触发打包的 job 具有 `contents: write`、`pull-requests: read` 和 `actions: write`。
+- 内置 Token 创建或更新 PR 后，`opened` / `synchronize` / `reopened` 类型的 PR workflow 会进入待批准状态。准备发布时，由有写权限的维护者点击 **Approve workflows to run**，再等待必需的 `CI success`。
+- 人工批准是刻意的发布策略：功能持续合入时 release-plz 可以更新 PR，但完整三平台 CI 不在每次更新后自动消耗资源。批准 workflow 只启动检查，不会绕过必需检查。
+- 维护者准备发布时，在批准 CI 的同时为 release PR 开启 Squash auto-merge。只有 `CI success` 和其余分支保护条件全部满足，PR 才自动合并；仓库已启用 auto-merge，且只允许 Squash。auto-merge 由维护者手动开启，不由内置 Token 自动发起合并。
+- 不通过 `workflow_dispatch` 代替 release PR 的 `pull_request` 检查；手动 dispatch 产生的检查不满足当前分支保护的必需检查语义。
 
 ## 发布流程
 
@@ -63,9 +62,9 @@ GitHub 默认 `GITHUB_TOKEN` 创建的 PR 不会触发其他 PR workflow，relea
 2. release-plz 更新或创建 release PR
 3. 检查 release PR 中的版本、changelog 和 Cargo.lock
 4. 在 release PR 中补充简短的 Highlights/升级注意事项（不要只保留裸 commit 列表）
-5. 等待 release PR 的 `CI success` 通过
-6. Squash merge release PR；release-plz release 创建 `v<version>` tag
-7. tag 触发 `release.yml`：构建四平台产物、生成 `SHA256SUMS`、使用 `CHANGELOG.md` 对应章节作为 Release body，最后发布
+5. 准备发布时批准待运行的 PR workflow，并开启 Squash auto-merge，等待 release PR 的 `CI success` 通过
+6. 满足全部分支保护条件后自动 Squash merge；release-plz release 创建 `v<version>` tag
+7. release job 从 release-plz 输出取得本次实际创建的 tag，显式 dispatch `release.yml`：构建四平台产物、生成 `SHA256SUMS`、使用 `CHANGELOG.md` 对应章节作为 Release body，最后发布
 8. 下载至少一个平台产物做启动 smoke；自动更新版本还需确认 Release body 和资产名正确
 
 `CHANGELOG.md` 是 release notes 的规范来源，格式为 Keep a Changelog。release-plz 生成的提交分组只是草稿，发布负责人应在合并前将其整理为用户可读的 Highlights 和升级说明，而不是保留内部 commit 清单。后续 release-plz 更新可能重新生成草稿，因此人工润色应在准备合并前进行。`scripts/release-notes.sh` 从 changelog 提取当前版本章节，供 `release.yml` 使用。
