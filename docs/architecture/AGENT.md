@@ -22,7 +22,7 @@
 - 免费池的模型、限额和隐私策略由 Kilo 控制，可能轮换；免费模型可能记录对话，设置卡片会提示不要发送敏感信息。
 - 免费通道遇到 429 时显示“请求过多，请稍后再试或配置自己的 Key”，不暴露原始 HTTP 错误。
 - BYOK 仍支持 OpenAI、Anthropic、Google Gemini、DeepSeek、OpenRouter、通义千问、Kimi、智谱 GLM 和自定义 OpenAI-compatible 服务商。
-- Provider 配置写入 `config.toml`（schema 7）：`agent_provider`、`agent_model`、`agent_base_url`、`agent_proxy`。
+- Provider 配置写入 `config.toml`（schema 8）：`agent_provider`、`agent_model`、`agent_base_url`、`agent_proxy`。
 - API Key 只存系统凭据：服务 `com.rmcl.launcher`，键 `agent:<provider>`，值为版本化 JSON `{ "version": 1, "api_key": "..." }`。Kilo 不使用 Keyring。钥匙串读写在同一 `AgentKeyStore` 内串行执行，新读取会等待旧保存/删除完成，避免 UI 状态与实际凭据不一致。
 - 已保存的 Key 不回填输入框，只显示“已保存在系统钥匙串”和移除按钮。
 - 保存时不自动发起模型请求；首次发送消息时验证服务商与 Key。
@@ -32,7 +32,7 @@
 
 ## MCP 连接
 
-内置 Agent 通过进程内 `rmcp` duplex transport 连接 `McpServer::with_access(ReadWrite)`，与 GUI 共享同一个 `AppContext` 和 `TaskManager`，不启动子进程。
+内置 Agent 通过进程内 `rmcp` duplex transport 连接 `McpServer::with_access(ReadWrite)`，与 GUI 共享同一个 `AppContext` 和 `TaskManager`，不启动子进程。该连接独立于 CLI MCP 服务，GUI 不提供额外的 MCP 服务设置。
 
 工具在客户端过滤，不修改 MCP 服务端定义：
 

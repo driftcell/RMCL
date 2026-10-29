@@ -28,22 +28,6 @@ impl LauncherApp {
         let agent_keyless = !self.agent.provider(cx).requires_key();
         let auto_java_view = cx.entity().downgrade();
         let auto_update_view = cx.entity().downgrade();
-        let mcp_view = cx.entity().downgrade();
-        let (mcp_status_text, mcp_status_color) = if self.mcp_pending {
-            ("正在应用 MCP 设置…".to_owned(), cx.theme().muted_foreground)
-        } else if self.mcp_status.running {
-            (
-                format!(
-                    "运行中 · http://127.0.0.1:{}/mcp · 只读",
-                    self.mcp_status.port
-                ),
-                cx.theme().success,
-            )
-        } else if self.mcp_status.enabled {
-            ("已启用，服务未运行".to_owned(), cx.theme().warning)
-        } else {
-            ("已停用".to_owned(), cx.theme().muted_foreground)
-        };
         let update_checking = self.update.checking;
         let update_up_to_date = self.update.up_to_date && !update_checking;
         v_flex()
@@ -481,85 +465,6 @@ impl LauncherApp {
                             .when_some(self.agent.settings.error.clone(), |this, error| {
                                 this.child(
                                     div().text_sm().text_color(cx.theme().danger).child(error),
-                                )
-                            }),
-                    )
-                    .child(
-                        card(cx)
-                            .child(section_title(
-                                "MCP",
-                                "供本机 MCP 客户端查询实例、账户、Java 和任务状态。",
-                                cx,
-                            ))
-                            .child(
-                                h_flex()
-                                    .w_full()
-                                    .gap_4()
-                                    .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .gap_1()
-                                            .child(field_label("本地只读服务"))
-                                            .child(help(
-                                                "仅监听 127.0.0.1，不允许写操作；默认停用。",
-                                                cx,
-                                            )),
-                                    )
-                                    .child(
-                                        Switch::new("settings-mcp-enabled")
-                                            .flex_shrink_0()
-                                            .checked(self.config.mcp_enabled)
-                                            .disabled(self.mcp_pending)
-                                            .on_change(move |value, window, cx| {
-                                                let _ = mcp_view.update(cx, |this, cx| {
-                                                    this.set_mcp_enabled(*value, window, cx)
-                                                });
-                                            }),
-                                    ),
-                            )
-                            .child(
-                                h_flex()
-                                    .w_full()
-                                    .items_end()
-                                    .gap_2()
-                                    .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .gap_1()
-                                            .child(field_label("HTTP 端口"))
-                                            .child(help("修改后重启本地服务。", cx)),
-                                    )
-                                    .child(
-                                        div().flex_shrink_0().w(rems(8.)).child(
-                                            Input::new(&self.mcp_port_input)
-                                                .disabled(self.mcp_pending)
-                                                .w_full(),
-                                        ),
-                                    )
-                                    .child(
-                                        Button::new("settings-mcp-apply")
-                                            .outline()
-                                            .label("应用")
-                                            .disabled(self.mcp_pending)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.apply_mcp_port(window, cx)
-                                            })),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(mcp_status_color)
-                                    .child(mcp_status_text),
-                            )
-                            .when_some(self.mcp_status.error.clone(), |this, error| {
-                                this.child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().danger)
-                                        .child(error),
                                 )
                             }),
                     )

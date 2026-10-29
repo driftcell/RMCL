@@ -9,8 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 7;
-pub const DEFAULT_MCP_PORT: u16 = 39271;
+pub const CONFIG_SCHEMA_VERSION: u32 = 8;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,8 +28,6 @@ pub struct LauncherConfig {
     pub auto_check_updates: bool,
     pub download_source: DownloadSourcePreference,
     pub launcher_visibility: LauncherVisibility,
-    pub mcp_enabled: bool,
-    pub mcp_port: u16,
     pub agent_provider: String,
     pub agent_model: String,
     pub agent_base_url: Option<String>,
@@ -54,8 +51,6 @@ impl Default for LauncherConfig {
             auto_check_updates: true,
             download_source: DownloadSourcePreference::default(),
             launcher_visibility: LauncherVisibility::default(),
-            mcp_enabled: false,
-            mcp_port: DEFAULT_MCP_PORT,
             agent_provider: "kilo".to_owned(),
             agent_model: String::new(),
             agent_base_url: None,
@@ -384,8 +379,6 @@ mod tests {
             auto_check_updates: false,
             download_source: DownloadSourcePreference::Mirror,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
-            mcp_enabled: true,
-            mcp_port: 40000,
             agent_provider: "anthropic".to_owned(),
             agent_model: "claude-sonnet-5-5".to_owned(),
             agent_base_url: Some("https://gateway.example/anthropic".to_owned()),
@@ -514,8 +507,6 @@ launcher_visibility = "keep_visible"
             br#"schema_version = 6
 minecraft_root = "/tmp/minecraft"
 java_store = "/tmp/java"
-mcp_enabled = true
-mcp_port = 40000
 "#,
         )
         .unwrap();
@@ -527,31 +518,6 @@ mcp_port = 40000
         assert!(config.agent_model.is_empty());
         assert_eq!(config.agent_base_url, None);
         assert_eq!(config.agent_proxy, None);
-    }
-
-    #[test]
-    fn schema_five_is_upgraded_with_mcp_disabled() {
-        let temporary = TempDir::new().unwrap();
-        let path = temporary.path().join("config.toml");
-        let store = ConfigStore::new(&path);
-        fs::write(
-            &path,
-            br#"schema_version = 5
-minecraft_root = "/tmp/minecraft"
-java_store = "/tmp/java"
-auto_install_java = true
-auto_check_updates = true
-download_source = "auto"
-launcher_visibility = "keep_visible"
-"#,
-        )
-        .unwrap();
-
-        let config = store.load().unwrap();
-
-        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
-        assert!(!config.mcp_enabled);
-        assert_eq!(config.mcp_port, DEFAULT_MCP_PORT);
     }
 
     #[test]
