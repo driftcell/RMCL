@@ -37,12 +37,22 @@ fn write_fabric_mod(path: &Path, id: &str, version: &str) {
 }
 
 fn write_fabric_mod_with_depends(path: &Path, id: &str, version: &str, depends: serde_json::Value) {
+    write_fabric_mod_with_metadata(path, id, version, depends, json!({}));
+}
+
+fn write_fabric_mod_with_metadata(
+    path: &Path,
+    id: &str,
+    version: &str,
+    depends: serde_json::Value,
+    breaks: serde_json::Value,
+) {
     let file = std::fs::File::create(path).unwrap();
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     zip.start_file("fabric.mod.json", options).unwrap();
     zip.write_all(
-        json!({"id": id, "version": version, "name": id, "depends": depends})
+        json!({"id": id, "version": version, "name": id, "depends": depends, "breaks": breaks})
             .to_string()
             .as_bytes(),
     )
@@ -58,6 +68,13 @@ fn fabric_mod_bytes_with_depends(id: &str, version: &str, depends: serde_json::V
     let temporary = TempDir::new().unwrap();
     let path = temporary.path().join("mod.jar");
     write_fabric_mod_with_depends(&path, id, version, depends);
+    std::fs::read(path).unwrap()
+}
+
+fn fabric_mod_bytes_with_breaks(id: &str, version: &str, breaks: serde_json::Value) -> Vec<u8> {
+    let temporary = TempDir::new().unwrap();
+    let path = temporary.path().join("mod.jar");
+    write_fabric_mod_with_metadata(&path, id, version, json!({}), breaks);
     std::fs::read(path).unwrap()
 }
 
@@ -724,6 +741,52 @@ async fn preflight_uses_remote_metadata_ranges_to_skip_a_newer_installed_depende
         rmcl_app::ContentPreflightStatus::AlreadyInstalled { enabled: true }
     ));
     assert!(preflight.skip_version_ids.iter().any(|id| id == "dep-v"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn preflight_applies_remote_metadata_version_ranges_to_conflicts() {
+    let primary =
+        fabric_mod_bytes_with_breaks("primary-mod", "1.0", json!({"fabric-api": "<0.145.1"}));
+    let (base, server) =
+        graph_server(primary.clone(), b"dependency mod".to_vec(), Vec::new()).await;
+    let temporary = TempDir::new().unwrap();
+    let instance = instance(&temporary.path().join(".minecraft"));
+    let cache = ModMetadataCache::new(
+        DownloadConfig::default(),
+        temporary.path().join("metadata-cache"),
+    )
+    .unwrap();
+    let client = graph_client(base.clone());
+    let request = graph_request(instance.clone(), &base, &primary);
+
+    for (installed_version, expected_conflicts) in [
+        ("0.165.0+26.3", 0),
+        ("0.145.1+26.3", 0),
+        ("0.144.0+26.3", 1),
+    ] {
+        write_fabric_mod(
+            &instance.mods_dir().join("fabric-api.jar"),
+            "fabric-api",
+            installed_version,
+        );
+        let installed = scan_installed_mods(&instance);
+        let preflight = preflight_content_install(
+            &client,
+            &request,
+            &installed,
+            Some(&cache),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            preflight.incompatible.len(),
+            expected_conflicts,
+            "unexpected conflict result for Fabric API {installed_version}"
+        );
+    }
     server.abort();
 }
 
