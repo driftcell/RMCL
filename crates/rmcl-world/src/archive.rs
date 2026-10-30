@@ -13,7 +13,10 @@ use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 use crate::{
     CopyWorldOptions, ImportWorldOptions, World, WorldBackup, WorldCopyProgress, WorldError,
-    WorldId, copy::copy_directory_to_world, lock::try_lock_world, scan::relative_time,
+    WorldId,
+    copy::{copy_directory_to_world, ensure_real_directory},
+    lock::try_lock_world,
+    scan::relative_time,
 };
 
 const WORLD_ARCHIVE_LIMITS: ExtractionLimits = ExtractionLimits {
@@ -30,7 +33,7 @@ pub fn import_world_zip(
     cancellation: &CancellationToken,
     mut progress: impl FnMut(WorldCopyProgress),
 ) -> Result<World, WorldError> {
-    fs::create_dir_all(target_saves).map_err(|source| WorldError::io(target_saves, source))?;
+    ensure_real_directory(target_saves)?;
     let temporary = tempfile::Builder::new()
         .prefix(".rmcl-world-import-")
         .tempdir_in(target_saves)
@@ -91,7 +94,7 @@ pub fn backup_world(
     cancellation: &CancellationToken,
     progress: impl FnMut(WorldCopyProgress),
 ) -> Result<WorldBackup, WorldError> {
-    fs::create_dir_all(backups_dir).map_err(|source| WorldError::io(backups_dir, source))?;
+    ensure_real_directory(backups_dir)?;
     let created_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)

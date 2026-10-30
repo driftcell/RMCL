@@ -130,7 +130,7 @@ pub(crate) fn copy_directory_to_world(
     if cancellation.is_cancelled() {
         return Err(WorldError::Cancelled);
     }
-    fs::create_dir_all(target_saves).map_err(|source| WorldError::io(target_saves, source))?;
+    ensure_real_directory(target_saves)?;
     let target_name = target_name(source_id, options)?;
     let final_path = resolve_target_path(target_saves, &target_name, options.conflict)?;
     let staging = target_saves.join(format!(".rmcl-world-{}", Uuid::new_v4()));
@@ -398,4 +398,24 @@ fn is_cross_device(error: &WorldError) -> bool {
         return false;
     };
     source.kind() == std::io::ErrorKind::CrossesDevices || source.raw_os_error() == Some(18)
+}
+
+pub(crate) fn ensure_real_directory(path: &Path) -> Result<(), WorldError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(WorldError::SymlinkNotAllowed {
+            path: path.to_path_buf(),
+        }),
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(WorldError::io(
+            path,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "target path is not a directory",
+            ),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(path).map_err(|source| WorldError::io(path, source))
+        }
+        Err(source) => Err(WorldError::io(path, source)),
+    }
 }
