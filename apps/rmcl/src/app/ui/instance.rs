@@ -21,8 +21,8 @@ use rmcl_app::{
 
 use super::super::{ContentTab, LauncherApp, Page, short_date, version_tile, version_type_label};
 use super::common::{
-    card, display_path, empty_state, error_banner, format_size, mono, section_title, type_tag,
-    warning_banner,
+    card, display_path, empty_state, empty_state_message, error_banner, format_size, mono,
+    section_title, type_tag, warning_banner,
 };
 
 impl LauncherApp {
@@ -122,6 +122,20 @@ impl LauncherApp {
                                         ))
                                     })),
                             )
+                            .child(
+                                Button::new("instance-browse-online")
+                                    .outline()
+                                    .icon(IconName::Globe)
+                                    .label("下载内容")
+                                    .disabled(pending)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_content_browser(
+                                            this.content_tab.kind(),
+                                            window,
+                                            cx,
+                                        )
+                                    })),
+                            )
                             .child(div().flex_1())
                             .child(
                                 Input::new(&self.content_query)
@@ -184,18 +198,10 @@ impl LauncherApp {
                             .into_any_element()
                     } else if items.is_empty() {
                         card(cx)
-                            .child(empty_state(
+                            .child(empty_state_message(
                                 self.content_tab.icon(),
                                 &format!("还没有 {}", self.content_tab.label()),
                                 empty_description(kind),
-                                Button::new("instance-empty-import")
-                                    .primary()
-                                    .icon(IconName::Plus)
-                                    .label(format!("导入 {}", self.content_tab.label()))
-                                    .disabled(pending)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.pick_content_files(kind, window, cx)
-                                    })),
                                 cx,
                             ))
                             .into_any_element()
@@ -337,16 +343,6 @@ impl LauncherApp {
                                 })),
                         )
                     })
-                    .child(
-                        Button::new("instance-browse-online")
-                            .outline()
-                            .icon(IconName::Globe)
-                            .label("下载内容")
-                            .disabled(self.content_operations_pending())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.open_content_browser(this.content_tab.kind(), window, cx)
-                            })),
-                    )
                     .child(
                         Button::new("instance-launch")
                             .outline()
@@ -666,10 +662,8 @@ impl LauncherApp {
                     .w_full()
                     .items_center()
                     .gap_1()
-                    .child(if enabled {
-                        Tag::success().child("已启用").small()
-                    } else {
-                        Tag::new().outline().child("未启用").small()
+                    .when(!enabled, |this| {
+                        this.child(Tag::new().outline().child("未启用").small())
                     })
                     .child(div().flex_1())
                     .when(enabled, |this| {
@@ -1071,12 +1065,8 @@ impl LauncherApp {
                             .when(item.is_directory, |this| {
                                 this.child(Tag::new().outline().child("文件夹").small())
                             })
-                            .when_some(can_toggle.then_some(enabled), |this, enabled| {
-                                this.child(if enabled {
-                                    Tag::success().child("已启用").small()
-                                } else {
-                                    Tag::secondary().child("已禁用").small()
-                                })
+                            .when(can_toggle && !enabled, |this| {
+                                this.child(Tag::secondary().child("已禁用").small())
                             }),
                     )
                     .child(

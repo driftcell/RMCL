@@ -83,7 +83,28 @@ pub fn empty_state(
     description: &str,
     action: impl IntoElement,
     cx: &App,
-) -> impl IntoElement {
+) -> AnyElement {
+    empty_state_layout(
+        icon,
+        title,
+        description,
+        Some(action.into_any_element()),
+        cx,
+    )
+}
+
+/// An empty state whose primary action already lives in the surrounding toolbar.
+pub fn empty_state_message(icon: IconName, title: &str, description: &str, cx: &App) -> AnyElement {
+    empty_state_layout(icon, title, description, None, cx)
+}
+
+fn empty_state_layout(
+    icon: IconName,
+    title: &str,
+    description: &str,
+    action: Option<AnyElement>,
+    cx: &App,
+) -> AnyElement {
     v_flex()
         .w_full()
         .items_center()
@@ -113,7 +134,8 @@ pub fn empty_state(
                 .text_color(cx.theme().muted_foreground)
                 .child(description.to_owned()),
         )
-        .child(action)
+        .when_some(action, |this, action| this.child(action))
+        .into_any_element()
 }
 
 pub fn type_tag(version_type: Option<&str>) -> Tag {

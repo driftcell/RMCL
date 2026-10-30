@@ -25,7 +25,7 @@ use rmcl_app::{
     ContentKind, ContentSource, InstalledVersion, RemoteProject, RemoteSort, RemoteVersion,
 };
 
-use super::super::{LauncherApp, Page, short_date, version_tile};
+use super::super::{ContentTab, LauncherApp, Page, short_date, version_tile};
 use super::common::{card, empty_state, error_banner, format_size, section_title, warning_banner};
 
 impl LauncherApp {
@@ -65,6 +65,7 @@ impl LauncherApp {
             .content_browser
             .kind
             .unwrap_or_else(|| self.content_tab.kind());
+        let kind_tab = ContentTab::from_kind(kind);
         let project = self.content_browser.project.clone();
         let title = project
             .as_ref()
@@ -168,6 +169,30 @@ impl LauncherApp {
                                 }
                             })),
                     ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        TabBar::new("content-browser-kind")
+                            .segmented()
+                            .selected_index(kind_tab.index())
+                            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                                this.switch_content_browser_kind(
+                                    ContentTab::from_index(*index).kind(),
+                                    window,
+                                    cx,
+                                )
+                            }))
+                            .children(
+                                ContentTab::ALL
+                                    .into_iter()
+                                    .map(|tab| Tab::new().label(tab.label())),
+                            ),
+                    )
+                    .child(div().flex_1()),
             )
             .child(
                 v_flex()
