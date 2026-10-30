@@ -40,6 +40,19 @@ impl LauncherApp {
         let confirmation = self.render_agent_confirmation(cx);
         let running = self.agent.run.is_running();
         let view = cx.entity().downgrade();
+        let scroll_generation = self
+            .agent
+            .conversation
+            .scroll_generation
+            .get()
+            .wrapping_add(1);
+        self.agent
+            .conversation
+            .scroll_generation
+            .set(scroll_generation);
+        let scroll_generation_cell = self.agent.conversation.scroll_generation.clone();
+        let scroll_tail = self.agent.conversation.scroll_tail.clone();
+        let scroll_scroller = self.agent.conversation.scroller.clone();
         let send_label = if running { "停止" } else { "发送" };
         let send_icon = if running {
             IconName::Square
@@ -92,6 +105,37 @@ impl LauncherApp {
                     .p_3()
                     .child(
                         div()
+                            .on_children_prepainted({
+                                let tail = scroll_tail.clone();
+                                let generation = scroll_generation_cell.clone();
+                                let scroller = scroll_scroller.clone();
+                                move |bounds, _, cx| {
+                                    let Some(bounds) = bounds.first() else {
+                                        return;
+                                    };
+                                    let Some((row_generation, tail_bottom)) = tail.get() else {
+                                        return;
+                                    };
+                                    // Scrolling down to the measured tail can
+                                    // stop a few pixels short of the exact end
+                                    // when older rows are still unmeasured. GPUI
+                                    // then keeps reporting "scrolled up" and the
+                                    // jump button stays visible. Re-engage tail
+                                    // following once the tail row is actually
+                                    // at the viewport bottom.
+                                    if row_generation != generation.get()
+                                        || tail_bottom > bounds.bottom() + px(8.5)
+                                    {
+                                        return;
+                                    }
+                                    scroller.update(cx, |scroller, cx| {
+                                        if !scroller.is_following_tail() {
+                                            scroller.scroll_to_end(cx);
+                                        }
+                                    });
+                                }
+                            })
+                            .id("agent-scroll-viewport")
                             .debug_selector(|| "agent-scroll-viewport".to_owned())
                             .flex_1()
                             .min_h_0()
@@ -193,6 +237,7 @@ impl LauncherApp {
                             },
                         )
                         .when(!self.agent.conversation.messages.is_empty(), |this| {
+                            let tail_bounds = scroll_tail.clone();
                             this.child(
                                 MessageScroller::new(
                                     "agent-messages",
@@ -204,10 +249,20 @@ impl LauncherApp {
                                             // is measured by the virtual list,
                                             // so the wheel can always reach the
                                             // bottom of the final text.
+                                            let tail_bounds = tail_bounds.clone();
                                             return div()
                                                 .debug_selector(|| "agent-scroll-tail".to_owned())
                                                 .h_8()
                                                 .w_full()
+                                                .on_children_prepainted(move |bounds, _, _| {
+                                                    if let Some(bounds) = bounds.first() {
+                                                        tail_bounds.set(Some((
+                                                            scroll_generation,
+                                                            bounds.bottom(),
+                                                        )));
+                                                    }
+                                                })
+                                                .child(div().size_full())
                                                 .into_any_element();
                                         };
                                         let row = render_agent_message(index, message, &view, cx);

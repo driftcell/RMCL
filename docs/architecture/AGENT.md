@@ -65,6 +65,7 @@
 - 工具步骤摘要只显示实例名、游戏或加载器版本、内容路径、服务器地址等用户可识别的值；`task_id`、revision、幂等键和 Modrinth version ID 不进入界面，无法识别的参数不回退为原始 JSON。
 - 已完成步骤折叠为“已完成 N 个步骤 · 时长”，位于该回合最终回复上方；失败时自动展开。
 - 展开/收起步骤会 remeasure 当前行；回合结束后先 append 再观察 `TextViewState`，并在下一帧 remeasure 最后一行，避免虚拟列表高度过期导致滚轮停不到底部。消息列表末尾保留一个 2rem 高的占位行，作为虚拟列表可测量的真实尾项，滚轮可以越过最后一行文字；跳转按钮文案为“回到底部”。
+- GPUI 在存在未测量历史行时会让 `is_scrolled_to_end` 返回未知，滚轮到达占位行仍可能被判定为“未到底”，跳转按钮不会消失。页面在布局完成后比较占位行底边与 transcript 视口底边（允许列表底部内边距），重合时主动重新进入 tail following，确保滚轮到底等同于点击“回到底部”。
 - 任务进度只由全局底部状态栏读取同一 `TaskManager` 快照显示，AI 页面活动卡和输入框不再重复显示进度条；模型仍不需要轮询进度。
 - 输入使用 `Textarea`（`auto_grow(1, 8)`、`submit_on_enter`）；输入框与发送按钮默认同为 2.5rem 高，输入框增高时按钮保持底部对齐。运行期间仍可编辑草稿，发送按钮变为停止，提交新消息要等当前回合结束。
 - 会话只保存在内存；提供清空和停止。清空同时移除 UI 消息和模型历史。停止立即使当前回合代次失效并取消启动、MCP 连接或模型执行，迟到事件不会进入下一回合；不会自动取消已启动的 RMCL 任务。内部任务异常终止会显示错误，不会静默消失。
@@ -85,7 +86,7 @@ Agent 写工具成功后主动刷新一次版本、当前实例内容和外部�
 ## 验证
 
 - `rmcl-agent` 覆盖 Provider 预设、非法 Provider、Base URL/代理及 userinfo 校验、Keyring 版本化 JSON、模型构建和系统提示占位符；本地 HTTP mock 验证 Kilo 空 Key 不发送 `Authorization`，Gemini 请求只包含一个 `/v1beta` 前缀；另覆盖 Provider 错误脱敏、并行/超时确认、清空模型历史和启动前取消。
-- `apps/rmcl` 的 headless GPUI 测试构造长对话并模拟滚轮到底，断言最后一条消息完整位于 transcript viewport 内。
+- `apps/rmcl` 的 headless GPUI 测试构造长对话并模拟滚轮到底，断言最后一条消息和占位行完整位于 transcript viewport 内，并验证 `is_scrolled_up` 已变为 `false`，即跳转按钮不再显示。
 - `rmcl-mcp` 覆盖 `tasks_wait` 的终态/运行游戏边界和真实 Java 任务终态等待；已有任务通知和只读权限测试继续运行。
 - `rmcl-store` 覆盖 schema 6 → 7 默认值和往返。
 - AI 页面、确认卡、IME 回车、真实服务商工具调用和多平台窗口仍需人工验收。
