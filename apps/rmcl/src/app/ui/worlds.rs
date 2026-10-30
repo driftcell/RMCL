@@ -197,6 +197,8 @@ impl LauncherApp {
                             .w_full()
                             .gap_3()
                             .items_center()
+                            // NOTE: focus rings paint outside the input border and are
+                            // clipped by the scroll viewport without breathing room.
                             .px_1()
                             .py_1()
                             .child(
