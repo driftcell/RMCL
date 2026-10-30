@@ -51,6 +51,8 @@ fn main() {
         .run(move |cx| {
             init(cx);
             #[cfg(target_os = "macos")]
+            app::shortcuts::init(cx);
+            #[cfg(target_os = "macos")]
             apply_dock_icon();
             theme::apply(bootstrap.config.appearance, None, cx);
 

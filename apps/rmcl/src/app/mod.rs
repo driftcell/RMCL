@@ -1,5 +1,6 @@
 mod agent;
 mod external;
+pub mod shortcuts;
 mod skin_service;
 mod skin_viewer;
 mod ui;
@@ -113,6 +114,18 @@ pub enum Page {
 }
 
 impl Page {
+    pub const NAVIGATION: [Self; 9] = [
+        Self::Home,
+        Self::Versions,
+        Self::Worlds,
+        Self::Skin,
+        Self::Servers,
+        Self::Downloads,
+        Self::Agent,
+        Self::Settings,
+        Self::Logs,
+    ];
+
     pub fn title(self) -> &'static str {
         match self {
             Self::Home => "主页",
@@ -7887,15 +7900,97 @@ fn restore_macos_windows() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use gpui::{
         ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, WindowOptions, point, px,
     };
     use gpui_kit::{AppContext as _, component::WindowExt as _};
+    use rmcl_app::VersionManifest;
     use rmcl_store::{ConfigStore, LauncherConfig};
     use tempfile::TempDir;
 
-    use super::{LauncherApp, Page};
+    use super::{LauncherApp, Page, shortcuts};
     use crate::services::{Bootstrap, Services};
+
+    #[gpui::test]
+    fn macos_shortcuts_switch_pages_and_control_the_active_window(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            shortcuts::init(cx);
+        });
+        let temporary = TempDir::new().unwrap();
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            ..LauncherConfig::default()
+        };
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
+        let services = Services::new(&config, store.clone()).unwrap();
+        let bootstrap = Bootstrap {
+            config,
+            config_store: store,
+            config_warning: None,
+            save_on_start: false,
+        };
+        let (handle, app) = cx
+            .update(|cx| {
+                gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| LauncherApp::new(window, cx, services, bootstrap))
+                })
+            })
+            .unwrap();
+        handle
+            .update(cx, |_, window, _| window.activate_window())
+            .unwrap();
+        cx.update(|cx| {
+            assert!(cx.active_window().is_some());
+            assert!(cx.is_action_available(&shortcuts::Quit));
+            assert!(cx.is_action_available(&shortcuts::CloseWindow));
+            let menus = cx.get_menus().unwrap();
+            let names = menus
+                .iter()
+                .map(|menu| menu.name.to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(names, ["RMCL", "文件", "前往", "窗口"]);
+            assert_eq!(menus[2].items.len(), Page::NAVIGATION.len());
+        });
+        let mut cx = VisualTestContext::from_window(handle, cx);
+        app.update_in(&mut cx, |app, _, _| {
+            app.catalog.manifest = Some(Arc::new(VersionManifest {
+                latest: None,
+                versions: Vec::new(),
+            }));
+        });
+
+        cx.dispatch_action(shortcuts::SelectPage {
+            page: Page::Versions,
+        });
+        assert_eq!(cx.read(|cx| app.read(cx).page), Page::Versions);
+
+        for (index, page) in Page::NAVIGATION.into_iter().enumerate() {
+            cx.simulate_keystrokes(&format!("cmd-{}", index + 1));
+            assert_eq!(
+                cx.read(|cx| app.read(cx).page),
+                page,
+                "shortcut cmd-{}",
+                index + 1
+            );
+        }
+        cx.simulate_keystrokes("cmd-,");
+        assert_eq!(cx.read(|cx| app.read(cx).page), Page::Settings);
+
+        cx.simulate_keystrokes("ctrl-cmd-f");
+        assert!(cx.update(|window, _| window.is_fullscreen()));
+
+        app.update_in(&mut cx, |app, window, cx| {
+            app.open_accounts_dialog(window, cx);
+        });
+        cx.simulate_keystrokes("cmd-2");
+        assert_eq!(cx.read(|cx| app.read(cx).page), Page::Versions);
+        cx.simulate_keystrokes("cmd-w");
+        assert!(cx.read(|cx| cx.windows().is_empty()));
+    }
 
     #[gpui::test]
     fn authlib_login_keeps_the_dialog_open(cx: &mut TestAppContext) {
