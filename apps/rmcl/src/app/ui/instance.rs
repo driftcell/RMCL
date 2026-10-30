@@ -146,6 +146,7 @@ impl LauncherApp {
                             .child(
                                 Button::new("instance-content-import")
                                     .primary()
+                                    .w(rems(8.))
                                     .icon(IconName::Plus)
                                     .label(format!("导入 {}", self.content_tab.label()))
                                     .disabled(pending)

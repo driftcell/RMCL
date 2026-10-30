@@ -1,6 +1,10 @@
 //! Assistant page state and event handling.
 
-use std::time::{Duration, Instant};
+use std::{
+    cell::Cell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use gpui_kit::{
     component::{
@@ -214,6 +218,10 @@ pub struct AgentConversation {
     pub messages: Vec<AgentMessage>,
     pub scroller: Entity<MessageScrollerState>,
     pub input: Entity<TextareaState>,
+    /// Generation of the most recent transcript render. Used to discard stale
+    /// tail-row bounds when the virtual list stops rendering the tail.
+    pub scroll_generation: Rc<Cell<u64>>,
+    pub scroll_tail: Rc<Cell<Option<(u64, Pixels)>>>,
 }
 
 pub struct AgentState {
@@ -655,6 +663,8 @@ impl AgentState {
             messages: Vec::new(),
             scroller,
             input,
+            scroll_generation: Rc::new(Cell::new(0)),
+            scroll_tail: Rc::new(Cell::new(None)),
         };
         Self {
             conversation,

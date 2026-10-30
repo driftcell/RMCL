@@ -8234,6 +8234,9 @@ mod tests {
         cx.update(|window, cx| {
             let _ = window.draw(cx);
         });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
         let last = cx
             .debug_bounds("agent-last-message")
             .expect("last message row was not laid out");
@@ -8245,5 +8248,21 @@ mod tests {
             last.bottom() <= viewport.bottom() + px(0.5),
             "wheel stopped before the last message: {last:?} vs {viewport:?}"
         );
+        let tail = cx
+            .debug_bounds("agent-scroll-tail")
+            .expect("scroll tail row was not laid out");
+        assert!(
+            tail.bottom() <= viewport.bottom() + px(8.5),
+            "wheel stopped before the measured tail: {tail:?} vs {viewport:?}"
+        );
+        let scrolled_up = cx.read(|cx| {
+            app.read(cx)
+                .agent
+                .conversation
+                .scroller
+                .read(cx)
+                .is_scrolled_up()
+        });
+        assert!(!scrolled_up, "wheel stopped away from the tail");
     }
 }
