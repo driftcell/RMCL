@@ -197,6 +197,8 @@ impl LauncherApp {
                             .w_full()
                             .gap_3()
                             .items_center()
+                            .px_1()
+                            .py_1()
                             .child(
                                 Input::new(&self.world_query)
                                     .prefix(Icon::new(IconName::Search).small())
