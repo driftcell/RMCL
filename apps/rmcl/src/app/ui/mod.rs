@@ -12,3 +12,4 @@ pub mod servers;
 pub mod settings;
 pub mod skin;
 pub mod versions;
+pub mod worlds;

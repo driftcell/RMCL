@@ -31,6 +31,8 @@ pub struct GameLaunchRequest {
     pub minecraft_version: String,
     /// Optional server to join immediately after launch.
     pub server: Option<ServerAddress>,
+    /// Optional world folder to enter immediately after launch.
+    pub quick_play_world: Option<String>,
     pub resolution: Option<(u32, u32)>,
     pub demo: bool,
 }
@@ -89,6 +91,7 @@ impl GameLauncher {
             authlib,
             minecraft_version,
             server,
+            quick_play_world,
             resolution,
             demo,
         } = request;
@@ -118,6 +121,7 @@ impl GameLauncher {
             authlib,
             minecraft_version,
             server,
+            quick_play_world,
             resolution,
             demo,
             cancellation,
@@ -147,6 +151,7 @@ impl GameLauncher {
             authlib,
             minecraft_version,
             server,
+            quick_play_world,
             resolution,
             demo,
         } = request;
@@ -165,6 +170,7 @@ impl GameLauncher {
             authlib,
             minecraft_version,
             server,
+            quick_play_world,
             resolution,
             demo,
             cancellation,
@@ -185,6 +191,7 @@ impl GameLauncher {
         authlib: Option<AuthlibLaunchConfig>,
         minecraft_version: String,
         server: Option<ServerAddress>,
+        quick_play_world: Option<String>,
         resolution: Option<(u32, u32)>,
         demo: bool,
         cancellation: CancellationToken,
@@ -242,6 +249,9 @@ impl GameLauncher {
         options.authlib = authlib;
         if let Some(server) = server {
             options = options.with_server(server, minecraft_version);
+        } else if let Some(world) = quick_play_world {
+            options.minecraft_version = minecraft_version;
+            options = options.with_world(world);
         } else {
             options.minecraft_version = minecraft_version;
         }

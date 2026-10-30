@@ -1720,6 +1720,7 @@ impl McpServer {
             authlib: resolved_account.authlib,
             minecraft_version: instance.minecraft_version.clone(),
             server,
+            quick_play_world: None,
             resolution: instance.window_width.zip(instance.window_height),
             demo: params.demo.unwrap_or(false),
         };

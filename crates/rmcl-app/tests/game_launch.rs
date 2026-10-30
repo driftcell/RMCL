@@ -73,6 +73,7 @@ fn fixture(mode: ScriptMode) -> Fixture {
         authlib: None,
         minecraft_version: "1.21.1".to_owned(),
         server: None,
+        quick_play_world: None,
         resolution: None,
         demo: false,
     };
@@ -310,6 +311,28 @@ async fn quick_play_server_reaches_the_launch_plan() {
         .unwrap();
     assert_eq!(lines[index + 1], "play.example.com:25566");
     assert!(!lines.contains(&"--server"));
+}
+
+#[tokio::test]
+async fn quick_play_world_reaches_the_launch_plan() {
+    let mut fixture = fixture(ScriptMode::Exit);
+    fixture.request.minecraft_version = "1.21.1".to_owned();
+    fixture.request.quick_play_world = Some("Survival".to_owned());
+    let launcher = GameLauncher::new(fixture.installer, fixture.java);
+
+    let outcome = launcher
+        .run_installed(fixture.request, CancellationToken::new(), None)
+        .await
+        .unwrap();
+
+    assert!(outcome.exit.success);
+    let raw = std::fs::read_to_string(fixture.root.join("raw-args.txt")).unwrap();
+    let lines = raw.lines().collect::<Vec<_>>();
+    let index = lines
+        .iter()
+        .position(|line| *line == "--quickPlaySingleplayer")
+        .unwrap();
+    assert_eq!(lines[index + 1], "Survival");
 }
 
 #[tokio::test]

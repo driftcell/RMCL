@@ -39,18 +39,18 @@ use rmcl_app::{
     ContentInspection, ContentInstallPhase, ContentInstallPreflight, ContentKind, ContentLibrary,
     ContentPreflightItem, ContentPreflightStatus, ContentSource, CreateInstanceRequest,
     FeaturedServer, GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase,
-    JavaRuntime, JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion, LocalContent,
-    MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort, RemoteVersion,
-    RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount, ResourcePackOrder,
-    ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient, ShaderLoader, TaskEvent,
-    TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan,
-    UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest, VersionSource,
-    VersionSummary, delete_installed_version, delete_instance_content, discover_installed_versions,
-    featured_servers, import_instance_content, migrate_instance_to_isolated,
-    move_instance_resource_pack, preflight_content_install, recommended_version,
-    remove_server_bookmark, rename_instance, scan_and_inspect_instance_content,
-    scan_installed_mods, set_instance_content_enabled, set_instance_java,
-    set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
+    InstanceWorlds, JavaRuntime, JavaRuntimeSource, LoaderKind, LoaderSelection, LoaderVersion,
+    LocalContent, MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort,
+    RemoteVersion, RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount,
+    ResourcePackOrder, ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient,
+    ShaderLoader, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
+    TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
+    VersionSource, VersionSummary, WorldCopyProgress, WorldId, delete_installed_version,
+    delete_instance_content, discover_installed_versions, featured_servers,
+    import_instance_content, migrate_instance_to_isolated, move_instance_resource_pack,
+    preflight_content_install, recommended_version, remove_server_bookmark, rename_instance,
+    scan_and_inspect_instance_content, scan_installed_mods, set_instance_content_enabled,
+    set_instance_java, set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
     upsert_server_bookmark,
 };
 use rmcl_auth::{
@@ -101,6 +101,7 @@ pub enum Page {
     Home,
     Agent,
     Versions,
+    Worlds,
     Skin,
     Servers,
     Instance,
@@ -117,6 +118,7 @@ impl Page {
             Self::Home => "主页",
             Self::Agent => "AI 助手",
             Self::Versions => "实例",
+            Self::Worlds => "地图",
             Self::Skin => "皮肤",
             Self::Servers => "联机",
             Self::Instance => "实例详情",
@@ -133,6 +135,7 @@ impl Page {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Agent => "用自然语言管理实例、内容和任务。",
             Self::Versions => "管理已安装的游戏实例与版本。",
+            Self::Worlds => "复制、移动、导入和备份世界存档。",
             Self::Skin => "查看当前账户的皮肤；外置登录由认证服务器和 authlib-injector 管理。",
             Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
@@ -149,6 +152,7 @@ impl Page {
             Self::Home => IconName::House,
             Self::Agent => IconName::Bot,
             Self::Versions => IconName::Boxes,
+            Self::Worlds => IconName::Map,
             Self::Skin => IconName::Shirt,
             Self::Servers => IconName::Network,
             Self::Instance => IconName::Package,
@@ -458,6 +462,19 @@ pub struct LauncherApp {
     content_action_pending: bool,
     content_request: u64,
     content_query: Entity<InputState>,
+    worlds: Option<InstanceWorlds>,
+    worlds_instance: Option<String>,
+    world_icons: HashMap<WorldId, Arc<RenderImage>>,
+    world_query: Entity<InputState>,
+    worlds_loading: bool,
+    worlds_error: Option<String>,
+    world_request: u64,
+    world_action_pending: bool,
+    world_progress: Option<WorldCopyProgress>,
+    world_cancel: Option<CancellationToken>,
+    _world_task: Option<Task<()>>,
+    _world_load_task: Option<Task<()>>,
+    _world_progress_task: Option<Task<()>>,
     content_browser: ContentBrowserState,
     agent: agent::AgentState,
     _agent_task: Option<Task<()>>,
@@ -693,6 +710,7 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
         let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装实例"));
         let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
+        let world_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索地图"));
         let remote_query =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
         let server_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索服务器"));
@@ -769,6 +787,13 @@ impl LauncherApp {
         );
         subscriptions.push(
             cx.subscribe(&content_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            }),
+        );
+        subscriptions.push(
+            cx.subscribe(&world_query, |_this, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
@@ -960,6 +985,19 @@ impl LauncherApp {
             content_action_pending: false,
             content_request: 0,
             content_query,
+            worlds: None,
+            worlds_instance: None,
+            world_icons: HashMap::new(),
+            world_query,
+            worlds_loading: false,
+            worlds_error: None,
+            world_request: 0,
+            world_action_pending: false,
+            world_progress: None,
+            world_cancel: None,
+            _world_task: None,
+            _world_load_task: None,
+            _world_progress_task: None,
             content_browser: ContentBrowserState::default(),
             agent: agent::AgentState::new(window, cx, &config_for_agent),
             _agent_task: None,
@@ -1710,6 +1748,9 @@ impl LauncherApp {
             }
             Err(error) => self.versions_error = Some(error.to_string()),
         }
+        if self.page == Page::Worlds {
+            self.load_worlds(window, cx);
+        }
         cx.notify();
     }
 
@@ -2362,6 +2403,9 @@ impl LauncherApp {
         if page == Page::Versions {
             self.reload_versions(window, cx);
         }
+        if page == Page::Worlds {
+            self.load_worlds(window, cx);
+        }
         if left_servers {
             self.cancel_server_refresh();
         }
@@ -2520,13 +2564,34 @@ impl LauncherApp {
     }
 
     fn start_launch(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.start_launch_with_server(version_id, None, window, cx);
+        self.start_launch_with_target(version_id, None, None, window, cx);
     }
 
     fn start_launch_with_server(
         &mut self,
         version_id: String,
         server: Option<ServerAddress>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_launch_with_target(version_id, server, None, window, cx);
+    }
+
+    fn start_launch_with_world(
+        &mut self,
+        version_id: String,
+        world: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_launch_with_target(version_id, None, Some(world), window, cx);
+    }
+
+    fn start_launch_with_target(
+        &mut self,
+        version_id: String,
+        server: Option<ServerAddress>,
+        quick_play_world: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2554,6 +2619,7 @@ impl LauncherApp {
                     LaunchAccount::from_offline(&account),
                     version_id,
                     server,
+                    quick_play_world,
                     None,
                     window,
                     cx,
@@ -2597,6 +2663,7 @@ impl LauncherApp {
                                         resolved.launch,
                                         version_id,
                                         server,
+                                        quick_play_world,
                                         None,
                                         window,
                                         cx,
@@ -2668,6 +2735,7 @@ impl LauncherApp {
                                         resolved.launch,
                                         version_id,
                                         server,
+                                        quick_play_world,
                                         Some(authlib),
                                         window,
                                         cx,
@@ -2696,11 +2764,13 @@ impl LauncherApp {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_launch(
         &mut self,
         account: LaunchAccount,
         version_id: String,
         server: Option<ServerAddress>,
+        quick_play_world: Option<String>,
         authlib: Option<AuthlibLaunchConfig>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -2739,6 +2809,7 @@ impl LauncherApp {
             authlib,
             minecraft_version,
             server,
+            quick_play_world,
             resolution,
             demo: false,
         };
@@ -7175,6 +7246,7 @@ impl Render for LauncherApp {
         let page = match self.page {
             Page::Home => self.render_home(cx).into_any_element(),
             Page::Versions => self.render_versions(cx).into_any_element(),
+            Page::Worlds => self.render_worlds(cx).into_any_element(),
             Page::Skin => self.render_skin(window, cx).into_any_element(),
             Page::Servers => self.render_servers(cx).into_any_element(),
             Page::Instance => self.render_instance(cx).into_any_element(),

@@ -20,6 +20,7 @@
 - [Model Context Protocol](architecture/MCP.md)：实例与内容 MCP 工具、stdio、Streamable HTTP、revision、幂等和后续安全边界。
 - [应用层 Vanilla 安装与启动](architecture/APPLICATION.md)：版本来源、任务、Java、游戏生命周期、日志与取消。
 - [实例与版本隔离](architecture/INSTANCES.md)：实例 manifest、目录布局、隔离启动、旧实例迁移与删除语义。
+- [地图与世界存档](architecture/WORLDS.md)：世界扫描、复制/移动、导入/导出、备份/恢复、兼容性与 Quick Play。
 - [服务器列表与一键进服](architecture/SERVERS.md)：全局服务器收藏、Server List Ping、MOTD/人数/延迟、图标缓存与 Quick Play/legacy 进服。
 - [自动更新](architecture/UPDATES.md)：GitHub Release 检查、SHA-256、平台包替换、helper 重启与签名边界。
 - [本地内容管理](architecture/LOCAL_CONTENT.md)：Mod、资源包和光影的扫描、导入、删除、冲突策略与 `options.txt` 语义。
@@ -69,6 +70,7 @@
 - [authlib-injector 外置登录实现记录](../notes/development/authlib_injector.md)
 - [官方皮肤页与 3D 预览实现记录](../notes/development/skin_page.md)
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
+- [世界存档跨实例迁移与共享调研](../notes/development/world_migration_and_sharing.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)
 - [远程内容与 Modrinth 取舍](../notes/development/remote_content.md)
 - [内容依赖版本匹配与远程元数据取舍](../notes/development/content_dependency_resolution.md)

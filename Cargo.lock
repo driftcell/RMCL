@@ -1333,6 +1333,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesu8"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3138,6 +3144,18 @@ dependencies = [
  "rayon",
  "serde_json",
  "tokenizers",
+]
+
+[[package]]
+name = "fastnbt"
+version = "2.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9dcc36fee27b17c9c183294d6e739cf218b01ce0fc545c31d8be3913d961731"
+dependencies = [
+ "byteorder",
+ "cesu8",
+ "serde",
+ "serde_bytes",
 ]
 
 [[package]]
@@ -8525,6 +8543,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reflink-copy"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9dd7ab4af0363d5ccfd2838d782a28196cf32a5cc2e4fe3c5dc83f2be588b8b"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "rustix",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "regex"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9080,6 +9110,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
+ "fastnbt",
  "flate2",
  "hex",
  "hickory-resolver",
@@ -9097,6 +9128,7 @@ dependencies = [
  "rmcl-net",
  "rmcl-platform",
  "rmcl-store",
+ "rmcl-world",
  "semver",
  "serde",
  "serde_json",
@@ -9321,6 +9353,26 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 1.1.8+spec-1.1.0",
  "uuid",
+]
+
+[[package]]
+name = "rmcl-world"
+version = "0.1.0"
+dependencies = [
+ "fastnbt",
+ "flate2",
+ "reflink-copy",
+ "rmcl-archive",
+ "rmcl-domain",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio-util",
+ "uuid",
+ "walkdir",
+ "zip",
 ]
 
 [[package]]

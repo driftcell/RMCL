@@ -522,6 +522,7 @@ async fn real_loader_launch(installer_url: &str, instance_id: &str, expected: &s
         authlib: None,
         minecraft_version: "1.21.1".to_owned(),
         server: None,
+        quick_play_world: None,
         resolution: None,
         demo: false,
     };
