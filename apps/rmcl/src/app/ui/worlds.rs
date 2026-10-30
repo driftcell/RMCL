@@ -545,10 +545,7 @@ impl LauncherApp {
                                 })
                             })
                             .when(
-                                world
-                                    .enabled_datapacks
-                                    .iter()
-                                    .any(|pack| pack != "vanilla" && !pack.starts_with("file/")),
+                                world.enabled_datapacks.iter().any(|pack| pack != "vanilla"),
                                 |this| this.child(Tag::new().outline().child("数据包").small()),
                             )
                             .when(!world.enabled_features.is_empty(), |this| {
