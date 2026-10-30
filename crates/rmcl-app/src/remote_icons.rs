@@ -1,7 +1,7 @@
-//! Downloads and caches remote project icons for the content browser.
+//! Downloads and caches remote project icons and gallery thumbnails.
 //!
-//! Icons come from provider metadata as HTTPS URLs. The UI needs local paths so
-//! it can reuse GPUI's file image loader and keep working offline after the
+//! Images come from provider metadata as HTTPS URLs. The UI needs local paths
+//! so it can reuse GPUI's file image loader and keep working offline after the
 //! first request.
 
 use std::{
@@ -26,8 +26,11 @@ use crate::skin_source::is_blocked_address;
 
 /// Maximum bytes accepted from one remote icon before decoding.
 pub const MAX_REMOTE_ICON_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_REMOTE_GALLERY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ICON_DIMENSION: u32 = 2048;
 const CACHED_ICON_DIMENSION: u32 = 256;
+const MAX_GALLERY_DIMENSION: u32 = 4096;
+const CACHED_GALLERY_DIMENSION: u32 = 960;
 
 /// A content browser icon downloaded by RMCL and stored as a normalized PNG.
 #[derive(Debug, Clone)]
@@ -36,10 +39,38 @@ pub struct RemoteIconCache {
     client: reqwest::Client,
     allow_private: bool,
     allow_http: bool,
+    max_source_bytes: usize,
+    max_source_dimension: u32,
+    cached_dimension: u32,
 }
 
 impl RemoteIconCache {
     pub fn new(directory: impl Into<PathBuf>) -> Result<Self, RemoteIconError> {
+        Self::with_limits(
+            directory,
+            MAX_REMOTE_ICON_BYTES,
+            MAX_ICON_DIMENSION,
+            CACHED_ICON_DIMENSION,
+        )
+    }
+
+    /// Creates a cache for gallery thumbnails with dimensions suitable for a
+    /// project detail pane rather than a small project icon.
+    pub fn new_gallery(directory: impl Into<PathBuf>) -> Result<Self, RemoteIconError> {
+        Self::with_limits(
+            directory,
+            MAX_REMOTE_GALLERY_BYTES,
+            MAX_GALLERY_DIMENSION,
+            CACHED_GALLERY_DIMENSION,
+        )
+    }
+
+    fn with_limits(
+        directory: impl Into<PathBuf>,
+        max_source_bytes: usize,
+        max_source_dimension: u32,
+        cached_dimension: u32,
+    ) -> Result<Self, RemoteIconError> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
@@ -51,6 +82,9 @@ impl RemoteIconCache {
             client,
             allow_private: false,
             allow_http: false,
+            max_source_bytes,
+            max_source_dimension,
+            cached_dimension,
         })
     }
 
@@ -93,9 +127,11 @@ impl RemoteIconCache {
         }
         if response
             .content_length()
-            .is_some_and(|length| length > MAX_REMOTE_ICON_BYTES as u64)
+            .is_some_and(|length| length > self.max_source_bytes as u64)
         {
-            return Err(RemoteIconError::SourceTooLarge);
+            return Err(RemoteIconError::SourceTooLarge {
+                limit: self.max_source_bytes,
+            });
         }
         if let Some(content_type) = response
             .headers()
@@ -116,15 +152,21 @@ impl RemoteIconCache {
             let Some(chunk) = chunk else {
                 break;
             };
-            if bytes.len() + chunk.len() > MAX_REMOTE_ICON_BYTES {
-                return Err(RemoteIconError::SourceTooLarge);
+            if bytes.len() + chunk.len() > self.max_source_bytes {
+                return Err(RemoteIconError::SourceTooLarge {
+                    limit: self.max_source_bytes,
+                });
             }
             bytes.extend_from_slice(&chunk);
         }
 
-        let png = tokio::task::spawn_blocking(move || prepare_icon(&bytes))
-            .await
-            .map_err(|error| RemoteIconError::Blocking(error.to_string()))??;
+        let max_source_dimension = self.max_source_dimension;
+        let cached_dimension = self.cached_dimension;
+        let png = tokio::task::spawn_blocking(move || {
+            prepare_image(&bytes, max_source_dimension, cached_dimension)
+        })
+        .await
+        .map_err(|error| RemoteIconError::Blocking(error.to_string()))??;
         self.write(&path, &png).await?;
         Ok(path)
     }
@@ -188,6 +230,9 @@ impl RemoteIconCache {
             client,
             allow_private: true,
             allow_http: true,
+            max_source_bytes: MAX_REMOTE_ICON_BYTES,
+            max_source_dimension: MAX_ICON_DIMENSION,
+            cached_dimension: CACHED_ICON_DIMENSION,
         }
     }
 }
@@ -204,14 +249,18 @@ fn normalize_icon_url(value: &str, allow_http: bool) -> Result<Url, RemoteIconEr
     Ok(url)
 }
 
-fn prepare_icon(bytes: &[u8]) -> Result<Vec<u8>, RemoteIconError> {
+fn prepare_image(
+    bytes: &[u8],
+    max_source_dimension: u32,
+    cached_dimension: u32,
+) -> Result<Vec<u8>, RemoteIconError> {
     let image = image::load_from_memory(bytes).map_err(RemoteIconError::Decode)?;
     let (width, height) = image.dimensions();
-    if width == 0 || height == 0 || width > MAX_ICON_DIMENSION || height > MAX_ICON_DIMENSION {
+    if width == 0 || height == 0 || width > max_source_dimension || height > max_source_dimension {
         return Err(RemoteIconError::InvalidDimensions { width, height });
     }
-    let image = if width > CACHED_ICON_DIMENSION || height > CACHED_ICON_DIMENSION {
-        image.thumbnail(CACHED_ICON_DIMENSION, CACHED_ICON_DIMENSION)
+    let image = if width > cached_dimension || height > cached_dimension {
+        image.thumbnail(cached_dimension, cached_dimension)
     } else {
         image
     };
@@ -277,8 +326,8 @@ pub enum RemoteIconError {
     Cancelled,
     #[error("icon URL redirected; redirects are not followed")]
     Redirect,
-    #[error("icon source exceeds the {} byte limit", MAX_REMOTE_ICON_BYTES)]
-    SourceTooLarge,
+    #[error("image source exceeds the {limit} byte limit")]
+    SourceTooLarge { limit: usize },
     #[error("icon source is not an image")]
     NotAnImage,
     #[error("icon dimensions {width}×{height} are invalid")]
@@ -346,20 +395,30 @@ mod tests {
     #[test]
     fn prepares_and_downscales_icons_to_png() {
         let bytes = png(512, 512, [10, 20, 30, 255]);
-        let prepared = prepare_icon(&bytes).unwrap();
+        let prepared = prepare_image(&bytes, MAX_ICON_DIMENSION, CACHED_ICON_DIMENSION).unwrap();
         let image = image::load_from_memory(&prepared).unwrap();
         assert_eq!(image.dimensions(), (256, 256));
 
         let tiny = png(1, 1, [1, 2, 3, 255]);
         assert!(
-            prepare_icon(&tiny)
+            prepare_image(&tiny, MAX_ICON_DIMENSION, CACHED_ICON_DIMENSION)
                 .unwrap()
                 .starts_with(b"\x89PNG\r\n\x1a\n")
         );
         assert!(matches!(
-            prepare_icon(b"not an image"),
+            prepare_image(b"not an image", MAX_ICON_DIMENSION, CACHED_ICON_DIMENSION),
             Err(RemoteIconError::Decode(_))
         ));
+    }
+
+    #[test]
+    fn gallery_thumbnails_keep_their_aspect_ratio_at_display_size() {
+        let bytes = png(1920, 1080, [10, 20, 30, 255]);
+        let prepared = prepare_image(&bytes, MAX_GALLERY_DIMENSION, CACHED_GALLERY_DIMENSION)
+            .expect("gallery image should be normalized");
+        let image = image::load_from_memory(&prepared).unwrap();
+
+        assert_eq!(image.dimensions(), (960, 540));
     }
 
     #[tokio::test]

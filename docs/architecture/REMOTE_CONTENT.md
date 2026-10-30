@@ -1,8 +1,8 @@
 # 远程内容与 Modrinth
 
-状态：Modrinth 搜索、版本列表、正式版推荐、远程项目图标缓存、本地 Mod 元数据索引、安装前置预检、文件下载、SHA-1 校验、必需依赖解析、实例安装和单文件更新已实现；CurseForge、可选依赖自动安装、完整版本约束求解和整合包尚未实现
+状态：Modrinth 搜索、资源包/光影画廊浏览、版本列表、正式版推荐、远程项目图标与截图缓存、本地 Mod 元数据索引、安装前置预检、文件下载、SHA-1 校验、必需依赖解析、实例安装和单文件更新已实现；CurseForge、可选依赖自动安装、完整版本约束求解和整合包尚未实现
 
-日期：2026-10-28
+日期：2026-10-30
 
 ## 边界
 
@@ -15,7 +15,7 @@
 
 ## 模型
 
-- `RemoteProject`：来源、项目 ID、slug、标题、作者、描述、图标 URL、下载/关注数、分类、游戏版本、加载器、项目类型、更新时间。
+- `RemoteProject`：来源、项目 ID、slug、标题、作者、描述、图标 URL、下载/关注数、分类、游戏版本、加载器、项目类型、更新时间、画廊缩略图和精选画廊图。`preview_url` 优先选择精选图；`gallery_previews` 把精选图放在首位并去重。
 - `RemoteVersion`：版本 ID、项目 ID、名称、版本号、更新日志、发布时间、发布类型、游戏版本、加载器、文件、依赖。
 - `RemoteFile`：文件名、HTTP(S) URL、可选 size、可选 SHA-1、是否为 primary file。
 - `RemoteDependency` / `RemoteDependencyKind`：required、optional、incompatible、embedded。
@@ -31,6 +31,7 @@
   - facets：`project_type:<mod|resourcepack|shader>`，可选 `versions:<game_version>` 和 `categories:<loader>`。
   - `index`：relevance、downloads、follows、newest、updated。
   - `offset` / `limit` 支持分页；UI 每次加载 20 个。
+  - 读取 `gallery` / `featured_gallery` 作为资源包和光影的项目预览；单项目响应同时解析 gallery object 和 `followers` 字段。
 - 版本：`GET /v2/project/{id}/version`
   - 使用 `game_versions` 和 `loaders` JSON 数组过滤。
   - `include_changelog=false`；版本按发布时间倒序。
@@ -104,6 +105,8 @@ MCP `content_update` 复用相同的远程版本解析、依赖预检和 `Conten
 - 搜索 Modrinth 项目，按当前实例的 Minecraft 版本过滤；Mod 还会按实例加载器过滤。
 - 支持相关度、下载量、关注数、最新发布和最近更新排序，以及“加载更多”。
 - 项目列表和项目详情页显示远程项目图标；图标下载失败时回退到对应内容类型的通用图标。
+- 资源包和光影搜索使用双列作品卡，展示 Modrinth 精选画廊图、作者、简介和下载量；Mod 保持紧凑列表。详情页使用 GPUI Kit `Carousel` 浏览最多 6 张截图，支持按钮、键盘和减少动态效果，并提供推荐版本安装入口与 Modrinth 项目网页链接。
+- 截图缓存在配置目录的 `cache/remote-gallery/`；只接受公开 HTTPS 图片地址，源图上限 8 MiB、4096×4096，保留宽高比缩略到最长边 960 的 PNG。图标仍使用独立的 `cache/remote-icons/` 和 256px 缩略规格。图片失败不阻止版本浏览和安装。
 - 进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量。
 - 正式版推荐项显示“推荐”标签；推荐只在可安装且带 SHA-1 的版本中选择，不保证依赖版本范围完全满足。
 - 每个版本提供安装按钮；没有可用文件或缺少 SHA-1 时禁用。点击安装先显示预检对话框，列出主文件、必需前置状态、可选前置数量和警告；存在已安装的不兼容 Mod 时拒绝安装。
@@ -122,8 +125,8 @@ MCP `content_update` 复用相同的远程版本解析、依赖预检和 `Conten
 - 前置和本地元数据冲突的版本范围支持常见 Fabric/Quilt semver 谓词和 Forge/NeoForge Maven 区间；不实现完整 SAT、版本回退、可选依赖选择和所有特殊 qualifier。
 - 已安装版本只做字符串/范围比较；同一 Mod ID 不同版本会给出警告并按 Modrinth 依赖安装所需版本。
 - 依赖去重按版本 ID；已安装识别结合文件名/SHA-1 和本地 Mod ID/版本，不做全局文件哈希索引和更新检查。
-- 远程项目图标通过 HTTPS 下载到配置目录的 `cache/remote-icons/`，只接受公开地址和图片内容；缓存按 URL SHA-256 命名，源图尺寸上限 2048×2048，超过 256×256 的图片会缩略后写成 PNG。
-- 不提供项目网页跳转。
+- 远程项目图标通过 HTTPS 下载到配置目录的 `cache/remote-icons/`，只接受公开地址和图片内容；缓存按 URL SHA-256 命名，源图尺寸上限 2048×2048，超过 256×256 的图片会缩略后写成 PNG。画廊使用上述独立的 `remote-gallery` 规格，两种缓存都不跟随重定向。
+- 不提供完整项目正文渲染；项目网页由系统浏览器打开。
 - 不做 API 速率限制的主动排队；429 会作为 API 错误返回，用户可重试。
 - 资源包和光影的文件选择依赖远端 primary 文件和扩展名；`rmcl-content` 已提供资源包 `pack_format` 元数据与兼容判断，但在线安装预检和 GPUI 尚未接入该判断。
 - 尚未实现整合包、可选依赖自动选择、完整依赖版本约束/冲突求解和更新事务。
@@ -131,9 +134,9 @@ MCP `content_update` 复用相同的远程版本解析、依赖预检和 `Conten
 ## 验证
 
 - `rmcl-content` 使用本地 axum mock 覆盖搜索 facets/index/分页、项目版本解析、单版本/单项目查询、primary file 选择、依赖解析、API 错误和请求取消；元数据测试覆盖 Fabric/Quilt/Forge JAR 解析、依赖/冲突字段、缺失元数据和重复 Mod ID；版本匹配测试覆盖 semver 谓词、Maven 区间和 Forge 版本排序。
-- `rmcl-app` 覆盖远程图标 URL 校验、PNG/WebP 解码与缩略、原子缓存、重复 URL 不重复下载和私网地址拒绝。
+- `rmcl-content` 覆盖搜索 gallery/featured_gallery、单项目 gallery/followers 解析、精选图优先和画廊去重；`rmcl-app` 覆盖远程图标 URL 校验、PNG/WebP 解码与缩略、画廊 16:9 宽高比和 960px 缩略、原子缓存、重复 URL 不重复下载和私网地址拒绝。
 - `rmcl-app` 集成测试覆盖远程文件下载、SHA-1 校验、同名改名、哈希不匹配不发布、required 依赖图（version ID、project ID、循环、optional 跳过）、依赖优先顺序、重复安装跳过、已安装前置预检和跳过、远程主 JAR 的前置与冲突版本范围判断、元数据缓存、替换后相对路径/启停保持，以及 `TaskManager` 的 `ContentInstall` 快照、subject、批次进度和 Completed 终态。Sodium/Fabric API 冲突范围误报的排查见[调查记录](../../notes/agent/sodium_false_incompatible.md)。
 - `rmcl-mcp` 覆盖更新 dry-run 的 `installed_different_version`、真实替换、重复 key 重放、同版本拒绝和依赖去重。
-- `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的搜索、项目版本切换、安装进度和取消仍需在 macOS、Windows、Linux 逐平台验收。
+- `apps/rmcl` 已编译并通过现有状态测试；真实窗口中的作品卡、Carousel 截图导航、明暗主题、项目版本切换、安装进度和取消仍需在 macOS、Windows、Linux 逐平台验收。
 - 2026-10-25 使用真实 `https://api.modrinth.com/` 做了只读 smoke：带 `project_type:mod`、`versions:1.21.1`、`categories:fabric` facets 的搜索返回 Sodium；Sodium 项目在 `1.21.1` + `fabric` 下的版本列表包含 `primary` 文件、SHA-1/SHA-512 和 size，字段与客户端 DTO 一致。
 - 标记为 `#[ignore]` 的真实网络 smoke 安装 Iris 1.8.7（精确依赖 Sodium 版本），确认依赖图返回 Sodium + Iris、依赖先安装、两个文件 SHA-1 校验通过并写入实例 `mods/`。2026-10-25 本机通过。

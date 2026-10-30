@@ -105,8 +105,9 @@
 ### 在线内容
 
 - 搜索 Modrinth 项目，支持相关度、下载量、关注数、最新发布和最近更新排序，以及分页“加载更多”。
-- 项目列表显示标题、作者、描述、下载量、加载器和分类；进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量。
-- 正式版推荐项显示“推荐”标签；推荐按版本类型和可安装/SHA-1 条件选择。
+- Mod 使用紧凑列表；资源包和光影使用双列作品卡，展示 Modrinth 精选画廊图、标题、作者、描述和下载量。项目详情通过 GPUI Kit `Carousel` 浏览最多 6 张截图，缩略图分页、前后按钮和键盘导航共用 `CarouselState`，图片加载失败回退到内容类型图标。
+- 项目列表显示标题、作者、描述、下载量、加载器和分类；进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量，并可通过 `Link` 打开 Modrinth 项目网页。
+- 正式版推荐项显示“推荐”标签；推荐按版本类型和可安装/SHA-1 条件选择。资源包和光影详情页同时提供“安装推荐版本”主操作，仍须经过相同的安装预检。
 - 每个版本可安装；点击后先显示前置预检：主文件与必需前置的“已安装/已禁用/其他版本/将安装/冲突”状态、可选前置数量和警告。预检读取本地 Mod 元数据，并对主 Mod 远程 JAR 读取真实 ID、依赖和常见 semver/Maven 版本范围；主 JAR 元数据按 SHA-1 缓存。存在不兼容的已安装 Mod 时拒绝安装。
 - 当前实例没有 Mod 加载器时显示警告；光影包缺少 Iris/Oculus/OptiFine 时提示安装后不会生效。安装 Mod 时会自动解析并安装 required 依赖；相同 Mod ID/版本的前置会跳过。
 - 光影项目版本列表在检测到加载器时使用 Iris/OptiFine 过滤；未检测到加载器时保留全部版本并显示警告。
@@ -213,7 +214,7 @@ GPUI 不使用 `block_on` 等待核心任务。按钮回调通过 `Runtime::spaw
 
 实例详情页的本地内容扫描、导入、切换和删除通过 `Runtime::spawn` + `spawn_blocking` 执行；界面持有短生命周期 foreground task，只负责等待结果和更新 `ContentLibrary`。这些本地操作不进入 `TaskManager`，因为它们没有长时下载或游戏进程生命周期。
 
-Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元数据客户端，并用请求 generation/cancellation 防止旧结果覆盖新页面。远程文件安装进入 `TaskManager` 的 `ContentInstall` 任务，复用状态栏进度、取消、广播快照和实例互斥。
+Modrinth 搜索和版本列表也通过短生命周期 foreground task 调用元数据客户端，并用请求 generation/cancellation 防止旧结果覆盖新页面。项目截图按 URL 缓存到独立 map；详情页的 `CarouselState` 只在项目打开期间持有，离开搜索或实例详情会取消尚未完成的图片请求。远程文件安装进入 `TaskManager` 的 `ContentInstall` 任务，复用状态栏进度、取消、广播快照和实例互斥。
 
 ## 明暗主题与系统外观
 
@@ -239,6 +240,6 @@ OptiFine 等加载器、legacy Forge installer、原地升级或移除已有加�
 - `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、精选清单解析、Quick Play/legacy 参数和版本边界；真实窗口中的收藏/发现页仍需逐平台验收。
 - `rmcl-app` 覆盖 GitHub Release 检查、SHA256SUMS、平台资产选择、下载校验、ZIP 解压和文件替换；真实自动更新仍需在发布包上逐平台验收。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
-- GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。
+- GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。新增资源包/光影作品卡和 Carousel 尚未完成逐平台视觉与键盘验收。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。
 - 游戏运行时隐藏、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。
