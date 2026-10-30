@@ -730,6 +730,18 @@ impl LauncherApp {
                             let world_id = world_id.clone();
                             let same_name = target.same_name;
                             let compatibility = target.compatibility;
+                            let unsafe_move = mode == TransferMode::Move
+                                && compatibility == WorldCompatibility::Downgrade;
+                            let target_button = Button::new(format!("world-target-{target_id}"))
+                                .primary()
+                                .small()
+                                .label(if same_name { "覆盖" } else { mode.label() })
+                                .disabled(unsafe_move);
+                            let target_button = if unsafe_move {
+                                target_button.tooltip("目标版本更低，不能移动")
+                            } else {
+                                target_button
+                            };
                             h_flex()
                                 .w_full()
                                 .items_center()
@@ -799,40 +811,34 @@ impl LauncherApp {
                                             }),
                                     )
                                 })
-                                .child(
-                                    Button::new(format!("world-target-{target_id}"))
-                                        .primary()
-                                        .small()
-                                        .label(if same_name { "覆盖" } else { mode.label() })
-                                        .on_click({
-                                            let view = view.clone();
-                                            let source_id = source_id.clone();
-                                            let world_id = world_id.clone();
-                                            let target_id = target_id.clone();
-                                            let conflict = if same_name {
-                                                WorldConflictPolicy::Replace
-                                            } else {
-                                                WorldConflictPolicy::Rename
-                                            };
-                                            move |_, window, cx| {
-                                                let Some(view) = view.upgrade() else {
-                                                    return;
-                                                };
-                                                view.update(cx, |this, cx| {
-                                                    this.start_world_transfer(
-                                                        source_id.clone(),
-                                                        target_id.clone(),
-                                                        world_id.clone(),
-                                                        mode,
-                                                        conflict,
-                                                        window,
-                                                        cx,
-                                                    );
-                                                });
-                                                window.close_dialog(cx);
-                                            }
-                                        }),
-                                )
+                                .child(target_button.on_click({
+                                    let view = view.clone();
+                                    let source_id = source_id.clone();
+                                    let world_id = world_id.clone();
+                                    let target_id = target_id.clone();
+                                    let conflict = if same_name {
+                                        WorldConflictPolicy::Replace
+                                    } else {
+                                        WorldConflictPolicy::Rename
+                                    };
+                                    move |_, window, cx| {
+                                        let Some(view) = view.upgrade() else {
+                                            return;
+                                        };
+                                        view.update(cx, |this, cx| {
+                                            this.start_world_transfer(
+                                                source_id.clone(),
+                                                target_id.clone(),
+                                                world_id.clone(),
+                                                mode,
+                                                conflict,
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                        window.close_dialog(cx);
+                                    }
+                                }))
                         })),
                 )
                 .footer(
