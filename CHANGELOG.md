@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.14.0](https://github.com/driftcell/RMCL/compare/v0.13.0...v0.14.0) - 2026-10-30
 
+### Highlights
+
+- 在线内容页新增 Mod、资源包和光影包标签，可直接在页面内切换内容类型；“下载内容”入口移到内容标签右侧，本地内容空状态不再重复显示导入按钮。
+- 修复 AI 助手滚轮无法真正到达对话底部、“回到底部”按钮不消失的问题。
+- 本地内容导入按钮改为固定宽度，切换内容类型时布局保持稳定。
+
 ### Added
 
-- *(content)* switch content types inside the online browser ([#128](https://github.com/driftcell/RMCL/pull/128))
+- *(content)* 在线内容页支持直接切换 Mod、资源包和光影包 ([#128](https://github.com/driftcell/RMCL/pull/128))
 
 ### Fixed
 
-- *(agent)* reach the transcript bottom with wheel scrolling ([#130](https://github.com/driftcell/RMCL/pull/130))
+- *(agent)* 滚轮到达对话底部后正确恢复 tail following 并隐藏“回到底部”按钮 ([#130](https://github.com/driftcell/RMCL/pull/130))
+- *(ui)* 固定本地内容导入按钮宽度，避免切换内容类型时抖动 ([#130](https://github.com/driftcell/RMCL/pull/130))
 
 ## [0.13.0](https://github.com/driftcell/RMCL/compare/v0.12.0...v0.13.0) - 2026-10-30
 
