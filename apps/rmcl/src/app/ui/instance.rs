@@ -666,10 +666,8 @@ impl LauncherApp {
                     .w_full()
                     .items_center()
                     .gap_1()
-                    .child(if enabled {
-                        Tag::success().child("已启用").small()
-                    } else {
-                        Tag::new().outline().child("未启用").small()
+                    .when(!enabled, |this| {
+                        this.child(Tag::new().outline().child("未启用").small())
                     })
                     .child(div().flex_1())
                     .when(enabled, |this| {
@@ -1071,12 +1069,8 @@ impl LauncherApp {
                             .when(item.is_directory, |this| {
                                 this.child(Tag::new().outline().child("文件夹").small())
                             })
-                            .when_some(can_toggle.then_some(enabled), |this, enabled| {
-                                this.child(if enabled {
-                                    Tag::success().child("已启用").small()
-                                } else {
-                                    Tag::secondary().child("已禁用").small()
-                                })
+                            .when(can_toggle && !enabled, |this| {
+                                this.child(Tag::secondary().child("已禁用").small())
                             }),
                     )
                     .child(
