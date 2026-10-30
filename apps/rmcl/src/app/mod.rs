@@ -1,5 +1,6 @@
 mod agent;
 mod external;
+#[cfg(any(target_os = "macos", test))]
 pub mod shortcuts;
 mod skin_service;
 mod skin_viewer;
@@ -114,6 +115,7 @@ pub enum Page {
 }
 
 impl Page {
+    #[cfg(any(target_os = "macos", test))]
     pub const NAVIGATION: [Self; 9] = [
         Self::Home,
         Self::Versions,
