@@ -559,6 +559,31 @@ fn server_options(version: &str, address: &str) -> LaunchOptions {
     options
 }
 
+fn world_options(version: &str, world: &str) -> LaunchOptions {
+    let mut options = options();
+    options.minecraft_version = version.to_owned();
+    options.quick_play_world = Some(world.to_owned());
+    options
+}
+
+#[test]
+fn modern_versions_enter_worlds_with_quick_play() {
+    let plan =
+        LaunchPlan::from_options(&modern_version(), world_options("1.21.1", "Survival")).unwrap();
+    assert!(
+        plan.game_arguments
+            .windows(2)
+            .any(|arguments| arguments == ["--quickPlaySingleplayer", "Survival"])
+    );
+}
+
+#[test]
+fn legacy_versions_reject_quick_play_worlds() {
+    let error = LaunchPlan::from_options(&modern_version(), world_options("1.19.4", "Survival"))
+        .unwrap_err();
+    assert!(matches!(error, LaunchError::InvalidArguments(_)));
+}
+
 #[test]
 fn modern_versions_join_servers_with_quick_play() {
     let plan = LaunchPlan::from_options(

@@ -28,6 +28,7 @@ RMCL is an independent Minecraft: Java Edition launcher written in Rust, with a 
 - Microsoft and offline accounts (device-code sign-in, tokens stored in the OS keychain)
 - Vanilla, Fabric, Quilt, and Forge/NeoForge through their modern installers
 - Isolated instances that reuse an existing `.minecraft` without rewriting another launcher's configuration
+- World scanning, copy/move between instances, ZIP import/export, backups, and Quick Play
 - Modrinth search and installation with SHA-1 verification and required-dependency resolution
 - Live server list (MOTD, player count, latency), one-click join, skins, version repair, auto-update
 - macOS (Intel and Apple Silicon), Windows x86_64, Linux x86_64

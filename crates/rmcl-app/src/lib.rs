@@ -26,6 +26,7 @@ mod skins;
 mod task;
 mod update;
 mod versions;
+mod worlds;
 
 pub use accounts::{
     MICROSOFT_KEYRING_SERVICE, MicrosoftAccountService, MicrosoftAccountServiceError,
@@ -92,6 +93,11 @@ pub use rmcl_instance::{
 pub use rmcl_java::{JavaDiscovery, JavaRuntime, JavaRuntimeSource};
 pub use rmcl_minecraft::{VersionManifest, VersionSummary};
 pub use rmcl_net::ProgressStage as DownloadStage;
+pub use rmcl_world::{
+    CopyStrategy, CopyWorldOptions, CopyWorldOutcome, ImportWorldOptions, World, WorldBackup,
+    WorldCompatibility, WorldConflictPolicy, WorldCopyProgress, WorldError, WorldId, WorldScan,
+    WorldWarning, backup_label, client_world_version, read_world, relative_time, scan_worlds,
+};
 pub use servers::{
     ServerBookmarkError, ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient,
     remove_server_bookmark, upsert_server_bookmark,
@@ -115,4 +121,9 @@ pub use update::{
 pub use versions::{
     InstalledVersion, delete_installed_version, delete_installed_version_with_guard,
     discover_installed_versions,
+};
+pub use worlds::{
+    InstanceWorlds, backup_instance_world, backups_dir, copy_world_to_instance,
+    delete_instance_world, export_instance_world, import_instance_world, inspect_instance_worlds,
+    move_world_to_instance, restore_instance_world,
 };

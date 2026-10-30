@@ -27,6 +27,7 @@ pub struct InstalledVersion {
     pub window_height: Option<u32>,
     pub manifest_present: bool,
     pub manifest_error: Option<String>,
+    pub client_jar_path: PathBuf,
     pub client_jar_present: bool,
 }
 
@@ -161,6 +162,7 @@ pub fn discover_installed_versions(
             .as_deref()
             .and_then(|jar| VersionId::new(jar).ok())
             .unwrap_or_else(|| id.clone());
+        let client_jar_path = layout.client_jar_path(&jar_id);
         versions.push(InstalledVersion {
             id,
             name,
@@ -177,7 +179,8 @@ pub fn discover_installed_versions(
             window_height,
             manifest_present,
             manifest_error,
-            client_jar_present: layout.client_jar_path(&jar_id).is_file(),
+            client_jar_present: client_jar_path.is_file(),
+            client_jar_path,
         });
     }
 

@@ -87,6 +87,8 @@ pub enum AppError {
     #[error(transparent)]
     Instance(#[from] rmcl_instance::InstanceError),
     #[error(transparent)]
+    World(#[from] rmcl_world::WorldError),
+    #[error(transparent)]
     Content(#[from] rmcl_content::ContentError),
     #[error("content download failed: {source}")]
     ContentDownload {

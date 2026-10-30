@@ -137,6 +137,15 @@ impl LaunchPlan {
                 game_arguments.push("--port".to_owned());
                 game_arguments.push(server.port().to_string());
             }
+        } else if let Some(world) = options.quick_play_world.as_ref() {
+            if !supports_quick_play(&options.minecraft_version)? {
+                return Err(LaunchError::InvalidArguments(format!(
+                    "Minecraft version `{}` does not support Quick Play singleplayer",
+                    options.minecraft_version
+                )));
+            }
+            game_arguments.push("--quickPlaySingleplayer".to_owned());
+            game_arguments.push(world.clone());
         }
         Ok(Self {
             java: options.java.executable,
@@ -401,7 +410,7 @@ fn placeholders(
     Ok(values)
 }
 
-fn supports_quick_play(version: &str) -> Result<bool, LaunchError> {
+pub fn supports_quick_play(version: &str) -> Result<bool, LaunchError> {
     let version = version.trim();
     if let Some(supported) = release_version_supports_quick_play(version) {
         return Ok(supported);

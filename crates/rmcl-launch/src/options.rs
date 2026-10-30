@@ -32,6 +32,8 @@ pub struct LaunchOptions {
     /// for loader instances.
     pub minecraft_version: String,
     pub server: Option<ServerAddress>,
+    /// World folder name passed through `--quickPlaySingleplayer`.
+    pub quick_play_world: Option<String>,
     pub features: FeatureMap,
     pub resolution: Option<(u32, u32)>,
     pub demo: bool,
@@ -87,6 +89,7 @@ impl LaunchOptions {
             authlib: None,
             minecraft_version: version.id.clone(),
             server: None,
+            quick_play_world: None,
             features,
             resolution: None,
             demo: false,
@@ -134,6 +137,11 @@ impl LaunchOptions {
     ) -> Self {
         self.server = Some(server);
         self.minecraft_version = minecraft_version.into();
+        self
+    }
+
+    pub fn with_world(mut self, world: impl Into<String>) -> Self {
+        self.quick_play_world = Some(world.into());
         self
     }
 }

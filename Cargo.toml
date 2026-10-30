@@ -16,6 +16,7 @@ members = [
     "crates/rmcl-net",
     "crates/rmcl-platform",
     "crates/rmcl-store",
+    "crates/rmcl-world",
 ]
 default-members = ["apps/rmcl"]
 resolver = "3"
@@ -39,6 +40,7 @@ clap = { version = "4", default-features = false, features = ["derive", "std", "
 crc32fast = "1.5"
 dirs = "6"
 fastrand = "2"
+fastnbt = "2.6"
 flate2 = "1"
 futures = "0.3"
 gpui-kit = "0.8.1"
@@ -66,6 +68,8 @@ rmcl-mcp = { path = "crates/rmcl-mcp" }
 rmcl-net = { path = "crates/rmcl-net" }
 rmcl-platform = { path = "crates/rmcl-platform" }
 rmcl-store = { path = "crates/rmcl-store" }
+rmcl-world = { path = "crates/rmcl-world" }
+reflink-copy = "0.1"
 rig = { version = "0.45", default-features = false, features = ["agent", "derive", "reqwest", "rmcp", "rustls", "socks"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
