@@ -38,6 +38,7 @@ pub struct AppContext {
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
     pub remote_icons: RemoteIconCache,
+    pub remote_gallery: RemoteIconCache,
     pub mod_metadata: ModMetadataCache,
     pub updates: UpdateClient,
     pub mirror: Arc<MirrorHealth>,
@@ -116,6 +117,7 @@ impl AppContext {
         let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
         let server_icon_cache_dir = config_dir.join("cache").join("servers");
         let remote_icon_cache_dir = config_dir.join("cache").join("remote-icons");
+        let remote_gallery_cache_dir = config_dir.join("cache").join("remote-gallery");
         let mod_metadata_cache_dir = config_dir.join("cache").join("mod-metadata");
         let mod_metadata =
             ModMetadataCache::new(DownloadConfig::default(), mod_metadata_cache_dir)?;
@@ -141,6 +143,7 @@ impl AppContext {
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
             remote_icons: RemoteIconCache::new(remote_icon_cache_dir)?,
+            remote_gallery: RemoteIconCache::new_gallery(remote_gallery_cache_dir)?,
             mod_metadata,
             updates,
             mirror,

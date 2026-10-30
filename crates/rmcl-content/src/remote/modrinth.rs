@@ -298,6 +298,10 @@ struct SearchHit {
     icon_url: Option<String>,
     #[serde(default)]
     date_modified: Option<String>,
+    #[serde(default)]
+    gallery: Vec<String>,
+    #[serde(default)]
+    featured_gallery: Option<String>,
 }
 
 impl From<SearchHit> for RemoteProject {
@@ -325,6 +329,8 @@ impl From<SearchHit> for RemoteProject {
             loaders,
             project_type: hit.project_type,
             updated: hit.date_modified,
+            gallery: hit.gallery,
+            featured_gallery: hit.featured_gallery,
         }
     }
 }
@@ -341,7 +347,7 @@ struct ProjectResponse {
     project_type: String,
     #[serde(default)]
     downloads: u64,
-    #[serde(default)]
+    #[serde(default, alias = "followers")]
     follows: u64,
     #[serde(default)]
     icon_url: Option<String>,
@@ -351,10 +357,25 @@ struct ProjectResponse {
     loaders: Vec<String>,
     #[serde(default)]
     updated: Option<String>,
+    #[serde(default)]
+    gallery: Vec<ProjectGalleryImage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProjectGalleryImage {
+    url: String,
+    #[serde(default)]
+    featured: bool,
 }
 
 impl ProjectResponse {
     fn into_project(self) -> RemoteProject {
+        let featured_gallery = self
+            .gallery
+            .iter()
+            .find(|image| image.featured)
+            .map(|image| image.url.clone());
+        let gallery = self.gallery.into_iter().map(|image| image.url).collect();
         RemoteProject {
             source: MODRINTH,
             id: self.id,
@@ -370,6 +391,8 @@ impl ProjectResponse {
             loaders: self.loaders,
             project_type: self.project_type,
             updated: self.updated,
+            gallery,
+            featured_gallery,
         }
     }
 }
@@ -533,7 +556,9 @@ mod tests {
                             "downloads": 1000,
                             "follows": 42,
                             "icon_url": "https://cdn.modrinth.com/sodium.png",
-                            "date_modified": "2026-01-01T00:00:00Z"
+                            "date_modified": "2026-01-01T00:00:00Z",
+                            "gallery": ["https://cdn.modrinth.com/first.webp"],
+                            "featured_gallery": "https://cdn.modrinth.com/featured.webp"
                         }],
                         "offset": 0,
                         "limit": 20,
@@ -560,6 +585,11 @@ mod tests {
         assert_eq!(page.projects[0].title, "Sodium");
         assert_eq!(page.projects[0].author, "jellysquid3");
         assert_eq!(page.projects[0].loaders, ["fabric"]);
+        assert_eq!(
+            page.projects[0].preview_url(),
+            Some("https://cdn.modrinth.com/featured.webp")
+        );
+        assert_eq!(page.projects[0].gallery.len(), 1);
         let captured = captured.lock().await;
         let params = &captured[0];
         assert_eq!(params.get("query").map(String::as_str), Some("sodium"));
@@ -710,11 +740,15 @@ mod tests {
                     "categories": ["fabric", "library"],
                     "project_type": "mod",
                     "downloads": 1000,
-                    "follows": 42,
+                    "followers": 42,
                     "icon_url": "https://cdn.modrinth.com/fabric-api.png",
                     "game_versions": ["1.21.1"],
                     "loaders": ["fabric"],
-                    "updated": "2026-01-01T00:00:00Z"
+                    "updated": "2026-01-01T00:00:00Z",
+                    "gallery": [
+                        {"url": "https://cdn.modrinth.com/regular.webp", "featured": false},
+                        {"url": "https://cdn.modrinth.com/featured.webp", "featured": true}
+                    ]
                 }))
             }),
         );
@@ -727,6 +761,12 @@ mod tests {
             .unwrap();
         assert_eq!(project.slug, "fabric-api");
         assert_eq!(project.title, "Fabric API");
+        assert_eq!(project.follows, 42);
+        assert_eq!(project.gallery.len(), 2);
+        assert_eq!(
+            project.preview_url(),
+            Some("https://cdn.modrinth.com/featured.webp")
+        );
         handle.abort();
     }
 

@@ -18,6 +18,7 @@ use gpui_kit::{
         ActiveTheme, Disableable, Icon, IndexPath, Sizable, Size, StyledExt,
         VirtualListScrollHandle, WindowExt,
         button::{Button, ButtonVariant, ButtonVariants},
+        carousel::CarouselState,
         combobox::{ComboboxEvent, ComboboxState},
         dialog::{DialogAction, DialogClose, DialogFooter},
         h_flex,
@@ -213,6 +214,8 @@ pub struct ContentBrowserState {
     project: Option<RemoteProject>,
     projects: Vec<RemoteProject>,
     project_icons: HashMap<String, Option<PathBuf>>,
+    project_previews: HashMap<String, Option<PathBuf>>,
+    gallery: Option<Entity<CarouselState>>,
     total_hits: u64,
     search_loading: bool,
     search_error: Option<String>,
@@ -484,8 +487,10 @@ pub struct LauncherApp {
     content_browser_request: u64,
     content_browser_cancel: Option<CancellationToken>,
     content_browser_icons_cancel: Option<CancellationToken>,
+    content_browser_previews_cancel: Option<CancellationToken>,
     _content_browser_task: Option<Task<()>>,
     _content_icons_task: Option<Task<()>>,
+    _content_previews_task: Option<Task<()>>,
     servers: ServersState,
     server_tab: ServerTab,
     server_query: Entity<InputState>,
@@ -1007,8 +1012,10 @@ impl LauncherApp {
             content_browser_request: 0,
             content_browser_cancel: None,
             content_browser_icons_cancel: None,
+            content_browser_previews_cancel: None,
             _content_browser_task: None,
             _content_icons_task: None,
+            _content_previews_task: None,
             servers: ServersState::default(),
             server_tab: ServerTab::default(),
             server_query,
@@ -6203,6 +6210,7 @@ impl LauncherApp {
 
     fn back_to_instance_detail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancel_content_browser_request();
+        self.content_browser.gallery = None;
         self.page = Page::Instance;
         self.load_instance_content(window, cx);
     }
@@ -6212,6 +6220,7 @@ impl LauncherApp {
             cancellation.cancel();
         }
         self.cancel_content_icons();
+        self.cancel_content_previews();
         self.content_browser_request = self.content_browser_request.wrapping_add(1);
     }
 
@@ -6220,6 +6229,13 @@ impl LauncherApp {
             cancellation.cancel();
         }
         self._content_icons_task = None;
+    }
+
+    fn cancel_content_previews(&mut self) {
+        if let Some(cancellation) = self.content_browser_previews_cancel.take() {
+            cancellation.cancel();
+        }
+        self._content_previews_task = None;
     }
 
     fn load_project_icons(
@@ -6270,6 +6286,76 @@ impl LauncherApp {
                 if let Ok(results) = results {
                     for (id, path) in results {
                         view.content_browser.project_icons.insert(id, path);
+                    }
+                    cx.notify();
+                }
+            });
+        }));
+    }
+
+    fn load_project_previews(
+        &mut self,
+        projects: &[RemoteProject],
+        include_gallery: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut pending = Vec::new();
+        let mut seen = HashSet::new();
+        for project in projects {
+            if !matches!(
+                project.kind(),
+                Some(ContentKind::ResourcePack | ContentKind::ShaderPack)
+            ) {
+                continue;
+            }
+            let urls = if include_gallery {
+                project.gallery_previews().into_iter().take(6).collect()
+            } else {
+                project.preview_url().into_iter().collect::<Vec<_>>()
+            };
+            for url in urls {
+                if seen.insert(url.to_owned())
+                    && !self.content_browser.project_previews.contains_key(url)
+                {
+                    pending.push(url.to_owned());
+                }
+            }
+        }
+        if pending.is_empty() {
+            return;
+        }
+
+        self.cancel_content_previews();
+        let cancellation = CancellationToken::new();
+        self.content_browser_previews_cancel = Some(cancellation.clone());
+        let cache = self.services.remote_gallery.clone();
+        let runtime = self.services.runtime.handle().clone();
+        self._content_previews_task = Some(cx.spawn_in(window, async move |this, cx| {
+            let results = runtime
+                .spawn(async move {
+                    let mut tasks = tokio::task::JoinSet::new();
+                    for url in pending {
+                        let cache = cache.clone();
+                        let cancellation = cancellation.clone();
+                        tasks.spawn(async move {
+                            let path = cache.ensure(&url, &cancellation).await.ok();
+                            (url, path)
+                        });
+                    }
+                    let mut results = Vec::new();
+                    while let Some(joined) = tasks.join_next().await {
+                        if let Ok(result) = joined {
+                            results.push(result);
+                        }
+                    }
+                    results
+                })
+                .await;
+            let _ = this.update_in(cx, |view, _, cx| {
+                if let Ok(results) = results {
+                    for (url, path) in results {
+                        view.content_browser.project_previews.insert(url, path);
                     }
                     cx.notify();
                 }
@@ -6335,6 +6421,9 @@ impl LauncherApp {
                             view.content_browser
                                 .project_icons
                                 .retain(|_, path| path.is_some());
+                            view.content_browser
+                                .project_previews
+                                .retain(|_, path| path.is_some());
                         } else {
                             view.content_browser.projects.extend(page.projects);
                         }
@@ -6342,6 +6431,7 @@ impl LauncherApp {
                         view.content_browser.search_error = None;
                         let projects = view.content_browser.projects.clone();
                         view.load_project_icons(&projects, window, cx);
+                        view.load_project_previews(&projects, false, window, cx);
                     }
                     Ok(Err(error)) => {
                         if !matches!(error, rmcl_app::RemoteContentError::Cancelled) {
@@ -6370,10 +6460,26 @@ impl LauncherApp {
         ) {
             self.content_browser.project_icons.remove(&project.id);
         }
+        let gallery_count = if matches!(
+            project.kind(),
+            Some(ContentKind::ResourcePack | ContentKind::ShaderPack)
+        ) {
+            project.gallery_previews().len().min(6)
+        } else {
+            0
+        };
+        self.content_browser.gallery =
+            (gallery_count > 0).then(|| cx.new(|_| CarouselState::new(gallery_count)));
+        for url in project.gallery_previews() {
+            if matches!(self.content_browser.project_previews.get(url), Some(None)) {
+                self.content_browser.project_previews.remove(url);
+            }
+        }
         self.content_browser.project = Some(project.clone());
         self.content_browser.versions.clear();
         self.content_browser.versions_error = None;
         self.load_project_icons(std::slice::from_ref(&project), window, cx);
+        self.load_project_previews(std::slice::from_ref(&project), true, window, cx);
         self.load_remote_versions(project, window, cx);
     }
 
@@ -6453,12 +6559,15 @@ impl LauncherApp {
         cx.notify();
     }
 
-    fn back_to_content_search(&mut self, cx: &mut Context<Self>) {
+    fn back_to_content_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancel_content_browser_request();
         self.content_browser.project = None;
+        self.content_browser.gallery = None;
         self.content_browser.versions.clear();
         self.content_browser.versions_error = None;
         self.content_browser.versions_loading = false;
+        let projects = self.content_browser.projects.clone();
+        self.load_project_previews(&projects, false, window, cx);
         cx.notify();
     }
 

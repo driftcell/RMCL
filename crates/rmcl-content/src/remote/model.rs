@@ -120,6 +120,10 @@ pub struct RemoteProject {
     pub loaders: Vec<String>,
     pub project_type: String,
     pub updated: Option<String>,
+    /// Provider-hosted gallery thumbnails, in display order.
+    pub gallery: Vec<String>,
+    /// The provider-selected thumbnail to use for project cards.
+    pub featured_gallery: Option<String>,
 }
 
 impl RemoteProject {
@@ -145,6 +149,28 @@ impl RemoteProject {
 
     pub fn page_url(&self) -> String {
         format!("https://modrinth.com/{}/{}", self.project_type, self.slug)
+    }
+
+    /// Returns the most representative available gallery thumbnail.
+    pub fn preview_url(&self) -> Option<&str> {
+        self.featured_gallery
+            .as_deref()
+            .or_else(|| self.gallery.first().map(String::as_str))
+    }
+
+    /// Returns gallery thumbnails with the featured image first and duplicates
+    /// removed. Search results may list the featured image separately.
+    pub fn gallery_previews(&self) -> Vec<&str> {
+        let mut images = Vec::new();
+        if let Some(featured) = self.featured_gallery.as_deref() {
+            images.push(featured);
+        }
+        for image in &self.gallery {
+            if !images.contains(&image.as_str()) {
+                images.push(image);
+            }
+        }
+        images
     }
 }
 
@@ -286,6 +312,8 @@ mod tests {
             loaders: Vec::new(),
             project_type: project_type.to_owned(),
             updated: None,
+            gallery: Vec::new(),
+            featured_gallery: None,
         }
     }
 
@@ -328,6 +356,32 @@ mod tests {
             None
         );
         assert_eq!(project("mod").version_loader_filter(None), None);
+    }
+
+    #[test]
+    fn preview_prefers_the_featured_gallery_image() {
+        let mut project = project("shader");
+        assert_eq!(project.preview_url(), None);
+        project.gallery = vec!["https://cdn.example.com/first.webp".to_owned()];
+        assert_eq!(
+            project.preview_url(),
+            Some("https://cdn.example.com/first.webp")
+        );
+        project.featured_gallery = Some("https://cdn.example.com/featured.webp".to_owned());
+        project
+            .gallery
+            .push("https://cdn.example.com/featured.webp".to_owned());
+        assert_eq!(
+            project.preview_url(),
+            Some("https://cdn.example.com/featured.webp")
+        );
+        assert_eq!(
+            project.gallery_previews(),
+            [
+                "https://cdn.example.com/featured.webp",
+                "https://cdn.example.com/first.webp"
+            ]
+        );
     }
 
     #[test]

@@ -5,8 +5,13 @@ use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, Sizable, Size, StyledExt,
         button::{Button, ButtonVariants},
+        carousel::{
+            Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPagination,
+            CarouselPaginationItem, CarouselPrevious,
+        },
         h_flex,
         input::Input,
+        link::Link,
         scroll::ScrollableElement,
         spinner::Spinner,
         tab::{Tab, TabBar},
@@ -132,8 +137,8 @@ impl LauncherApp {
                                 .ghost()
                                 .icon(IconName::ChevronLeft)
                                 .label("返回搜索结果")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.back_to_content_search(cx)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.back_to_content_search(window, cx)
                                 })),
                         )
                     })
@@ -298,6 +303,9 @@ impl LauncherApp {
                         cx,
                     ))
                     .into_any_element()
+            } else if is_visual_kind(kind) {
+                self.render_visual_project_results(projects, visible, total, loading, cx)
+                    .into_any_element()
             } else {
                 let rows = projects
                     .iter()
@@ -315,24 +323,127 @@ impl LauncherApp {
                     .child(section_title("搜索结果", &result_subtitle, cx))
                     .children(rows)
                     .when(visible < total, |this| {
-                        this.child(
-                            Button::new("content-browser-load-more")
-                                .outline()
-                                .w_full()
-                                .label(if loading {
-                                    "正在加载…"
-                                } else {
-                                    "加载更多"
-                                })
-                                .disabled(loading)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.load_remote_search(false, window, cx)
-                                })),
-                        )
+                        this.child(load_more_button(loading, cx))
                     })
                     .into_any_element()
             })
             .into_any_element()
+    }
+
+    fn render_visual_project_results(
+        &self,
+        projects: &[RemoteProject],
+        visible: u64,
+        total: u64,
+        loading: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let kind = self
+            .content_browser
+            .kind
+            .unwrap_or(ContentKind::ResourcePack);
+        let subtitle = if loading {
+            format!("已加载 {} 个项目 · 正在搜索…", projects.len())
+        } else {
+            format!("已加载 {} 个项目", projects.len())
+        };
+        v_flex()
+            .w_full()
+            .gap_4()
+            .child(section_title("搜索结果", &subtitle, cx))
+            .child(
+                div()
+                    .w_full()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_4()
+                    .children(projects.iter().map(|project| {
+                        self.render_visual_project_card(project, kind, cx)
+                            .into_any_element()
+                    })),
+            )
+            .when(visible < total, |this| {
+                this.child(load_more_button(loading, cx))
+            })
+    }
+
+    fn render_visual_project_card(
+        &self,
+        project: &RemoteProject,
+        kind: ContentKind,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let preview = project.preview_url().and_then(|url| {
+            self.content_browser
+                .project_previews
+                .get(url)
+                .and_then(|path| path.as_deref())
+        });
+        let project_for_click = project.clone();
+        v_flex()
+            .w_full()
+            .min_w_0()
+            .gap_3()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().group_box)
+            .p_3()
+            .child(preview_canvas(preview, kind, false, cx))
+            .child(
+                v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        div()
+                            .w_full()
+                            .truncate()
+                            .text_base()
+                            .font_semibold()
+                            .child(project.title.clone()),
+                    )
+                    .when(!project.author.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("作者：{}", project.author)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .line_clamp(2)
+                            .child(project.description.clone()),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(Icon::new(IconName::Download).with_size(Size::XSmall))
+                            .child(format!("{} 次下载", format_count(project.downloads))),
+                    )
+                    .child(
+                        Button::new(format!("content-browser-project-{}", project.id))
+                            .outline()
+                            .small()
+                            .icon(IconName::List)
+                            .label("查看版本")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.open_remote_project(project_for_click.clone(), window, cx)
+                            })),
+                    ),
+            )
     }
 
     fn render_remote_project_row(
@@ -428,6 +539,239 @@ impl LauncherApp {
             )
     }
 
+    fn render_visual_project_overview(
+        &self,
+        project: &RemoteProject,
+        kind: ContentKind,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let recommended = self.content_browser.recommended.as_deref().and_then(|id| {
+            self.content_browser
+                .versions
+                .iter()
+                .find(|version| version.id == id)
+        });
+        let recommended_name = recommended.map(|version| {
+            if version.name.is_empty() {
+                version.version_number.clone()
+            } else {
+                version.name.clone()
+            }
+        });
+        let recommended_file = recommended
+            .and_then(|version| version.installable_file(kind))
+            .map(|file| {
+                format!(
+                    "{} · {}",
+                    file.filename,
+                    file.size
+                        .map(format_size)
+                        .unwrap_or_else(|| "大小未知".to_owned())
+                )
+            });
+        let install_version = recommended.cloned();
+        let has_recommended = install_version.is_some();
+        let can_install = recommended.is_some()
+            && self.can_start_operation()
+            && !self.content_browser.preflighting;
+        let gallery = self.render_project_gallery(project, kind, cx);
+        h_flex()
+            .w_full()
+            .items_start()
+            .rounded(cx.theme().radius_lg)
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().group_box)
+            .child(div().w(rems(22.0)).flex_shrink_0().p_4().child(gallery))
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap_4()
+                    .p_5()
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_1()
+                            .child(div().text_xl().font_semibold().child(project.title.clone()))
+                            .when(!project.author.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(format!("作者：{}", project.author)),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .line_clamp(4)
+                            .child(project.description.clone()),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .gap_4()
+                            .flex_wrap()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("{} 次下载", format_count(project.downloads)))
+                            .when_some(project.updated.as_deref(), |this, updated| {
+                                this.child(format!("更新于 {}", short_date(Some(updated))))
+                            }),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .gap_2()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().primary.opacity(0.07))
+                            .p_3()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child("适配当前实例的推荐版本"),
+                            )
+                            .when_some(recommended_name, |this, name| {
+                                this.child(div().text_sm().font_semibold().child(name))
+                            })
+                            .when_some(recommended_file, |this, file| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .truncate()
+                                        .child(file),
+                                )
+                            })
+                            .when(has_recommended, |this| {
+                                this.child(
+                                    Button::new("content-browser-install-recommended")
+                                        .primary()
+                                        .icon(IconName::Download)
+                                        .label("安装推荐版本")
+                                        .disabled(!can_install)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            if let Some(version) = install_version.clone() {
+                                                this.install_remote_version(version, window, cx);
+                                            }
+                                        })),
+                                )
+                            })
+                            .when(!has_recommended, |this| {
+                                this.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(if self.content_browser.versions_loading {
+                                            "正在查找兼容版本…"
+                                        } else {
+                                            "当前实例没有可安装版本"
+                                        }),
+                                )
+                            }),
+                    )
+                    .child(
+                        Link::new("content-browser-modrinth-page")
+                            .href(project.page_url())
+                            .child(
+                                h_flex()
+                                    .gap_1()
+                                    .text_sm()
+                                    .child("在 Modrinth 查看项目")
+                                    .child(Icon::new(IconName::ExternalLink).small()),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_project_gallery(
+        &self,
+        project: &RemoteProject,
+        kind: ContentKind,
+        cx: &App,
+    ) -> AnyElement {
+        let urls = project
+            .gallery_previews()
+            .into_iter()
+            .take(6)
+            .collect::<Vec<_>>();
+        let Some(state) = self.content_browser.gallery.clone() else {
+            let preview = project.preview_url().and_then(|url| {
+                self.content_browser
+                    .project_previews
+                    .get(url)
+                    .and_then(|path| path.as_deref())
+            });
+            return preview_canvas(preview, kind, true, cx);
+        };
+        let path_for = |url: &str| {
+            self.content_browser
+                .project_previews
+                .get(url)
+                .and_then(|path| path.as_deref())
+        };
+        Carousel::new(format!("content-project-gallery-{}", project.id), &state)
+            .w_full()
+            .accessibility_label(format!("{} 的项目截图", project.title))
+            .child(
+                CarouselContent::new(&state)
+                    .w_full()
+                    .children(urls.iter().enumerate().map(|(index, url)| {
+                        CarouselItem::new(
+                            format!("content-project-gallery-item-{url}"),
+                            index,
+                            &state,
+                        )
+                        .child(preview_canvas(
+                            path_for(url),
+                            kind,
+                            true,
+                            cx,
+                        ))
+                    })),
+            )
+            .when(urls.len() > 1, |this| {
+                this.child(
+                    CarouselPrevious::new(&state)
+                        .with_size(Size::Small)
+                        .accessibility_label("上一张截图"),
+                )
+                .child(
+                    CarouselNext::new(&state)
+                        .with_size(Size::Small)
+                        .accessibility_label("下一张截图"),
+                )
+                .child(
+                    CarouselPagination::new()
+                        .accessibility_label("选择项目截图")
+                        .children(urls.iter().enumerate().map(|(index, url)| {
+                            CarouselPaginationItem::new(
+                                format!("content-project-gallery-page-{url}"),
+                                index,
+                                &state,
+                            )
+                            .accessibility_label(format!("查看第 {} 张截图", index + 1))
+                            .w_16()
+                            .h_10()
+                            .p_0()
+                            .overflow_hidden()
+                            .child(preview_thumbnail(
+                                path_for(url),
+                                kind,
+                                cx,
+                            ))
+                        })),
+                )
+            })
+            .into_any_element()
+    }
+
     fn render_remote_project(
         &self,
         project: &RemoteProject,
@@ -447,62 +791,75 @@ impl LauncherApp {
             .collect::<Vec<_>>();
         v_flex()
             .gap_4()
-            .child(
-                card(cx).child(
-                    v_flex()
-                        .w_full()
-                        .gap_2()
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(div().text_lg().font_semibold().child(project.title.clone()))
-                                .when(!project.author.is_empty(), |this| {
-                                    this.child(
+            .child(if is_visual_kind(kind) {
+                self.render_visual_project_overview(project, kind, cx)
+                    .into_any_element()
+            } else {
+                card(cx)
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .gap_2()
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_lg()
+                                            .font_semibold()
+                                            .child(project.title.clone()),
+                                    )
+                                    .when(!project.author.is_empty(), |this| {
+                                        this.child(
+                                            Tag::new()
+                                                .outline()
+                                                .child(format!("by {}", project.author))
+                                                .small(),
+                                        )
+                                    })
+                                    .child(
                                         Tag::new()
                                             .outline()
-                                            .child(format!("by {}", project.author))
+                                            .child(format!(
+                                                "{} 次下载",
+                                                format_count(project.downloads)
+                                            ))
                                             .small(),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(project.description.clone()),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_1()
+                                    .flex_wrap()
+                                    .children(project.loaders.iter().map(|loader| {
+                                        Tag::new().outline().child(loader.clone()).small()
+                                    }))
+                                    .children(
+                                        categories.into_iter().map(|category| {
+                                            Tag::secondary().child(category).small()
+                                        }),
                                     )
-                                })
-                                .child(
-                                    Tag::new()
-                                        .outline()
-                                        .child(format!(
-                                            "{} 次下载",
-                                            format_count(project.downloads)
-                                        ))
-                                        .small(),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(project.description.clone()),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_1()
-                                .flex_wrap()
-                                .children(project.loaders.iter().map(|loader| {
-                                    Tag::new().outline().child(loader.clone()).small()
-                                }))
-                                .children(
-                                    categories
-                                        .into_iter()
-                                        .map(|category| Tag::secondary().child(category).small()),
-                                )
-                                .when_some(project.updated.as_deref(), |this, updated| {
-                                    this.child(
-                                        Tag::new()
-                                            .outline()
-                                            .child(format!("更新于 {}", short_date(Some(updated))))
-                                            .small(),
-                                    )
-                                }),
-                        ),
-                ),
-            )
+                                    .when_some(project.updated.as_deref(), |this, updated| {
+                                        this.child(
+                                            Tag::new()
+                                                .outline()
+                                                .child(format!(
+                                                    "更新于 {}",
+                                                    short_date(Some(updated))
+                                                ))
+                                                .small(),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .into_any_element()
+            })
             .when_some(error, |this, error: String| {
                 this.child(error_banner("Modrinth 版本加载失败", &error, cx))
             })
@@ -518,9 +875,9 @@ impl LauncherApp {
                             .primary()
                             .icon(IconName::ChevronLeft)
                             .label("返回搜索结果")
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.back_to_content_search(cx)),
-                            ),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.back_to_content_search(window, cx)
+                            })),
                         cx,
                     ))
                     .into_any_element()
@@ -642,6 +999,73 @@ impl LauncherApp {
                     })),
             )
     }
+}
+
+fn load_more_button(loading: bool, cx: &mut Context<LauncherApp>) -> Button {
+    Button::new("content-browser-load-more")
+        .outline()
+        .w_full()
+        .label(if loading {
+            "正在加载…"
+        } else {
+            "加载更多"
+        })
+        .disabled(loading)
+        .on_click(cx.listener(|this, _, window, cx| this.load_remote_search(false, window, cx)))
+}
+
+fn is_visual_kind(kind: ContentKind) -> bool {
+    matches!(kind, ContentKind::ResourcePack | ContentKind::ShaderPack)
+}
+
+fn preview_canvas(path: Option<&Path>, kind: ContentKind, detailed: bool, cx: &App) -> AnyElement {
+    let canvas = div()
+        .w_full()
+        .rounded(cx.theme().radius)
+        .overflow_hidden()
+        .bg(cx.theme().muted.opacity(0.35));
+    let canvas = if detailed {
+        canvas.aspect_ratio(16. / 9.)
+    } else {
+        canvas.h_40()
+    };
+    canvas
+        .when_some(path, |this, path| {
+            this.child(img(path.to_path_buf()).size_full().object_fit(if detailed {
+                ObjectFit::Contain
+            } else {
+                ObjectFit::Cover
+            }))
+        })
+        .when(path.is_none(), |this| {
+            this.flex().items_center().justify_center().child(
+                Icon::new(content_icon(kind))
+                    .with_size(Size::Large)
+                    .text_color(cx.theme().muted_foreground),
+            )
+        })
+        .into_any_element()
+}
+
+fn preview_thumbnail(path: Option<&Path>, kind: ContentKind, cx: &App) -> AnyElement {
+    div()
+        .size_full()
+        .bg(cx.theme().muted.opacity(0.35))
+        .when_some(path, |this, path| {
+            this.child(
+                img(path.to_path_buf())
+                    .size_full()
+                    .object_fit(ObjectFit::Cover),
+            )
+        })
+        .when(path.is_none(), |this| {
+            this.flex().items_center().justify_center().child(
+                Icon::new(content_icon(kind))
+                    .small()
+                    .text_color(cx.theme().muted_foreground),
+            )
+        })
+        .into_any_element()
 }
 
 fn remote_sort_index(sort: RemoteSort) -> usize {
