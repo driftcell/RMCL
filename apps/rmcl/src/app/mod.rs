@@ -135,7 +135,7 @@ impl Page {
             Self::Home => "选择一个实例，立即开始游戏。",
             Self::Agent => "用自然语言管理实例、内容和任务。",
             Self::Versions => "管理已安装的游戏实例与版本。",
-            Self::Worlds => "复制、移动、导入和备份世界存档。",
+            Self::Worlds => "管理当前实例的地图存档。",
             Self::Skin => "查看当前账户的皮肤；外置登录由认证服务器和 authlib-injector 管理。",
             Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",

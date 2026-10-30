@@ -19,7 +19,7 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    CopyStrategy, CopyWorldOptions, ImportWorldOptions, InstalledVersion, World,
+    CopyStrategy, CopyWorldOptions, ImportWorldOptions, InstalledVersion, InstanceLayout, World,
     WorldCompatibility, WorldConflictPolicy, WorldCopyProgress, WorldId, backup_instance_world,
     client_world_version, copy_world_to_instance, delete_instance_world, export_instance_world,
     import_instance_world, inspect_instance_worlds, move_world_to_instance, relative_time,
@@ -493,7 +493,7 @@ impl LauncherApp {
                     .overflow_hidden()
                     .bg(cx.theme().primary.opacity(0.07))
                     .when_some(icon, |this, icon| {
-                        this.child(img(icon).size_full().object_fit(ObjectFit::Cover))
+                        this.child(img(icon).size_full().object_fit(ObjectFit::Contain))
                     })
                     .when(!has_icon, |this| {
                         this.flex().items_center().justify_center().child(
@@ -1143,6 +1143,10 @@ impl LauncherApp {
     }
 
     fn pick_world_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(version) = self.selected_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1156,7 +1160,7 @@ impl LauncherApp {
                         return;
                     };
                     let _ = this.update_in(cx, |view, window, cx| {
-                        view.start_world_import(path, false, window, cx)
+                        view.start_world_import(path, false, instance.clone(), window, cx)
                     });
                 }
                 Ok(Ok(_)) => {}
@@ -1175,6 +1179,10 @@ impl LauncherApp {
     }
 
     fn pick_world_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(version) = self.selected_version().cloned() else {
+            return;
+        };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1188,7 +1196,7 @@ impl LauncherApp {
                         return;
                     };
                     let _ = this.update_in(cx, |view, window, cx| {
-                        view.start_world_import(path, true, window, cx)
+                        view.start_world_import(path, true, instance.clone(), window, cx)
                     });
                 }
                 Ok(Ok(_)) => {}
@@ -1210,16 +1218,13 @@ impl LauncherApp {
         &mut self,
         path: PathBuf,
         restore: bool,
+        instance: InstanceLayout,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.world_actions_pending() {
             return;
         }
-        let Some(version) = self.selected_version().cloned() else {
-            return;
-        };
-        let instance = version.instance_layout(self.config.minecraft_root.clone());
         let cancellation = CancellationToken::new();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         self.world_action_pending = true;
@@ -1307,13 +1312,14 @@ impl LauncherApp {
         let Some(version) = self.selected_version().cloned() else {
             return;
         };
+        let instance = version.instance_layout(self.config.minecraft_root.clone());
         let suggested = format!("{}.zip", world.folder_name());
         let prompt = cx.prompt_for_new_path(&version.game_dir, Some(&suggested));
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
                 Ok(Ok(Some(path))) => {
                     let _ = this.update_in(cx, |view, window, cx| {
-                        view.start_world_export(world.clone(), path, window, cx)
+                        view.start_world_export(world.clone(), path, instance.clone(), window, cx)
                     });
                 }
                 Ok(Ok(_)) => {}
@@ -1335,16 +1341,13 @@ impl LauncherApp {
         &mut self,
         world: World,
         destination: PathBuf,
+        instance: InstanceLayout,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.world_actions_pending() {
             return;
         }
-        let Some(version) = self.selected_version().cloned() else {
-            return;
-        };
-        let instance = version.instance_layout(self.config.minecraft_root.clone());
         let cancellation = CancellationToken::new();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         self.world_action_pending = true;
