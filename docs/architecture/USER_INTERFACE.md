@@ -101,10 +101,11 @@
 - 光影包使用双列卡片：显示 `shaders/pack.json` 描述、文件大小和“使用中”状态；检测 Iris/Oculus/OptiFine 后可设为当前或关闭光影，缺少加载器时显示可执行提示。
 - 扫描警告、元数据读取失败和 `options.txt` 错误显示为横幅，不隐藏其他内容。
 - 内容操作进行中时禁用导入、切换、优先级、删除和启动，避免与游戏进程或后续扫描冲突。
-- “下载内容”进入在线内容页，按当前实例的 Minecraft 版本过滤；Mod 还会按实例加载器过滤，光影包在检测到加载器后按 Iris/OptiFine 过滤。
+- “下载内容”位于 Mod/资源包/光影标签右侧，进入在线内容页；页面顶部可切换内容类型，并按当前实例的 Minecraft 版本过滤；Mod 还会按实例加载器过滤，光影包在检测到加载器后按 Iris/OptiFine 过滤。
 
 ### 在线内容
 
+- 顶部提供 Mod、资源包和光影包标签；切换时清空当前项目和版本列表，按新类型重新搜索，不需要先返回实例页切换标签。
 - 搜索 Modrinth 项目，支持相关度、下载量、关注数、最新发布和最近更新排序，以及分页“加载更多”。
 - Mod 使用紧凑列表；资源包和光影使用双列作品卡，展示 Modrinth 精选画廊图、标题、作者、描述和下载量。项目详情通过 GPUI Kit `Carousel` 浏览最多 6 张截图，缩略图分页、前后按钮和键盘导航共用 `CarouselState`，图片加载失败回退到内容类型图标。
 - 项目列表显示标题、作者、描述、下载量、加载器和分类；进入项目后显示可用版本、版本类型、发布时间、游戏版本、加载器、文件名/大小和必需前置数量，并可通过 `Link` 打开 Modrinth 项目网页。
@@ -241,6 +242,7 @@ OptiFine 等加载器、legacy Forge installer、原地升级或移除已有加�
 - `rmcl-domain`、`rmcl-app` 和 `rmcl-launch` 覆盖服务器地址、Server List Ping mock、MOTD/图标、超时、图标缓存、精选清单解析、Quick Play/legacy 参数和版本边界；真实窗口中的收藏/发现页仍需逐平台验收。
 - `rmcl-app` 覆盖 GitHub Release 检查、SHA256SUMS、平台资产选择、下载校验、ZIP 解压和文件替换；真实自动更新仍需在发布包上逐平台验收。
 - `rmcl-install` 与 `rmcl-app` 覆盖 Fabric/Quilt 元数据、profile 改写、版本继承合并、loader library 下载、自定义 Vanilla 实例、目录冲突和 `InstanceCreate` 任务终态。
-- GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。新增资源包/光影作品卡和 Carousel 尚未完成逐平台视觉与键盘验收。
+- `apps/rmcl/src/app/mod.rs` 的单元测试验证 `ContentTab` 与 `ContentKind` 的映射覆盖全部内容类型。
+- GPUI 窗口、页面切换、对话框和真实窗口显示已通过真实窗口截图验证；窗口定位改用 macOS `CGWindowID`，避免依赖屏幕坐标或前台应用。新增资源包/光影作品卡、Carousel、在线内容类型标签和实例页下载按钮位置尚未完成逐平台视觉与键盘验收。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录、Keychain 写入、profile 同步和官方皮肤头像缓存。
 - 游戏运行时隐藏、游戏退出后恢复的完整链路尚未在真实 Vanilla 启动中验收；Windows 和 Linux 的窗口恢复与系统凭据存储行为仍需逐平台验证。

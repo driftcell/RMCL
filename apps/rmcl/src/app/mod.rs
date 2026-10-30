@@ -291,6 +291,14 @@ impl ContentTab {
         }
     }
 
+    pub fn from_kind(kind: ContentKind) -> Self {
+        match kind {
+            ContentKind::Mod => Self::Mods,
+            ContentKind::ResourcePack => Self::ResourcePacks,
+            ContentKind::ShaderPack => Self::ShaderPacks,
+        }
+    }
+
     fn index(self) -> usize {
         match self {
             Self::Mods => 0,
@@ -6194,11 +6202,7 @@ impl LauncherApp {
         };
         self.cancel_content_browser_request();
         self.selected_instance = Some(version.id.as_str().to_owned());
-        self.content_tab = match kind {
-            ContentKind::Mod => ContentTab::Mods,
-            ContentKind::ResourcePack => ContentTab::ResourcePacks,
-            ContentKind::ShaderPack => ContentTab::ShaderPacks,
-        };
+        self.content_tab = ContentTab::from_kind(kind);
         self.page = Page::ContentBrowser;
         self.content_browser = ContentBrowserState {
             kind: Some(kind),
@@ -6212,6 +6216,31 @@ impl LauncherApp {
         self.remote_query.update(cx, |state, cx| {
             state.set_value("", window, cx);
         });
+        self.load_remote_search(true, window, cx);
+    }
+
+    fn switch_content_browser_kind(
+        &mut self,
+        kind: ContentKind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.content_browser.preflighting || self.content_browser.kind == Some(kind) {
+            return;
+        }
+        self.cancel_content_browser_request();
+        self.content_tab = ContentTab::from_kind(kind);
+        self.content_browser.kind = Some(kind);
+        self.content_browser.project = None;
+        self.content_browser.gallery = None;
+        self.content_browser.projects.clear();
+        self.content_browser.total_hits = 0;
+        self.content_browser.versions.clear();
+        self.content_browser.versions_loading = false;
+        self.content_browser.search_error = None;
+        self.content_browser.versions_error = None;
+        self.content_browser.recommended = None;
+        self.content_browser.preflighting = false;
         self.load_remote_search(true, window, cx);
     }
 
@@ -8017,12 +8046,21 @@ mod tests {
         ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, WindowOptions, point, px,
     };
     use gpui_kit::{AppContext as _, component::WindowExt as _};
-    use rmcl_app::VersionManifest;
+    use rmcl_app::{ContentKind, VersionManifest};
     use rmcl_store::{ConfigStore, LauncherConfig};
     use tempfile::TempDir;
 
-    use super::{LauncherApp, Page, shortcuts};
+    use super::{ContentTab, LauncherApp, Page, shortcuts};
     use crate::services::{Bootstrap, Services};
+
+    #[test]
+    fn content_browser_tabs_cover_every_content_kind() {
+        for kind in ContentKind::ALL {
+            let tab = ContentTab::from_kind(kind);
+            assert_eq!(tab.kind(), kind);
+            assert_eq!(ContentTab::from_index(tab.index()), tab);
+        }
+    }
 
     #[gpui::test]
     fn macos_shortcuts_switch_pages_and_control_the_active_window(cx: &mut TestAppContext) {

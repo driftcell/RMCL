@@ -122,6 +122,20 @@ impl LauncherApp {
                                         ))
                                     })),
                             )
+                            .child(
+                                Button::new("instance-browse-online")
+                                    .outline()
+                                    .icon(IconName::Globe)
+                                    .label("下载内容")
+                                    .disabled(pending)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_content_browser(
+                                            this.content_tab.kind(),
+                                            window,
+                                            cx,
+                                        )
+                                    })),
+                            )
                             .child(div().flex_1())
                             .child(
                                 Input::new(&self.content_query)
@@ -337,16 +351,6 @@ impl LauncherApp {
                                 })),
                         )
                     })
-                    .child(
-                        Button::new("instance-browse-online")
-                            .outline()
-                            .icon(IconName::Globe)
-                            .label("下载内容")
-                            .disabled(self.content_operations_pending())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.open_content_browser(this.content_tab.kind(), window, cx)
-                            })),
-                    )
                     .child(
                         Button::new("instance-launch")
                             .outline()
