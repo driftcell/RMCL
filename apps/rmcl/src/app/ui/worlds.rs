@@ -786,6 +786,10 @@ impl LauncherApp {
                                             .outline()
                                             .small()
                                             .label(format!("{}为副本", mode.label()))
+                                            .disabled(unsafe_move)
+                                            .when(unsafe_move, |button| {
+                                                button.tooltip("目标版本更低，不能移动")
+                                            })
                                             .on_click({
                                                 let view = view.clone();
                                                 let source_id = source_id.clone();
