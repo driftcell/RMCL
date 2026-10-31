@@ -13,8 +13,8 @@ use crate::{
     AppError, AuthlibAccountService, AuthlibInjectorService, ContentInstaller, ForgeInstaller,
     InstanceCreator, JavaService, JavaServiceConfig, LoaderCatalog, MICROSOFT_KEYRING_SERVICE,
     MicrosoftAccountService, ModMetadataCache, ModrinthClient, RemoteIconCache, ServerIconCache,
-    ServerStatusClient, SkinCache, SkinLibrary, SkinUrlClient, TaskManager, UpdateClient,
-    VanillaInstaller, VersionCatalog,
+    ServerStatusClient, SkinCache, SkinCatalogClient, SkinLibrary, SkinUrlClient, TaskManager,
+    UpdateClient, VanillaInstaller, VersionCatalog,
 };
 
 /// Shared headless services used by the desktop UI and external protocols.
@@ -35,6 +35,7 @@ pub struct AppContext {
     pub skins: SkinCache,
     pub skin_library: SkinLibrary,
     pub skin_urls: SkinUrlClient,
+    pub skin_catalog: SkinCatalogClient,
     pub servers: ServerStatusClient,
     pub server_icons: ServerIconCache,
     pub remote_icons: RemoteIconCache,
@@ -115,6 +116,7 @@ impl AppContext {
         let skins = SkinCache::new(config_dir.join("cache").join("skins"));
         let skin_library = SkinLibrary::new(config_dir.join("skins").join("library"));
         let skin_urls = SkinUrlClient::new().map_err(AppError::SkinSource)?;
+        let skin_catalog = SkinCatalogClient::new()?;
         let server_icon_cache_dir = config_dir.join("cache").join("servers");
         let remote_icon_cache_dir = config_dir.join("cache").join("remote-icons");
         let remote_gallery_cache_dir = config_dir.join("cache").join("remote-gallery");
@@ -140,6 +142,7 @@ impl AppContext {
             skins,
             skin_library,
             skin_urls,
+            skin_catalog,
             servers: ServerStatusClient::default(),
             server_icons: ServerIconCache::new(server_icon_cache_dir),
             remote_icons: RemoteIconCache::new(remote_icon_cache_dir)?,

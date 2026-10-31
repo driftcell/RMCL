@@ -1,14 +1,14 @@
 # 官方皮肤页与 3D 预览实现记录
 
-日期：2026-10-27
+日期：2026-10-31（初版 2026-10-27）
 
-状态：协议、应用层、3D 渲染器和页面已实现并通过自动化测试；真实换肤和窗口视觉验收待用户手动完成
+状态：协议、应用层、3D 渲染器、LittleSkin 在线目录和页面已实现并通过自动化测试；真实换肤、在线目录点击应用和窗口视觉验收待用户手动完成
 
 ## 范围
 
-- 只支持当前选中的 Microsoft 正版账户；离线账户和第三方 Yggdrasil 不在本期范围。
-- 支持本地 PNG、HTTPS 图片直链、经典/纤细模型、恢复默认皮肤和本地最近使用库。
-- 不解析皮肤站网页，不做站点专用适配；只接受返回 PNG 的图片直链。
+- 官方换肤只支持当前选中的 Microsoft 正版账户；离线账户和第三方 Yggdrasil 可以浏览/预览在线目录，但不能应用官方皮肤。
+- 支持 LittleSkin 在线目录、本地 PNG、HTTPS 图片直链、经典/纤细模型、恢复默认皮肤和本地最近使用库。
+- 不解析皮肤站网页；在线目录只使用 LittleSkin 的 JSON 接口，图片直链只接受返回 PNG 的直链。
 - 披风只展示激活名称，不做切换；不实现皮肤编辑器、市场或 HD 上传。
 
 ## 官方接口调研
@@ -32,11 +32,12 @@
 
 - `rmcl-auth`：新增 `SkinVariant`、`ProfileSkin`、`ProfileCape`，解析全部 owned skins/capes；新增 upload、URL change、reset 方法和可注入端点。
 - `rmcl-app/skin_source`：本地文件和图片直链的统一校验、下载、尺寸/大小检查和上传字节规范化。
+- `rmcl-app/skin_catalog`：LittleSkin 列表/搜索/排序/分页、详情 hash 和纹理准备；只返回可用标准分辨率条目。
 - `rmcl-app/skin_library`：以规范化上传字节 SHA-256 为 ID 的本地皮肤库，保存 PNG、合成头像和 JSON 索引。
 - `rmcl-app/skin_preview`：无 GPUI 依赖的 CPU 软光栅 3D 预览，支持现代/旧版、经典/纤细、HD 缩放和半透明外层。
-- `apps/rmcl/skin_service`：按账户缓存 profile 和纹理，任务跟随 loading 状态，使用请求序号拒绝过期结果。
+- `apps/rmcl/skin_service`：按账户缓存 profile 和纹理，任务跟随 loading 状态，使用请求序号拒绝过期结果；在线目录、缩略图任务和选择态也由这里持有。
 - `apps/rmcl/skin_viewer`：独立 GPUI Entity，只重绘预览区；用 `request_animation_frame` 推进自动旋转。
-- `apps/rmcl/ui/skin`：页面组合、候选皮肤、链接导入、应用/冷却状态和最近使用列表。
+- `apps/rmcl/ui/skin`：页面组合、在线/本机 tab、候选皮肤、链接导入、应用/冷却状态和最近使用列表。
 
 ## 状态取舍
 
@@ -69,3 +70,4 @@
 - 用真实正版账户验证上传、重置、429、图片直链和 owned skins URL 激活。
 - 在 macOS、Windows、Linux 真实窗口检查布局、拖拽、动画、主题和缩放。
 - 根据实际皮肤/材质决定是否增加披风渲染和更高质量的预览。
+- 在线皮肤目录与 GPU 预览的 API 核实、CPU 实测和方案取舍见 [skin_online_catalog_and_gpu.md](skin_online_catalog_and_gpu.md)。
