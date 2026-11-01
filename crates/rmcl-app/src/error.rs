@@ -144,6 +144,8 @@ pub enum AppError {
     SecretStore(#[from] rmcl_platform::SecretStoreError),
     #[error("skin source is unavailable: {0}")]
     SkinSource(#[from] crate::SkinSourceError),
+    #[error("skin catalog is unavailable: {0}")]
+    SkinCatalog(#[from] crate::SkinCatalogError),
     #[error(transparent)]
     RemoteIcon(#[from] crate::RemoteIconError),
 }

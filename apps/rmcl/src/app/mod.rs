@@ -38,7 +38,7 @@ use gpui_kit::{
     *,
 };
 use rmcl_app::{
-    AppError, AuthlibAccountServiceError, ConflictPolicy, ContentGraphInstallRequest,
+    AppError, AuthlibAccountServiceError, CatalogSkin, ConflictPolicy, ContentGraphInstallRequest,
     ContentInspection, ContentInstallPhase, ContentInstallPreflight, ContentKind, ContentLibrary,
     ContentPreflightItem, ContentPreflightStatus, ContentSource, CreateInstanceRequest,
     FeaturedServer, GameLaunchRequest, InstallPhase, InstalledVersion, InstanceCreatePhase,
@@ -46,14 +46,15 @@ use rmcl_app::{
     LocalContent, MicrosoftAccountServiceError, RemoteProject, RemoteSearchQuery, RemoteSort,
     RemoteVersion, RepositoryPath, ResolvedAuthlibAccount, ResolvedMicrosoftAccount,
     ResourcePackOrder, ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient,
-    ShaderLoader, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress, TaskSnapshot, TaskStatus,
-    TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease, VanillaInstallRequest, VersionManifest,
-    VersionSource, VersionSummary, WorldCopyProgress, WorldId, delete_installed_version,
-    delete_instance_content, discover_installed_versions, featured_servers,
-    import_instance_content, migrate_instance_to_isolated, move_instance_resource_pack,
-    preflight_content_install, recommended_version, remove_server_bookmark, rename_instance,
-    scan_and_inspect_instance_content, scan_installed_mods, set_instance_content_enabled,
-    set_instance_java, set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
+    ShaderLoader, SkinCatalogSort, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress,
+    TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease,
+    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary, WorldCopyProgress,
+    WorldId, delete_installed_version, delete_instance_content, discover_installed_versions,
+    featured_servers, import_instance_content, migrate_instance_to_isolated,
+    move_instance_resource_pack, preflight_content_install, recommended_version,
+    remove_server_bookmark, rename_instance, scan_and_inspect_instance_content,
+    scan_installed_mods, set_instance_content_enabled, set_instance_java,
+    set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
     upsert_server_bookmark,
 };
 use rmcl_auth::{
@@ -98,6 +99,35 @@ const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
 const DOWNLOAD_SOURCE_ITEMS: [&str; 3] = ["自动", "官方源", "国内镜像"];
 const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SERVER_PING_CONCURRENCY: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SkinTab {
+    #[default]
+    Online,
+    Local,
+}
+
+impl SkinTab {
+    const ALL: [Self; 2] = [Self::Online, Self::Local];
+
+    fn index(self) -> usize {
+        match self {
+            Self::Online => 0,
+            Self::Local => 1,
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self::ALL.get(index).copied().unwrap_or(Self::Online)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Online => "在线皮肤",
+            Self::Local => "本机与导入",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -152,7 +182,7 @@ impl Page {
             Self::Agent => "用自然语言管理实例、内容和任务。",
             Self::Versions => "管理已安装的游戏实例与版本。",
             Self::Worlds => "管理当前实例的地图存档。",
-            Self::Skin => "查看当前账户的皮肤；外置登录由认证服务器和 authlib-injector 管理。",
+            Self::Skin => "浏览在线皮肤库，实时预览；正版账户可一键更换。",
             Self::Servers => "",
             Self::Instance => "管理该实例的 Mod、资源包和光影。",
             Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
@@ -557,13 +587,18 @@ pub struct LauncherApp {
     editing_account: Option<String>,
     skin_service: Entity<SkinService>,
     skin_viewer: Entity<SkinViewer>,
+    skin_tab: SkinTab,
+    skin_catalog_query: Entity<InputState>,
+    skin_catalog_sort: SkinCatalogSort,
     skin_editor: SkinEditor,
     skin_link: LinkImport,
     skin_apply: ApplyState,
     pending_skin_profile: Option<MicrosoftAccount>,
+    pending_catalog_skin: Option<CatalogSkin>,
     _skin_service_observe: Subscription,
     _skin_service_events: Subscription,
     _skin_link_subscription: Subscription,
+    _skin_catalog_query_subscription: Subscription,
     version_select: Entity<SelectState<SearchableVec<String>>>,
     theme_select: Entity<SelectState<SearchableVec<String>>>,
     accent_select: Entity<SelectState<SearchableVec<String>>>,
@@ -793,6 +828,8 @@ impl LauncherApp {
             cx.new(|cx| InputState::new(window, cx).placeholder("密码").masked(true));
         let skin_link_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
+        let skin_catalog_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("搜索 LittleSkin 皮肤"));
 
         let skin_service = cx.new(|cx| SkinService::new(services.clone(), cx));
         let skin_viewer = cx.new(|cx| SkinViewer::new(services.runtime.handle().clone(), cx));
@@ -964,8 +1001,14 @@ impl LauncherApp {
         let skin_service_observe = cx.observe(&skin_service, |_, _, cx| cx.notify());
         let skin_service_events =
             cx.subscribe(&skin_service, |this, _, event: &SkinServiceEvent, cx| {
-                let SkinServiceEvent::ProfileLoaded(loaded) = event;
-                this.pending_skin_profile = Some(loaded.profile.clone());
+                match event {
+                    SkinServiceEvent::ProfileLoaded(loaded) => {
+                        this.pending_skin_profile = Some(loaded.profile.clone());
+                    }
+                    SkinServiceEvent::CatalogSkinLoaded(loaded) => {
+                        this.pending_catalog_skin = Some(loaded.clone());
+                    }
+                }
                 cx.notify();
             });
         let skin_link_subscription =
@@ -974,6 +1017,12 @@ impl LauncherApp {
                     if matches!(this.skin_link.state, LinkImportState::Failed(_)) {
                         this.skin_link.state = LinkImportState::Idle;
                     }
+                    cx.notify();
+                }
+            });
+        let skin_catalog_query_subscription =
+            cx.subscribe(&skin_catalog_query, |_this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
                     cx.notify();
                 }
             });
@@ -1080,13 +1129,18 @@ impl LauncherApp {
             editing_account: None,
             skin_service,
             skin_viewer,
+            skin_tab: SkinTab::default(),
+            skin_catalog_query,
+            skin_catalog_sort: SkinCatalogSort::default(),
             skin_editor: SkinEditor::default(),
             skin_link: LinkImport::new(skin_link_input),
             skin_apply: ApplyState::Idle,
             pending_skin_profile: None,
+            pending_catalog_skin: None,
             _skin_service_observe: skin_service_observe,
             _skin_service_events: skin_service_events,
             _skin_link_subscription: skin_link_subscription,
+            _skin_catalog_query_subscription: skin_catalog_query_subscription,
             version_select,
             theme_select,
             accent_select,
@@ -8040,17 +8094,19 @@ fn restore_macos_windows() {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{io::Cursor, sync::Arc};
 
     use gpui::{
         ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, WindowOptions, point, px,
     };
     use gpui_kit::{AppContext as _, component::WindowExt as _};
-    use rmcl_app::{ContentKind, VersionManifest};
+    use image::{Rgba, RgbaImage};
+    use rmcl_app::{ContentKind, SkinCatalogItem, VersionManifest, prepare_skin};
+    use rmcl_auth::SkinVariant;
     use rmcl_store::{ConfigStore, LauncherConfig};
     use tempfile::TempDir;
 
-    use super::{ContentTab, LauncherApp, Page, shortcuts};
+    use super::{ContentTab, LauncherApp, Page, SkinTab, shortcuts};
     use crate::services::{Bootstrap, Services};
 
     #[test]
@@ -8105,11 +8161,17 @@ mod tests {
             assert_eq!(menus[2].items.len(), Page::NAVIGATION.len());
         });
         let mut cx = VisualTestContext::from_window(handle, cx);
-        app.update_in(&mut cx, |app, _, _| {
+        app.update_in(&mut cx, |app, _, cx| {
             app.catalog.manifest = Some(Arc::new(VersionManifest {
                 latest: None,
                 versions: Vec::new(),
             }));
+            app.skin_service.update(cx, |service, _| {
+                // Navigating through the skin shortcut must not start real
+                // catalog or library I/O inside the deterministic scheduler.
+                service.set_catalog_empty_page_for_test(false);
+                service.set_recent_for_test(Vec::new());
+            });
         });
 
         cx.dispatch_action(shortcuts::SelectPage {
@@ -8264,5 +8326,135 @@ mod tests {
                 .is_scrolled_up()
         });
         assert!(!scrolled_up, "wheel stopped away from the tail");
+    }
+
+    #[gpui::test]
+    fn skin_page_renders_online_library_surface(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let temporary = TempDir::new().unwrap();
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            ..LauncherConfig::default()
+        };
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
+        let services = Services::new(&config, store.clone()).unwrap();
+        let bootstrap = Bootstrap {
+            config,
+            config_store: store,
+            config_warning: None,
+            save_on_start: false,
+        };
+        let (handle, app) = cx
+            .update(|cx| {
+                gpui_kit::open_window(
+                    WindowOptions {
+                        window_bounds: Some(gpui_kit::WindowBounds::Windowed(gpui_kit::Bounds {
+                            origin: Default::default(),
+                            size: gpui_kit::size(px(1180.), px(780.)),
+                        })),
+                        focus: false,
+                        show: false,
+                        ..Default::default()
+                    },
+                    cx,
+                    |window, cx| cx.new(|cx| LauncherApp::new(window, cx, services, bootstrap)),
+                )
+            })
+            .unwrap();
+        let mut cx = VisualTestContext::from_window(handle, cx);
+
+        let mut png = Vec::new();
+        RgbaImage::from_pixel(64, 64, Rgba([90, 120, 180, 255]))
+            .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let prepared = prepare_skin(&png, "test.png", None).unwrap();
+        let thumbnail = super::ui::common::render_rgba_image(prepared.texture().image().clone());
+        let items = vec![
+            SkinCatalogItem::new(
+                "littleskin:1",
+                1,
+                "测试皮肤",
+                Some("tester".to_owned()),
+                SkinVariant::Classic,
+                42,
+                "https://littleskin.cn/skinlib/show/1",
+            ),
+            SkinCatalogItem::new(
+                "littleskin:2",
+                2,
+                "第二张",
+                None,
+                SkinVariant::Slim,
+                7,
+                "https://littleskin.cn/skinlib/show/2",
+            ),
+        ];
+        app.update_in(&mut cx, |app, _, cx| {
+            app.page = Page::Skin;
+            app.skin_tab = SkinTab::Online;
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_for_test(items, thumbnail, prepared);
+            });
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+
+        let card = cx
+            .debug_bounds("skin-library-card")
+            .expect("skin library card was not laid out");
+        assert!(card.size.width > px(300.));
+        assert!(card.size.height > px(400.));
+        let first = cx
+            .debug_bounds("skin-catalog-card-littleskin:1")
+            .expect("first online skin card was not laid out");
+        let second = cx
+            .debug_bounds("skin-catalog-card-littleskin:2")
+            .expect("second online skin card was not laid out");
+        assert!(first.size.width > px(120.));
+        assert!(first.size.height > px(180.));
+        assert_eq!(first.size.height, second.size.height);
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_empty_page_for_test(true);
+            });
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        assert!(
+            cx.debug_bounds("skin-catalog-more-empty").is_some(),
+            "a filtered empty page should still offer the next page"
+        );
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_empty_error_for_test(0, true, "网络错误");
+            });
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        assert!(
+            cx.debug_bounds("skin-catalog-error-retry").is_some(),
+            "an empty error state should offer a retry"
+        );
+        assert!(
+            cx.debug_bounds("skin-catalog-more-empty").is_none(),
+            "an error must not be presented as a filtered page"
+        );
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_failed_for_test("皮肤不存在");
+                assert!(!service.catalog().is_selected("littleskin:42"));
+                assert_eq!(service.catalog().selection_error(), Some("皮肤不存在"));
+            });
+        });
     }
 }

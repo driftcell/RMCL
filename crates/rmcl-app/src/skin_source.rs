@@ -67,6 +67,18 @@ impl PreparedSkin {
     pub fn file_name(&self) -> &str {
         &self.file_name
     }
+
+    /// Replaces the display file name without changing the upload bytes.
+    pub fn with_file_name(mut self, file_name: impl Into<String>) -> Self {
+        self.file_name = normalized_file_name(&file_name.into());
+        self
+    }
+
+    /// Replaces the source attribution without changing the upload bytes.
+    pub fn with_source_url(mut self, source_url: Option<String>) -> Self {
+        self.source_url = source_url;
+        self
+    }
 }
 
 /// Validates a PNG and normalizes it for the official upload endpoint.
@@ -286,7 +298,7 @@ impl SkinUrlClient {
     }
 
     #[cfg(test)]
-    fn for_test() -> Self {
+    pub(crate) fn for_test() -> Self {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(5))

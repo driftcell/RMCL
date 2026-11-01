@@ -12,8 +12,12 @@ use std::{
 
 use gpui_kit::*;
 use image::{Rgba, RgbaImage};
-use rmcl_app::{SkinError, SkinLibraryEntry, SkinTexture};
+use rmcl_app::{
+    CatalogSkin, SkinCatalogError, SkinCatalogItem, SkinCatalogSort, SkinError, SkinLibraryEntry,
+    SkinPreviewRenderer, SkinTexture,
+};
 use rmcl_auth::{MicrosoftAccount, SkinVariant};
+use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -152,8 +156,127 @@ impl EquippedSkinState {
     }
 }
 
+/// A downloaded catalog skin ready to become the current preview candidate.
+#[derive(Debug, Clone)]
 pub enum SkinServiceEvent {
     ProfileLoaded(LoadedProfile),
+    CatalogSkinLoaded(CatalogSkin),
+}
+
+/// The rendered preview for one online catalog card.
+pub enum CatalogThumbState {
+    Loading,
+    Ready {
+        image: Arc<RenderImage>,
+        skin: rmcl_app::PreparedSkin,
+    },
+    Failed,
+}
+
+/// The texture download for the catalog card the user selected.
+enum CatalogSelectionState {
+    Idle,
+    Loading {
+        item_id: String,
+        _task: Task<()>,
+    },
+    Ready {
+        item_id: String,
+        skin: rmcl_app::PreparedSkin,
+    },
+}
+
+/// Online catalog results and their local 3D thumbnails.
+pub struct SkinCatalogState {
+    items: Vec<SkinCatalogItem>,
+    thumbnails: HashMap<String, CatalogThumbState>,
+    page: u32,
+    has_more: bool,
+    loading: bool,
+    error: Option<String>,
+    query: String,
+    sort: SkinCatalogSort,
+    selection: CatalogSelectionState,
+    selection_error: Option<String>,
+    thumbnail_limiter: Arc<Semaphore>,
+    load_cancel: CancellationToken,
+    thumbnail_cancel: CancellationToken,
+    selection_cancel: CancellationToken,
+    _load_task: Option<Task<()>>,
+    thumbnail_tasks: Vec<Task<()>>,
+}
+
+impl Default for SkinCatalogState {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            thumbnails: HashMap::new(),
+            page: 0,
+            has_more: true,
+            loading: false,
+            error: None,
+            query: String::new(),
+            sort: SkinCatalogSort::default(),
+            selection: CatalogSelectionState::Idle,
+            selection_error: None,
+            thumbnail_limiter: Arc::new(Semaphore::new(4)),
+            load_cancel: CancellationToken::new(),
+            thumbnail_cancel: CancellationToken::new(),
+            selection_cancel: CancellationToken::new(),
+            _load_task: None,
+            thumbnail_tasks: Vec::new(),
+        }
+    }
+}
+
+impl SkinCatalogState {
+    pub fn items(&self) -> &[SkinCatalogItem] {
+        &self.items
+    }
+
+    pub fn thumbnail(&self, item_id: &str) -> Option<&CatalogThumbState> {
+        self.thumbnails.get(item_id)
+    }
+
+    pub fn page(&self) -> u32 {
+        self.page
+    }
+
+    pub fn has_more(&self) -> bool {
+        self.has_more
+    }
+
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    /// The item whose preview is loading or ready.
+    pub fn selected_item(&self) -> Option<&str> {
+        match &self.selection {
+            CatalogSelectionState::Loading { item_id, .. }
+            | CatalogSelectionState::Ready { item_id, .. } => Some(item_id),
+            CatalogSelectionState::Idle => None,
+        }
+    }
+
+    pub fn is_selected(&self, item_id: &str) -> bool {
+        self.selected_item() == Some(item_id)
+    }
+
+    pub fn is_selecting(&self, item_id: &str) -> bool {
+        matches!(
+            &self.selection,
+            CatalogSelectionState::Loading { item_id: current, .. } if current == item_id
+        )
+    }
+
+    pub fn selection_error(&self) -> Option<&str> {
+        self.selection_error.as_deref()
+    }
 }
 
 impl EventEmitter<SkinServiceEvent> for SkinService {}
@@ -164,8 +287,10 @@ pub struct SkinService {
     profiles: HashMap<Uuid, ProfileState>,
     textures: HashMap<Uuid, EquippedSkinState>,
     recent: Loadable<Vec<SkinLibraryEntry>>,
+    catalog: SkinCatalogState,
     next_request: u64,
     recent_request: u64,
+    catalog_request: u64,
 }
 
 impl SkinService {
@@ -175,9 +300,227 @@ impl SkinService {
             profiles: HashMap::new(),
             textures: HashMap::new(),
             recent: Loadable::NotLoaded,
+            catalog: SkinCatalogState::default(),
             next_request: 0,
             recent_request: 0,
+            catalog_request: 0,
         }
+    }
+
+    pub fn catalog(&self) -> &SkinCatalogState {
+        &self.catalog
+    }
+
+    /// Loads the first catalog page once. A failed empty page can be retried by
+    /// entering the page again; explicit searches always call [`Self::reload_catalog`].
+    pub fn ensure_catalog(&mut self, cx: &mut Context<Self>) {
+        if !self.catalog.loading && self.catalog.page == 0 {
+            let query = self.catalog.query.clone();
+            let sort = self.catalog.sort;
+            self.reload_catalog(query, sort, cx);
+        }
+    }
+
+    /// Replaces the results with a new query and sort order.
+    pub fn reload_catalog(&mut self, query: String, sort: SkinCatalogSort, cx: &mut Context<Self>) {
+        self.catalog_request = self.catalog_request.wrapping_add(1);
+        self.catalog.query = query;
+        self.catalog.sort = sort;
+        self.catalog.items.clear();
+        self.catalog.thumbnails.clear();
+        self.catalog.thumbnail_tasks.clear();
+        restart_cancellation(&mut self.catalog.thumbnail_cancel);
+        restart_cancellation(&mut self.catalog.selection_cancel);
+        self.catalog.page = 0;
+        self.catalog.has_more = true;
+        self.catalog.error = None;
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
+        self.start_catalog_page(1, false, cx);
+    }
+
+    /// Appends the next catalog page.
+    pub fn load_more_catalog(&mut self, cx: &mut Context<Self>) {
+        if self.catalog.loading || !self.catalog.has_more {
+            return;
+        }
+        self.start_catalog_page(self.catalog.page.saturating_add(1).max(1), true, cx);
+    }
+
+    /// Starts or reuses the texture download for one catalog card.
+    pub fn select_catalog_item(&mut self, item: SkinCatalogItem, cx: &mut Context<Self>) {
+        if let Some(CatalogThumbState::Ready { skin, .. }) = self.catalog.thumbnail(&item.id) {
+            let skin = skin.clone();
+            restart_cancellation(&mut self.catalog.selection_cancel);
+            self.catalog.selection = CatalogSelectionState::Ready {
+                item_id: item.id.clone(),
+                skin: skin.clone(),
+            };
+            self.catalog.selection_error = None;
+            cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
+                item, skin,
+            )));
+            cx.notify();
+            return;
+        }
+        if let CatalogSelectionState::Ready {
+            item_id,
+            skin: previous,
+        } = &self.catalog.selection
+            && item_id == &item.id
+        {
+            let skin = previous.clone();
+            restart_cancellation(&mut self.catalog.selection_cancel);
+            self.catalog.selection_error = None;
+            cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
+                item,
+                skin.clone(),
+            )));
+            cx.notify();
+            return;
+        }
+        if self.catalog.is_selecting(&item.id) {
+            return;
+        }
+
+        let item_id = item.id.clone();
+        let item_id_for_task = item_id.clone();
+        let previous = match &self.catalog.selection {
+            CatalogSelectionState::Ready { item_id, skin } => Some((item_id.clone(), skin.clone())),
+            _ => None,
+        };
+        let catalog = self.services.skin_catalog.clone();
+        let urls = self.services.skin_urls.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let cancellation = restart_cancellation(&mut self.catalog.selection_cancel);
+        self.catalog.selection_error = None;
+        let task = cx.spawn(async move |this, cx| {
+            let item_for_task = item.clone();
+            let result = runtime
+                .spawn(async move { catalog.prepare(&item_for_task, &urls, &cancellation).await })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if !this.catalog.is_selecting(&item_id_for_task) {
+                    return;
+                }
+                match result {
+                    Ok(Ok(skin)) => {
+                        this.catalog.selection = CatalogSelectionState::Ready {
+                            item_id: item_id_for_task.clone(),
+                            skin: skin.clone(),
+                        };
+                        this.catalog.selection_error = None;
+                        cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
+                            item, skin,
+                        )));
+                    }
+                    Ok(Err(error)) => {
+                        this.catalog.selection_error = Some(describe_catalog_error(&error));
+                        this.catalog.selection = restore_previous_selection(previous.clone());
+                    }
+                    Err(error) => {
+                        this.catalog.selection_error = Some(format!("皮肤目录任务失败: {error}"));
+                        this.catalog.selection = restore_previous_selection(previous.clone());
+                    }
+                }
+                cx.notify();
+            });
+        });
+        self.catalog.selection = CatalogSelectionState::Loading {
+            item_id,
+            _task: task,
+        };
+        cx.notify();
+    }
+
+    pub fn clear_catalog_selection(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.catalog.selection, CatalogSelectionState::Idle)
+            || self.catalog.selection_error.is_some()
+        {
+            restart_cancellation(&mut self.catalog.selection_cancel);
+            self.catalog.selection = CatalogSelectionState::Idle;
+            self.catalog.selection_error = None;
+            cx.notify();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_for_test(
+        &mut self,
+        items: Vec<SkinCatalogItem>,
+        image: Arc<RenderImage>,
+        skin: rmcl_app::PreparedSkin,
+    ) {
+        self.catalog.items = items.clone();
+        self.catalog.page = 1;
+        self.catalog.has_more = false;
+        self.catalog.loading = false;
+        self.catalog.error = None;
+        self.catalog.selection_error = None;
+        self.catalog.thumbnails = items
+            .into_iter()
+            .map(|item| {
+                (
+                    item.id,
+                    CatalogThumbState::Ready {
+                        image: image.clone(),
+                        skin: skin.clone(),
+                    },
+                )
+            })
+            .collect();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_empty_page_for_test(&mut self, has_more: bool) {
+        self.catalog.items.clear();
+        self.catalog.thumbnails.clear();
+        self.catalog.page = 1;
+        self.catalog.has_more = has_more;
+        self.catalog.loading = false;
+        self.catalog.error = None;
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_empty_error_for_test(
+        &mut self,
+        page: u32,
+        has_more: bool,
+        error: &str,
+    ) {
+        self.catalog.items.clear();
+        self.catalog.thumbnails.clear();
+        self.catalog.page = page;
+        self.catalog.has_more = has_more;
+        self.catalog.loading = false;
+        self.catalog.error = Some(error.to_owned());
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_failed_for_test(&mut self, error: &str) {
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = Some(error.to_owned());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_recent_for_test(&mut self, entries: Vec<SkinLibraryEntry>) {
+        self.recent = Loadable::Ready(entries);
+    }
+
+    /// Removes rendered thumbnails before a search so the caller can release
+    /// their GPUI atlas entries with `Window::drop_image`.
+    pub fn take_catalog_thumbnails(&mut self) -> Vec<Arc<RenderImage>> {
+        let mut images = Vec::new();
+        for state in self.catalog.thumbnails.drain() {
+            if let (_, CatalogThumbState::Ready { image, .. }) = state {
+                images.push(image);
+            }
+        }
+        images
     }
 
     pub fn profile(&self, account: Uuid) -> Option<&LoadedProfile> {
@@ -447,6 +790,113 @@ impl SkinService {
         cx.notify();
     }
 
+    fn start_catalog_page(&mut self, page: u32, append: bool, cx: &mut Context<Self>) {
+        let request = self.catalog_request;
+        let query = self.catalog.query.clone();
+        let sort = self.catalog.sort;
+        let catalog = self.services.skin_catalog.clone();
+        let runtime = self.services.runtime.handle().clone();
+        let cancellation = restart_cancellation(&mut self.catalog.load_cancel);
+        self.catalog.loading = true;
+        self.catalog.error = None;
+        cx.notify();
+
+        let task = cx.spawn(async move |this, cx| {
+            let result = runtime
+                .spawn(async move { catalog.list(&query, sort, page, &cancellation).await })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.catalog_request != request {
+                    return;
+                }
+                this.catalog.loading = false;
+                match result {
+                    Ok(Ok(page)) => {
+                        let new_items = if append {
+                            this.catalog.items.extend(page.items.iter().cloned());
+                            page.items
+                        } else {
+                            this.catalog.items = page.items.clone();
+                            page.items
+                        };
+                        this.catalog.page = page.page;
+                        this.catalog.has_more = page.has_more;
+                        this.start_catalog_thumbnails(new_items, cx);
+                    }
+                    Ok(Err(error)) => {
+                        this.catalog.error = Some(describe_catalog_error(&error));
+                    }
+                    Err(error) => {
+                        this.catalog.error = Some(format!("皮肤目录任务失败: {error}"));
+                    }
+                }
+                cx.notify();
+            });
+        });
+        self.catalog._load_task = Some(task);
+    }
+
+    fn start_catalog_thumbnails(&mut self, items: Vec<SkinCatalogItem>, cx: &mut Context<Self>) {
+        let semaphore = self.catalog.thumbnail_limiter.clone();
+        let cancellation = self.catalog.thumbnail_cancel.clone();
+        let catalog = self.services.skin_catalog.clone();
+        let urls = self.services.skin_urls.clone();
+        let runtime = self.services.runtime.handle().clone();
+        for item in items {
+            if self.catalog.thumbnails.contains_key(&item.id) {
+                continue;
+            }
+            self.catalog
+                .thumbnails
+                .insert(item.id.clone(), CatalogThumbState::Loading);
+            let item_id = item.id.clone();
+            let item_for_task = item.clone();
+            let semaphore = semaphore.clone();
+            let cancellation = cancellation.clone();
+            let catalog = catalog.clone();
+            let urls = urls.clone();
+            let runtime = runtime.clone();
+            let task = cx.spawn(async move |this, cx| {
+                let _permit = semaphore.acquire_owned().await.ok();
+                if cancellation.is_cancelled() {
+                    return;
+                }
+                let result = runtime
+                    .spawn(async move {
+                        let skin = catalog
+                            .prepare(&item_for_task, &urls, &cancellation)
+                            .await?;
+                        let texture = skin.texture().clone();
+                        let variant = item_for_task.variant;
+                        let image = tokio::task::spawn_blocking(move || {
+                            render_catalog_thumbnail(&texture, variant)
+                        })
+                        .await
+                        .map_err(|error| SkinCatalogError::Blocking(error.to_string()))?;
+                        Ok::<_, SkinCatalogError>((skin, image))
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if !matches!(
+                        this.catalog.thumbnails.get(&item_id),
+                        Some(CatalogThumbState::Loading)
+                    ) {
+                        return;
+                    }
+                    this.catalog.thumbnails.insert(
+                        item_id,
+                        match result {
+                            Ok(Ok((skin, image))) => CatalogThumbState::Ready { image, skin },
+                            _ => CatalogThumbState::Failed,
+                        },
+                    );
+                    cx.notify();
+                });
+            });
+            self.catalog.thumbnail_tasks.push(task);
+        }
+    }
+
     fn start_recent_load(&mut self, cx: &mut Context<Self>) {
         let previous = self.recent.value().cloned();
         let previous_for_state = previous.clone();
@@ -482,6 +932,25 @@ impl SkinService {
     }
 }
 
+/// Cancels in-flight inner runtime work before the next request replaces it.
+///
+/// Dropping the GPUI task cancels the outer future, but the `tokio` task spawned
+/// inside it would otherwise keep running and downloading detached.
+fn restart_cancellation(token: &mut CancellationToken) -> CancellationToken {
+    token.cancel();
+    *token = CancellationToken::new();
+    token.clone()
+}
+
+fn restore_previous_selection(
+    previous: Option<(String, rmcl_app::PreparedSkin)>,
+) -> CatalogSelectionState {
+    match previous {
+        Some((item_id, skin)) => CatalogSelectionState::Ready { item_id, skin },
+        None => CatalogSelectionState::Idle,
+    }
+}
+
 fn describe_profile_error(error: &rmcl_app::MicrosoftAccountServiceError) -> String {
     use rmcl_app::MicrosoftAccountServiceError;
     use rmcl_auth::MicrosoftAuthError;
@@ -497,6 +966,40 @@ fn describe_profile_error(error: &rmcl_app::MicrosoftAccountServiceError) -> Str
             MicrosoftAuthError::Http { .. } | MicrosoftAuthError::HttpStatus { .. },
         ) => "无法连接 Minecraft 服务，请稍后重试。".to_owned(),
         other => other.to_string(),
+    }
+}
+
+fn render_catalog_thumbnail(texture: &SkinTexture, variant: SkinVariant) -> Arc<RenderImage> {
+    let renderer = SkinPreviewRenderer::new(180, 240);
+    crate::app::ui::common::render_rgba_image(renderer.render(texture, variant, -0.45, 0.12, 0.0))
+}
+
+fn describe_catalog_error(error: &SkinCatalogError) -> String {
+    match error {
+        SkinCatalogError::HttpStatus { status } if status.as_u16() == 429 => {
+            "皮肤站请求过于频繁，请稍后再试。".to_owned()
+        }
+        SkinCatalogError::HttpStatus { status } => {
+            format!("皮肤站返回 HTTP {status}，请稍后再试。")
+        }
+        SkinCatalogError::Http(_) | SkinCatalogError::Cancelled => {
+            "无法连接皮肤站，请检查网络。".to_owned()
+        }
+        SkinCatalogError::InvalidResponse(_) | SkinCatalogError::InvalidTextureHash => {
+            "皮肤站返回了无法识别的数据。".to_owned()
+        }
+        SkinCatalogError::ResponseTooLarge { .. } => "皮肤站响应过大。".to_owned(),
+        SkinCatalogError::Source(error) => match error {
+            rmcl_app::SkinSourceError::UnsupportedUploadDimensions { width, height } => {
+                format!("这张皮肤是 {width}×{height}，Java 版只能上传 64×64 或 64×32。")
+            }
+            rmcl_app::SkinSourceError::UploadTooLarge => {
+                "这张皮肤超过官方 24 KiB 上传限制。".to_owned()
+            }
+            _ => "皮肤纹理下载或校验失败。".to_owned(),
+        },
+        SkinCatalogError::InvalidUrl(_) => "皮肤站地址无效。".to_owned(),
+        SkinCatalogError::Blocking(_) => "皮肤预览渲染失败。".to_owned(),
     }
 }
 

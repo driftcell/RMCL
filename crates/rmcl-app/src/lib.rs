@@ -19,6 +19,7 @@ mod model;
 mod remote_icons;
 mod servers;
 mod services;
+mod skin_catalog;
 mod skin_library;
 mod skin_preview;
 mod skin_source;
@@ -105,6 +106,10 @@ pub use servers::{
     remove_server_bookmark, upsert_server_bookmark,
 };
 pub use services::AppContext;
+pub use skin_catalog::{
+    CatalogSkin, LITTLESKIN_BASE_URL, SkinCatalogClient, SkinCatalogError, SkinCatalogItem,
+    SkinCatalogPage, SkinCatalogSort,
+};
 pub use skin_library::{SkinLibrary, SkinLibraryEntry, SkinLibraryError};
 pub use skin_preview::SkinPreviewRenderer;
 pub use skin_source::{

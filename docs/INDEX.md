@@ -69,6 +69,7 @@
 - [Microsoft 登录与正版皮肤实现记录](../notes/development/microsoft_login.md)
 - [authlib-injector 外置登录实现记录](../notes/development/authlib_injector.md)
 - [官方皮肤页与 3D 预览实现记录](../notes/development/skin_page.md)
+- [在线皮肤目录与 GPU 预览调研](../notes/development/skin_online_catalog_and_gpu.md)
 - [实例隔离方案取舍](../notes/development/instance_isolation.md)
 - [世界存档跨实例迁移与共享调研](../notes/development/world_migration_and_sharing.md)
 - [本地内容管理取舍](../notes/development/local_content_management.md)

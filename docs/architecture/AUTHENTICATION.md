@@ -1,8 +1,8 @@
 # 正版账号、令牌与皮肤
 
-状态：Microsoft 设备代码登录、令牌刷新、账户删除、官方皮肤头像、皮肤页、PNG/图片直链换肤、恢复默认皮肤、本地皮肤库和 MCP 本地库/正版工作流已实现；authlib-injector 外置登录已实现
+状态：Microsoft 设备代码登录、令牌刷新、账户删除、官方皮肤头像、皮肤页、LittleSkin 在线皮肤目录、本地 3D 缩略图、PNG/图片直链换肤、恢复默认皮肤、本地皮肤库和 MCP 本地库/正版工作流已实现；authlib-injector 外置登录已实现
 
-日期：2026-10-29
+日期：2026-11-01
 
 ## 边界
 
@@ -11,7 +11,7 @@
 - `rmcl-auth`：无 UI 的 Microsoft/Xbox/Minecraft 协议、设备代码流程、令牌刷新、账户身份与错误类型。
 - `rmcl-platform`：操作系统凭据存储的通用 `SecretStore` 接口和 Keychain / Credential Manager / Secret Service 适配。
 - `rmcl-store`：`config.toml` 中的账户元数据，不保存任何令牌。
-- `rmcl-app`：登录与启动所需的用例编排、凭据读写、皮肤下载与头像缓存、皮肤来源校验、本地皮肤库和 CPU 角色预览渲染。
+- `rmcl-app`：登录与启动所需的用例编排、凭据读写、皮肤下载与头像缓存、皮肤来源校验、LittleSkin 皮肤目录、本地皮肤库和 CPU 角色预览渲染。
 - `rmcl-launch`：消费已解析的 `LaunchAccount`，只负责生成启动参数和进程。
 - `apps/rmcl`：GPUI 对话框、账户列表、删除确认、头像展示、皮肤页、共享皮肤资料缓存和预览视图。
 
@@ -96,7 +96,7 @@ Minecraft profile 的激活皮肤 URL 保存到 `microsoft_accounts[].skin_url`�
 
 ## 皮肤页与更换
 
-侧栏“皮肤”页只对当前选中的正版账户生效；离线账户显示要求登录正版账户的空状态。页面资料按账户缓存在应用层 `SkinService` 中，离开页面再回来不会重复请求；手动刷新会保留旧资料直到新请求完成。
+侧栏“皮肤”页面对所有已选账户开放浏览和预览；官方换肤只对当前选中的正版账户生效。离线账户和外置登录账户会看到限制说明，不能上传官方皮肤。页面资料按账户缓存在应用层 `SkinService` 中，离开页面再回来不会重复请求；手动刷新会保留旧资料直到新请求完成。
 
 profile 解析现在保留：
 
@@ -128,6 +128,22 @@ PNG 与链接共用同一条候选流程：
 - MCP `skins_profile`、`skins_apply` 和 `skins_reset` 复用 `MicrosoftAccountService` 的资料刷新、multipart 上传和 reset。apply 可选择本地库 ID 或文件/HTTPS 来源并指定 `classic`/`slim`，成功后写入本地库；远程成功而本地写入失败时返回部分成功的 `conflict`，避免盲目重试。响应不包含令牌，HTTP 写操作仍需显式 `read_write`。
 
 3D 预览由 `rmcl-app` 的 CPU 软光栅渲染器生成，支持现代 64×64、旧版 64×32、经典/纤细手臂和 HD 纹理缩放。渲染器不依赖 GPUI；桌面层把渲染放到应用层 Tokio runtime 上异步执行，只显示最新完成的 RGBA 帧，因此拖动和自动旋转不会阻塞 UI 线程。
+
+## 在线皮肤目录
+
+皮肤页的“在线皮肤”tab 默认接入 LittleSkin 皮肤库。它是站点适配，不是 Mojang 官方目录：
+
+- 列表：`GET https://littleskin.cn/skinlib/list?filter=skin&sort=likes|time&page=N&keyword=…`，请求带 `Accept: application/json`。
+- 详情：`GET https://littleskin.cn/skinlib/info/{tid}` 取得纹理 SHA-256；原图由 `GET https://littleskin.cn/textures/{hash}` 返回 PNG。
+- 列表只保留 `public`、`type` 为 `steve`/`alex` 且非 HD 的条目；HD 皮肤不能上传到官方 Java 版，因此不进入可应用列表。
+- 每个条目的纹理由 RMCL 下载、经过现有 `SkinUrlClient` 校验后用 CPU 渲染器生成 180×240 的本地 3D 缩略图，不热链站点预览图。
+- 支持名称搜索、热门/最新排序和“加载更多”分页；换关键词或排序会取消旧列表、缩略图和选择请求，丢弃旧缩略图并释放 GPUI atlas 条目。
+- 筛选后当前页没有可用标准皮肤时，空状态仍提供“加载下一页”，避免整页 HD 或非公开条目阻断后续结果。
+- 进入皮肤页时即使未选择账户也会加载目录和本地最近使用；离线账户和外置登录账户可以浏览/预览，但不能应用官方皮肤。
+- 点击卡片只选择候选皮肤；底部“确认更换皮肤”才调用现有 Microsoft 上传链路。下载失败不会把该卡片标记为已选中，并会恢复上一个成功载入皮肤的选中态和底部候选。
+- 不解析皮肤站 HTML，不接入任意自定义站点，不把第三方皮肤上传到官方服务之外的目标；界面显示 LittleSkin 来源和原文链接。
+
+该接口是 LittleSkin 前端使用的 JSON 路由，不是 Blessing Skin 的稳定公开 API。站点改版、限流或单条皮肤被删除时，目录会显示可恢复错误；真实站点验收不等同于自动化 mock。
 
 ## 错误与界面语义
 
@@ -179,7 +195,8 @@ skin_url = "http://textures.minecraft.net/texture/…"
 ## 当前不包含
 
 - 自有 Azure 应用注册和 localhost 授权码回调。
-- 皮肤站网页解析、站点专用适配和任何第三方上传。
+- 任意皮肤站网页解析和任意站点适配；当前只接入 LittleSkin 的 JSON 皮肤库接口。
+- 第三方皮肤上传；在线目录选中的皮肤只通过现有官方上传链路应用到 Microsoft 账户。
 - 披风切换/隐藏；当前只展示激活披风名称。
 - 官方 owned skins 的按 ID 一键切换；是否有稳定的 URL 激活语义仍需真实账户验证。
 - 皮肤编辑器、皮肤市场、HD 皮肤上传。
@@ -191,7 +208,8 @@ skin_url = "http://textures.minecraft.net/texture/…"
 ## 验证
 
 - `rmcl-auth` 的本地 mock server 测试覆盖设备代码请求、轮询、refresh 轮换、Xbox/XSTS/Minecraft 交换、所有权检查、profile/皮肤解析、Xbox 错误、取消和秘密脱敏。
-- `rmcl-app` 覆盖缓存 token 直接启动、凭据缺失、钥匙串读写/删除、schema 拒绝、官方皮肤下载、头像合成和缓存复用；新增皮肤来源校验、图片直链下载、私网地址拒绝、本地皮肤库、CPU 预览渲染、上传/reset 用例和令牌 401 重试测试。
+- `rmcl-app` 覆盖缓存 token 直接启动、凭据缺失、钥匙串读写/删除、schema 拒绝、官方皮肤下载、头像合成和缓存复用；新增皮肤来源校验、图片直链下载、私网地址拒绝、LittleSkin 目录解析、搜索/分页参数、公开/HD 过滤、详情纹理准备、本地皮肤库、CPU 预览渲染、上传/reset 用例和令牌 401 重试测试。
+- 2026-10-31 在 macOS ARM64 实测 LittleSkin 热门列表第一页、详情纹理和本地 3D 缩略图生成；真实点击应用、429、皮肤删除和站点改版仍需真实账户逐平台手工验收。
 - `rmcl-mcp` 覆盖本地库导入、重复内容去重、非法尺寸、私网 HTTPS 拒绝、重命名、删除和 read_only 写入拒绝；正版 profile/apply/reset 使用内存凭据与本地 Mojang mock，验证 multipart 模型、Bearer、上传后缓存和错误路径，不访问真实皮肤站、账号或系统钥匙串。
 - 2026-10-25 在 macOS ARM64 使用真实 Microsoft 账户完成设备代码登录，Keychain 写入成功，profile 与官方皮肤头像缓存成功生成。
 - 皮肤上传、恢复默认、429 冷却、图片直链导入和真实窗口视觉验收仍需使用真实正版账户逐平台手动验证；自动化测试不调用真实换肤接口。
@@ -205,5 +223,6 @@ skin_url = "http://textures.minecraft.net/texture/…"
 - [Minecraft Wiki: Microsoft authentication](https://minecraft.wiki/w/Microsoft_authentication)
 - [Minecraft Wiki: Skin](https://minecraft.wiki/w/Skin)
 - [Minecraft Wiki: Mojang API](https://minecraft.wiki/w/Mojang_API)（profile、upload/change/reset skin，2026-10-27 查阅）
+- [LittleSkin 皮肤库](https://littleskin.cn/skinlib)（站点 JSON 路由与纹理来源，2026-10-31 查阅）
 - [authlib-injector launcher technical specification](https://github.com/yushijinhun/authlib-injector/wiki/%E5%90%AF%E5%8A%A8%E5%99%A8%E6%8A%80%E6%9C%AF%E8%A7%84%E8%8C%83)（2026-10-29 查阅）
 - [authlib-injector download API](https://yushijinhun.github.io/authlib-injector/en/get-authlib-injector.html)（2026-10-29 查阅）

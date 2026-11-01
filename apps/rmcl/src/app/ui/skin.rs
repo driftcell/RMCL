@@ -1,8 +1,14 @@
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
+use super::super::{LauncherApp, Page, SkinTab, skin_service::CatalogThumbState};
+use super::common::{
+    card, empty_state, error_banner, field_label, page_header, section_title, warning_banner,
+};
+use super::layout;
 use gpui_kit::{
     assets::IconName,
     base::{Selectable, StyledExt},
@@ -14,28 +20,23 @@ use gpui_kit::{
         notification::Notification,
         scroll::ScrollableElement,
         spinner::Spinner,
-        tag::Tag,
+        tab::{Tab, TabBar},
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
 use rmcl_app::{
-    MicrosoftAccountServiceError, PreparedSkin, SkinLibraryEntry, SkinSourceError, load_skin_file,
+    MicrosoftAccountServiceError, PreparedSkin, SkinCatalogItem, SkinCatalogSort, SkinLibraryEntry,
+    SkinSourceError, load_skin_file,
 };
 use rmcl_auth::{Account, MicrosoftAccount, MicrosoftAuthError, SkinVariant};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
-
-use super::super::{LauncherApp, Page};
-use super::common::{
-    card, empty_state, error_banner, field_label, page_header, section_title, warning_banner,
-};
-use super::layout;
 
 /// The draft skin currently being previewed.
 pub struct SkinEditor {
     pub(crate) draft: Option<PreparedSkin>,
+    pub(crate) catalog_item: Option<SkinCatalogItem>,
     pub(crate) variant: SkinVariant,
     pub(crate) _load_task: Option<Task<()>>,
 }
@@ -44,6 +45,7 @@ impl Default for SkinEditor {
     fn default() -> Self {
         Self {
             draft: None,
+            catalog_item: None,
             variant: SkinVariant::Classic,
             _load_task: None,
         }
@@ -102,6 +104,7 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         self.flush_pending_skin_profile(window, cx);
+        self.flush_pending_catalog_skin(cx);
         self.sync_skin_viewer(cx);
 
         let viewport_width = window.viewport_size().width;
@@ -117,11 +120,11 @@ impl LauncherApp {
         });
 
         let account = self.selected_microsoft_account().cloned();
-        let has_account = account.is_some();
         let selected_is_authlib = matches!(self.selected_account(), Some(Account::Authlib(_)));
+        let selected_is_offline = matches!(self.selected_account(), Some(Account::Offline(_)));
         let refresh_view = cx.entity().downgrade();
         let refresh_button = Button::new("skin-refresh")
-            .label("刷新")
+            .label("刷新资料")
             .outline()
             .small()
             .disabled(account.is_none())
@@ -141,49 +144,25 @@ impl LauncherApp {
             .when_some(self.config_warning.clone(), |this, warning| {
                 this.child(error_banner("配置读取失败", &warning, cx))
             })
-            .when_some(account, |this, account| {
-                this.child(self.render_skin_content(account, cx))
-            })
-            .when(!has_account, |this| {
-                let open_accounts = cx.entity().downgrade();
-                this.child(empty_state(
-                    IconName::Shirt,
-                    if selected_is_authlib {
-                        "皮肤由认证服务器管理"
-                    } else {
-                        "皮肤需要正版账户"
-                    },
-                    if selected_is_authlib {
-                        "外置登录账户的皮肤会在游戏内由 authlib-injector 自动加载；RMCL 暂不提供上传或更换。"
-                    } else {
-                        "离线账户没有官方皮肤。登录 Microsoft 账户后即可查看和更换。"
-                    },
-                    Button::new("skin-open-accounts")
-                        .label("管理账户…")
-                        .primary()
-                        .on_click(move |_, window, cx| {
-                            let Some(view) = open_accounts.upgrade() else {
-                                return;
-                            };
-                            view.update(cx, |view, cx| view.open_accounts_dialog(window, cx));
-                        }),
-                    cx,
-                ))
-            })
+            .child(self.render_skin_content(account, selected_is_authlib, selected_is_offline, cx))
     }
 
     fn render_skin_content(
         &self,
-        account: MicrosoftAccount,
+        account: Option<MicrosoftAccount>,
+        selected_is_authlib: bool,
+        selected_is_offline: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let service = self.skin_service.read(cx);
-        let profile_state = service.profile_state(account.uuid());
-        let profile = service.profile(account.uuid());
-        let texture_state = service.texture_state(account.uuid());
+        let account_uuid = account.as_ref().map(MicrosoftAccount::uuid);
+        let profile_state = account_uuid.and_then(|uuid| service.profile_state(uuid));
+        let profile = account_uuid.and_then(|uuid| service.profile(uuid));
+        let texture_state = account_uuid.and_then(|uuid| service.texture_state(uuid));
         let profile_error = profile_state.and_then(|state| state.error());
         let texture_error = texture_state.and_then(|state| state.error());
         let profile_loading = profile_state.is_some_and(|state| state.is_loading());
+        let can_apply = account.is_some();
 
         h_flex()
             .items_stretch()
@@ -200,55 +179,103 @@ impl LauncherApp {
                     .items_stretch()
                     .child(
                         card(cx)
-                            .id("skin-settings-card")
+                            .id("skin-library-card")
+                            .debug_selector(|| "skin-library-card".to_owned())
                             .h_full()
                             .min_h_0()
-                            .when_some(profile_error, |this, error| {
-                                this.child(error_banner("无法同步皮肤", error, cx))
+                            .when_some(account.clone(), |this, account| {
+                                this.child(self.render_profile_summary(
+                                    account,
+                                    profile,
+                                    profile_loading,
+                                    cx,
+                                ))
+                                .when_some(profile_error, |this, error| {
+                                    this.child(error_banner("无法同步皮肤", error, cx))
+                                })
+                                .when_some(
+                                    texture_error,
+                                    |this, error| {
+                                        this.child(error_banner("皮肤预览不可用", error, cx))
+                                    },
+                                )
                             })
-                            .when_some(texture_error, |this, error| {
-                                this.child(error_banner("皮肤预览不可用", error, cx))
+                            .when(!can_apply, |this| {
+                                this.child(self.render_skin_account_notice(
+                                    selected_is_authlib,
+                                    selected_is_offline,
+                                    cx,
+                                ))
                             })
-                            .child(self.render_profile_summary(
-                                account.clone(),
-                                profile,
-                                profile_loading,
-                                cx,
-                            ))
-                            .child(
-                                v_flex().gap_2().child(field_label("皮肤站")).child(
-                                    h_flex()
-                                        .gap_2()
-                                        .flex_wrap()
-                                        .child(skin_site_button(
-                                            "littleskin",
-                                            "LittleSkin",
-                                            "https://littleskin.cn/skinlib",
-                                        ))
-                                        .child(skin_site_button(
-                                            "namemc",
-                                            "NameMC",
-                                            "https://namemc.com/minecraft-skins",
-                                        ))
-                                        .child(skin_site_button(
-                                            "minecraftskins",
-                                            "Minecraft Skins",
-                                            "https://www.minecraftskins.com/",
-                                        )),
-                                ),
-                            )
-                            .child(div().h(px(1.)).bg(cx.theme().border))
-                            .child(self.render_skin_editor(account.uuid(), cx))
-                            .child(div().h(px(1.)).bg(cx.theme().border))
+                            .child(self.render_skin_tabs(cx))
                             .child(
                                 v_flex()
-                                    .id("skin-recent")
+                                    .id("skin-library-body")
                                     .flex_1()
                                     .min_h_0()
                                     .overflow_y_scrollbar()
-                                    .child(self.render_recent_skins(cx)),
-                            ),
+                                    .child(match self.skin_tab {
+                                        SkinTab::Online => {
+                                            self.render_skin_catalog(cx).into_any_element()
+                                        }
+                                        SkinTab::Local => {
+                                            self.render_skin_local(cx).into_any_element()
+                                        }
+                                    }),
+                            )
+                            .when(self.skin_editor.draft.is_some(), |this| {
+                                this.child(self.render_skin_candidate(cx))
+                            }),
                     ),
+            )
+    }
+
+    fn render_skin_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        TabBar::new("skin-source-tabs")
+            .segmented()
+            .selected_index(self.skin_tab.index())
+            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                this.skin_tab = SkinTab::from_index(*index);
+                cx.notify();
+            }))
+            .children(
+                SkinTab::ALL
+                    .into_iter()
+                    .map(|tab| Tab::new().label(tab.label())),
+            )
+    }
+
+    fn render_skin_account_notice(
+        &self,
+        selected_is_authlib: bool,
+        selected_is_offline: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let open_accounts = cx.entity().downgrade();
+        let message = if selected_is_authlib {
+            "外置登录账户的皮肤由认证服务器和 authlib-injector 管理。这里仍可浏览和预览皮肤，但不能上传到官方服务。"
+        } else if selected_is_offline {
+            "离线账户没有官方皮肤。这里仍可浏览和预览在线皮肤；登录 Microsoft 账户后才能一键更换。"
+        } else {
+            "未选择账户。在线皮肤可以浏览和预览；登录 Microsoft 账户后才能一键更换。"
+        };
+        v_flex()
+            .gap_2()
+            .flex_shrink_0()
+            .child(warning_banner("当前账户不能更换官方皮肤", message, cx))
+            .child(
+                h_flex().child(
+                    Button::new("skin-manage-accounts")
+                        .label("管理账户…")
+                        .outline()
+                        .small()
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = open_accounts.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| view.open_accounts_dialog(window, cx));
+                        }),
+                ),
             )
     }
 
@@ -338,129 +365,649 @@ impl LauncherApp {
             })
     }
 
-    fn render_skin_editor(&self, account: Uuid, cx: &mut Context<Self>) -> impl IntoElement {
-        let applying = self.skin_apply.is_applying();
-        let cooldown = self.skin_apply.cooldown_remaining();
-        let draft = self.skin_editor.draft.clone();
+    fn render_skin_catalog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (items, loading, error, selection_error, has_more, page) = {
+            let catalog = self.skin_service.read(cx).catalog();
+            (
+                catalog.items().to_vec(),
+                catalog.is_loading(),
+                catalog.error().map(str::to_owned),
+                catalog.selection_error().map(str::to_owned),
+                catalog.has_more(),
+                catalog.page(),
+            )
+        };
+        let has_error = error.is_some();
+        let sort = self.skin_catalog_sort;
+        let search_view = cx.entity().downgrade();
+        let load_view = cx.entity().downgrade();
+        let retry_view = cx.entity().downgrade();
+        let error_retry_view = cx.entity().downgrade();
+        let more_view = cx.entity().downgrade();
+        let more_empty_view = cx.entity().downgrade();
+        let cards = items
+            .iter()
+            .map(|item| {
+                let (preview, thumb_loading, thumb_failed, selected, selecting) = {
+                    let catalog = self.skin_service.read(cx).catalog();
+                    let (preview, thumb_loading, thumb_failed) = match catalog.thumbnail(&item.id) {
+                        Some(CatalogThumbState::Ready { image, .. }) => {
+                            (Some(image.clone()), false, false)
+                        }
+                        Some(CatalogThumbState::Loading) => (None, true, false),
+                        Some(CatalogThumbState::Failed) => (None, false, true),
+                        None => (None, true, false),
+                    };
+                    (
+                        preview,
+                        thumb_loading,
+                        thumb_failed,
+                        catalog.is_selected(&item.id),
+                        catalog.is_selecting(&item.id),
+                    )
+                };
+                self.render_skin_catalog_card(
+                    item,
+                    preview,
+                    thumb_loading,
+                    thumb_failed,
+                    selected,
+                    selecting,
+                    cx,
+                )
+                .into_any_element()
+            })
+            .collect::<Vec<_>>();
+        let sort_index = SkinCatalogSort::ALL
+            .iter()
+            .position(|candidate| *candidate == sort)
+            .unwrap_or(0);
 
         v_flex()
             .gap_4()
-            .child(section_title(
-                "更换皮肤",
-                "上传本地 PNG，或粘贴皮肤站的图片直链。",
-                cx,
-            ))
-            .when_some(draft, |this, draft| {
-                this.child(
-                    v_flex()
-                        .gap_3()
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(
-                                    Icon::new(IconName::Shirt)
-                                        .small()
-                                        .text_color(cx.theme().primary),
-                                )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_sm()
-                                        .font_medium()
-                                        .child(draft.file_name().to_owned()),
-                                )
-                                .child(
-                                    Tag::new()
-                                        .outline()
-                                        .small()
-                                        .child(variant_label(self.skin_editor.variant)),
-                                ),
-                        )
-                        .when_some(draft.source_url().map(str::to_owned), |this, source| {
-                            this.child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .truncate()
-                                    .child(format!("来源：{source}")),
-                            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .child(
+                        Input::new(&self.skin_catalog_query)
+                            .cleanable(true)
+                            .w_full(),
+                    )
+                    .child(
+                        Button::new("skin-catalog-search")
+                            .label("搜索")
+                            .icon(IconName::Search)
+                            .primary()
+                            .disabled(loading)
+                            .on_click(move |_, window, cx| {
+                                let Some(view) = search_view.upgrade() else {
+                                    return;
+                                };
+                                view.update(cx, |view, cx| view.search_skin_catalog(window, cx));
+                            }),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        TabBar::new("skin-catalog-sort")
+                            .segmented()
+                            .selected_index(sort_index)
+                            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                                this.skin_catalog_sort = SkinCatalogSort::ALL
+                                    .get(*index)
+                                    .copied()
+                                    .unwrap_or_default();
+                                this.reload_skin_catalog(window, cx);
+                            }))
+                            .children(
+                                SkinCatalogSort::ALL
+                                    .into_iter()
+                                    .map(|sort| Tab::new().label(sort.label())),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(if page == 0 {
+                                "LittleSkin".to_owned()
+                            } else {
+                                format!("LittleSkin · 第 {page} 页")
+                            }),
+                    ),
+            )
+            .when_some(
+                error.clone().filter(|_| !items.is_empty()),
+                |this, error| this.child(error_banner("在线皮肤加载失败", &error, cx)),
+            )
+            .when_some(selection_error, |this, error| {
+                this.child(warning_banner("无法预览这张皮肤", &error, cx))
+            })
+            .child(if loading && items.is_empty() {
+                v_flex()
+                    .w_full()
+                    .items_center()
+                    .justify_center()
+                    .gap_3()
+                    .py_12()
+                    .child(
+                        Spinner::new()
+                            .with_size(Size::Medium)
+                            .color(cx.theme().primary),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("正在从 LittleSkin 读取皮肤…"),
+                    )
+                    .into_any_element()
+            } else if page == 0 && items.is_empty() && !has_error {
+                empty_state(
+                    IconName::Globe,
+                    "在线皮肤还没有加载",
+                    "从 LittleSkin 读取皮肤库；离线账户也可以预览皮肤。",
+                    Button::new("skin-catalog-load")
+                        .label("加载在线皮肤")
+                        .outline()
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = load_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else if items.is_empty() && has_error {
+                let description = error
+                    .as_deref()
+                    .map(|error| format!("{error} 已载入的候选皮肤不会受到影响。"))
+                    .unwrap_or_else(|| {
+                        "检查网络连接后重试；已载入的候选皮肤不会受到影响。".to_owned()
+                    });
+                empty_state(
+                    IconName::Globe,
+                    "暂时无法加载在线皮肤",
+                    &description,
+                    Button::new("skin-catalog-error-retry")
+                        .debug_selector(|| "skin-catalog-error-retry".to_owned())
+                        .label(if page == 0 {
+                            "重新加载"
+                        } else {
+                            "重试本页"
                         })
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(field_label("模型"))
-                                .child(
-                                    Button::new("skin-model-classic")
-                                        .label("经典")
-                                        .outline()
-                                        .selected(self.skin_editor.variant == SkinVariant::Classic)
-                                        .small()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.skin_editor.variant = SkinVariant::Classic;
-                                            cx.notify();
-                                        })),
-                                )
-                                .child(
-                                    Button::new("skin-model-slim")
-                                        .label("纤细")
-                                        .outline()
-                                        .selected(self.skin_editor.variant == SkinVariant::Slim)
-                                        .small()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.skin_editor.variant = SkinVariant::Slim;
-                                            cx.notify();
-                                        })),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(
-                                    Button::new("skin-apply")
-                                        .label(if applying {
-                                            "正在应用…"
-                                        } else if cooldown.is_some() {
-                                            "冷却中"
-                                        } else {
-                                            "应用皮肤"
-                                        })
-                                        .primary()
-                                        .disabled(!self.skin_apply.is_idle())
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.apply_skin(window, cx);
-                                        })),
-                                )
-                                .child(
-                                    Button::new("skin-cancel-draft")
-                                        .label("取消")
-                                        .ghost()
-                                        .disabled(applying)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.cancel_skin_draft(cx);
-                                        })),
-                                )
-                                .when_some(cooldown, |this, remaining| {
-                                    this.child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(format!(
-                                                "{} 秒后可再次更换",
-                                                remaining.as_secs().max(1)
-                                            )),
-                                    )
-                                }),
-                        ),
+                        .outline()
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = error_retry_view.upgrade() else {
+                                return;
+                            };
+                            if page == 0 {
+                                view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                            } else {
+                                view.update(cx, |view, cx| {
+                                    view.skin_service
+                                        .update(cx, |service, cx| service.load_more_catalog(cx));
+                                });
+                            }
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else if items.is_empty() && has_more {
+                empty_state(
+                    IconName::Search,
+                    "本页没有可用的标准皮肤",
+                    "继续加载 LittleSkin 的后续页面，可能会找到可上传的皮肤。",
+                    Button::new("skin-catalog-more-empty")
+                        .debug_selector(|| "skin-catalog-more-empty".to_owned())
+                        .label("加载下一页")
+                        .outline()
+                        .on_click(move |_, _, cx| {
+                            let Some(view) = more_empty_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| {
+                                view.skin_service
+                                    .update(cx, |service, cx| service.load_more_catalog(cx));
+                            });
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else if items.is_empty() {
+                empty_state(
+                    IconName::Search,
+                    "没有找到皮肤",
+                    "换一个关键词，或稍后重新加载 LittleSkin 皮肤库。",
+                    Button::new("skin-catalog-retry")
+                        .label("重新加载")
+                        .outline()
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = retry_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else {
+                div()
+                    .w_full()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_3()
+                    .children(cards)
+                    .into_any_element()
+            })
+            .when(has_more && !items.is_empty(), |this| {
+                this.child(
+                    Button::new("skin-catalog-more")
+                        .label(if loading {
+                            "加载中…"
+                        } else {
+                            "加载更多"
+                        })
+                        .outline()
+                        .w_full()
+                        .disabled(loading)
+                        .on_click(move |_, _, cx| {
+                            let Some(view) = more_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| {
+                                view.skin_service
+                                    .update(cx, |service, cx| service.load_more_catalog(cx));
+                            });
+                        }),
                 )
             })
-            .when(self.skin_editor.draft.is_none(), |this| {
-                this.child(self.render_skin_import(account, cx))
-            })
+            .child(
+                h_flex()
+                    .w_full()
+                    .justify_between()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("仅显示可上传到 Java 版的标准分辨率皮肤"),
+                    )
+                    .child(skin_site_button(
+                        "littleskin",
+                        "打开 LittleSkin",
+                        "https://littleskin.cn/skinlib",
+                    )),
+            )
     }
 
-    fn render_skin_import(&self, _account: Uuid, cx: &mut Context<Self>) -> impl IntoElement {
+    #[allow(clippy::too_many_arguments)]
+    fn render_skin_catalog_card(
+        &self,
+        item: &SkinCatalogItem,
+        preview: Option<Arc<RenderImage>>,
+        thumb_loading: bool,
+        thumb_failed: bool,
+        selected: bool,
+        selecting: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let border = if selected {
+            theme.primary
+        } else {
+            theme.border
+        };
+        let background = if selected {
+            theme.primary.opacity(0.06)
+        } else {
+            theme.group_box
+        };
+        let item_for_click = item.clone();
+        let author = item
+            .author
+            .clone()
+            .unwrap_or_else(|| "LittleSkin".to_owned());
+        let author_line = format!("{author} · {}", variant_label(item.variant));
+        let debug_selector = format!("skin-catalog-card-{}", item.id);
+        Button::new(format!("skin-catalog-card-{}", item.id))
+            .ghost()
+            .debug_selector(move || debug_selector.clone())
+            .w_full()
+            .h_auto()
+            .p_0()
+            .border_1()
+            .border_color(border)
+            .bg(background)
+            .cursor_pointer()
+            .accessibility_label(format!("预览皮肤 {}", item.name))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.select_catalog_skin(item_for_click.clone(), cx);
+            }))
+            .child(
+                v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_0()
+                    .child(
+                        div()
+                            .relative()
+                            .w_full()
+                            .h(px(176.))
+                            .rounded(theme.radius)
+                            .bg(theme.muted)
+                            .overflow_hidden()
+                            .when_some(preview, |this, image| {
+                                this.child(
+                                    img(image)
+                                        .size_full()
+                                        .object_fit(ObjectFit::Contain)
+                                        .rounded(theme.radius),
+                                )
+                            })
+                            .when(thumb_loading, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .inset_0()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap_1()
+                                        .child(
+                                            Icon::new(IconName::Shirt)
+                                                .small()
+                                                .text_color(theme.muted_foreground.opacity(0.6)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.muted_foreground)
+                                                .child("渲染中"),
+                                        ),
+                                )
+                            })
+                            .when(thumb_failed, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .inset_0()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            Icon::new(IconName::Shirt)
+                                                .small()
+                                                .text_color(theme.muted_foreground),
+                                        ),
+                                )
+                            })
+                            .when(selected, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .top_2()
+                                        .right_2()
+                                        .size_5()
+                                        .rounded_full()
+                                        .bg(theme.primary)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .when(selecting, |this| {
+                                            this.child(
+                                                Spinner::new()
+                                                    .with_size(Size::XSmall)
+                                                    .color(theme.primary_foreground),
+                                            )
+                                        })
+                                        .when(!selecting, |this| {
+                                            this.child(
+                                                Icon::new(IconName::Check)
+                                                    .small()
+                                                    .text_color(theme.primary_foreground),
+                                            )
+                                        }),
+                                )
+                            }),
+                    )
+                    .child(
+                        v_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_1()
+                            .p_2()
+                            .child(
+                                div()
+                                    .w_full()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(item.name.clone()),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .min_w_0()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground)
+                                            .child(author_line),
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .flex_shrink_0()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                Icon::new(IconName::Heart)
+                                                    .with_size(Size::XSmall)
+                                                    .text_color(theme.muted_foreground),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(theme.muted_foreground)
+                                                    .child(item.likes.to_string()),
+                                            ),
+                                    ),
+                            ),
+                    ),
+            )
+    }
+
+    fn render_skin_local(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .gap_5()
+            .child(section_title(
+                "上传或链接",
+                "使用本地 PNG 或图片直链；应用到正版账户后会保存到本机皮肤库。",
+                cx,
+            ))
+            .child(self.render_skin_import(cx))
+            .child(div().h(px(1.)).bg(cx.theme().border))
+            .child(self.render_recent_skins(cx))
+    }
+
+    fn render_skin_candidate(&self, cx: &mut Context<Self>) -> AnyElement {
+        let Some(draft) = self.skin_editor.draft.clone() else {
+            return div().into_any_element();
+        };
+        let applying = self.skin_apply.is_applying();
+        let cooldown = self.skin_apply.cooldown_remaining();
+        let can_apply = self.selected_microsoft_account().is_some();
+        let catalog_item = self.skin_editor.catalog_item.clone();
+        let title = catalog_item
+            .as_ref()
+            .map(|item| item.name.clone())
+            .unwrap_or_else(|| draft.file_name().to_owned());
+        let source = catalog_item
+            .as_ref()
+            .map(|item| {
+                item.author
+                    .as_ref()
+                    .map(|author| format!("LittleSkin · {author}"))
+                    .unwrap_or_else(|| "LittleSkin".to_owned())
+            })
+            .or_else(|| draft.source_url().map(|url| format!("来源：{url}")))
+            .unwrap_or_else(|| "本地或链接导入".to_owned());
+        let site_url = catalog_item.as_ref().map(|item| item.site_url.clone());
+
+        v_flex()
+            .flex_shrink_0()
+            .gap_3()
+            .pt_4()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_3()
+                    .items_center()
+                    .child(
+                        div()
+                            .size_8()
+                            .flex_shrink_0()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().primary.opacity(0.12))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Icon::new(IconName::Shirt)
+                                    .small()
+                                    .text_color(cx.theme().primary),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(title),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(source),
+                            ),
+                    )
+                    .when_some(site_url, |this, url| {
+                        this.child(
+                            Button::new("skin-candidate-site")
+                                .icon(IconName::ExternalLink)
+                                .ghost()
+                                .small()
+                                .tooltip("在浏览器中打开皮肤页")
+                                .on_click(move |_, _, cx| cx.open_url(&url)),
+                        )
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .items_center()
+                    .child(field_label("模型"))
+                    .child(
+                        Button::new("skin-model-classic")
+                            .label("经典")
+                            .outline()
+                            .selected(self.skin_editor.variant == SkinVariant::Classic)
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.skin_editor.variant = SkinVariant::Classic;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("skin-model-slim")
+                            .label("纤细")
+                            .outline()
+                            .selected(self.skin_editor.variant == SkinVariant::Slim)
+                            .small()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.skin_editor.variant = SkinVariant::Slim;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        Button::new("skin-apply")
+                            .label(if applying {
+                                "正在应用…"
+                            } else if cooldown.is_some() {
+                                "冷却中"
+                            } else if can_apply {
+                                "确认更换皮肤"
+                            } else {
+                                "需要正版账户"
+                            })
+                            .primary()
+                            .disabled(!self.skin_apply.is_idle() || !can_apply)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.apply_skin(window, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("skin-cancel-draft")
+                            .label("取消")
+                            .ghost()
+                            .disabled(applying)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.cancel_skin_draft(cx);
+                            })),
+                    )
+                    .when_some(cooldown, |this, remaining| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("{} 秒后可再次更换", remaining.as_secs().max(1))),
+                        )
+                    })
+                    .when(!can_apply, |this| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child("登录 Microsoft 账户后可更换官方皮肤"),
+                        )
+                    }),
+            )
+            .into_any_element()
+    }
+
+    fn render_skin_import(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let link_loading = matches!(self.skin_link.state, LinkImportState::Loading { .. });
         let link_error = match &self.skin_link.state {
             LinkImportState::Failed(error) => Some(error.clone()),
@@ -667,14 +1214,26 @@ impl LauncherApp {
     }
 
     pub(crate) fn ensure_skin_page(&mut self, cx: &mut Context<Self>) {
-        let Some(account) = self.selected_microsoft_account().cloned() else {
-            self.skin_viewer.update(cx, |viewer, cx| viewer.clear(cx));
+        let account = self.selected_microsoft_account().cloned();
+        self.skin_service.update(cx, |service, cx| {
+            service.ensure_catalog(cx);
+            service.ensure_recent(cx);
+            if let Some(account) = account {
+                service.ensure_profile(account, cx);
+            }
+        });
+    }
+
+    fn flush_pending_catalog_skin(&mut self, cx: &mut Context<Self>) {
+        let Some(loaded) = self.pending_catalog_skin.take() else {
             return;
         };
-        self.skin_service.update(cx, |service, cx| {
-            service.ensure_profile(account, cx);
-            service.ensure_recent(cx);
-        });
+        self.skin_editor.variant = loaded.item.variant;
+        self.skin_editor.catalog_item = Some(loaded.item);
+        self.skin_editor.draft = Some(loaded.skin);
+        self.skin_viewer
+            .update(cx, |viewer, cx| viewer.reset_view(cx));
+        cx.notify();
     }
 
     fn flush_pending_skin_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -728,6 +1287,38 @@ impl LauncherApp {
         };
         self.skin_service
             .update(cx, |service, cx| service.refresh_profile(account, cx));
+    }
+
+    fn search_skin_catalog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.skin_catalog_query.read(cx).value().trim().to_owned();
+        self.reload_skin_catalog_with(window, query, self.skin_catalog_sort, cx);
+    }
+
+    fn reload_skin_catalog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.skin_catalog_query.read(cx).value().trim().to_owned();
+        self.reload_skin_catalog_with(window, query, self.skin_catalog_sort, cx);
+    }
+
+    fn reload_skin_catalog_with(
+        &mut self,
+        window: &mut Window,
+        query: String,
+        sort: SkinCatalogSort,
+        cx: &mut Context<Self>,
+    ) {
+        let thumbnails = self
+            .skin_service
+            .update(cx, |service, _| service.take_catalog_thumbnails());
+        for image in thumbnails {
+            let _ = window.drop_image(image);
+        }
+        self.skin_service
+            .update(cx, |service, cx| service.reload_catalog(query, sort, cx));
+    }
+
+    fn select_catalog_skin(&mut self, item: SkinCatalogItem, cx: &mut Context<Self>) {
+        self.skin_service
+            .update(cx, |service, cx| service.select_catalog_item(item, cx));
     }
 
     fn pick_skin_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -847,6 +1438,9 @@ impl LauncherApp {
     fn set_skin_draft(&mut self, skin: PreparedSkin, cx: &mut Context<Self>) {
         self.skin_editor.variant = skin.variant_hint();
         self.skin_editor.draft = Some(skin);
+        self.skin_editor.catalog_item = None;
+        self.skin_service
+            .update(cx, |service, cx| service.clear_catalog_selection(cx));
         self.skin_viewer
             .update(cx, |viewer, cx| viewer.reset_view(cx));
         cx.notify();
@@ -854,6 +1448,9 @@ impl LauncherApp {
 
     fn cancel_skin_draft(&mut self, cx: &mut Context<Self>) {
         self.skin_editor.draft = None;
+        self.skin_editor.catalog_item = None;
+        self.skin_service
+            .update(cx, |service, cx| service.clear_catalog_selection(cx));
         self.skin_viewer
             .update(cx, |viewer, cx| viewer.reset_view(cx));
         cx.notify();
@@ -958,7 +1555,10 @@ impl LauncherApp {
                                 .update(cx, |service, cx| service.reload_recent(cx));
                         }
                         view.skin_editor.draft = None;
+                        view.skin_editor.catalog_item = None;
                         view.skin_editor.variant = variant;
+                        view.skin_service
+                            .update(cx, |service, cx| service.clear_catalog_selection(cx));
                         view.start_skin_cooldown(Duration::from_secs(2), cx);
                         window.push_notification(
                             Notification::success("皮肤已更换，重新进入游戏后生效。")
