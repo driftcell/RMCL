@@ -184,9 +184,6 @@ enum CatalogSelectionState {
         item_id: String,
         skin: rmcl_app::PreparedSkin,
     },
-    Failed {
-        error: String,
-    },
 }
 
 /// Online catalog results and their local 3D thumbnails.
@@ -200,6 +197,7 @@ pub struct SkinCatalogState {
     query: String,
     sort: SkinCatalogSort,
     selection: CatalogSelectionState,
+    selection_error: Option<String>,
     thumbnail_limiter: Arc<Semaphore>,
     load_cancel: CancellationToken,
     thumbnail_cancel: CancellationToken,
@@ -220,6 +218,7 @@ impl Default for SkinCatalogState {
             query: String::new(),
             sort: SkinCatalogSort::default(),
             selection: CatalogSelectionState::Idle,
+            selection_error: None,
             thumbnail_limiter: Arc::new(Semaphore::new(4)),
             load_cancel: CancellationToken::new(),
             thumbnail_cancel: CancellationToken::new(),
@@ -255,13 +254,12 @@ impl SkinCatalogState {
         self.error.as_deref()
     }
 
-    /// The item whose preview is loading or ready. Failed attempts are not
-    /// selected because the previous candidate may still be active.
+    /// The item whose preview is loading or ready.
     pub fn selected_item(&self) -> Option<&str> {
         match &self.selection {
             CatalogSelectionState::Loading { item_id, .. }
             | CatalogSelectionState::Ready { item_id, .. } => Some(item_id),
-            CatalogSelectionState::Failed { .. } | CatalogSelectionState::Idle => None,
+            CatalogSelectionState::Idle => None,
         }
     }
 
@@ -277,10 +275,7 @@ impl SkinCatalogState {
     }
 
     pub fn selection_error(&self) -> Option<&str> {
-        match &self.selection {
-            CatalogSelectionState::Failed { error, .. } => Some(error),
-            _ => None,
-        }
+        self.selection_error.as_deref()
     }
 }
 
@@ -340,6 +335,7 @@ impl SkinService {
         self.catalog.has_more = true;
         self.catalog.error = None;
         self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
         self.start_catalog_page(1, false, cx);
     }
 
@@ -360,6 +356,7 @@ impl SkinService {
                 item_id: item.id.clone(),
                 skin: skin.clone(),
             };
+            self.catalog.selection_error = None;
             cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
                 item, skin,
             )));
@@ -374,6 +371,7 @@ impl SkinService {
         {
             let skin = previous.clone();
             restart_cancellation(&mut self.catalog.selection_cancel);
+            self.catalog.selection_error = None;
             cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
                 item,
                 skin.clone(),
@@ -387,10 +385,15 @@ impl SkinService {
 
         let item_id = item.id.clone();
         let item_id_for_task = item_id.clone();
+        let previous = match &self.catalog.selection {
+            CatalogSelectionState::Ready { item_id, skin } => Some((item_id.clone(), skin.clone())),
+            _ => None,
+        };
         let catalog = self.services.skin_catalog.clone();
         let urls = self.services.skin_urls.clone();
         let runtime = self.services.runtime.handle().clone();
         let cancellation = restart_cancellation(&mut self.catalog.selection_cancel);
+        self.catalog.selection_error = None;
         let task = cx.spawn(async move |this, cx| {
             let item_for_task = item.clone();
             let result = runtime
@@ -406,18 +409,18 @@ impl SkinService {
                             item_id: item_id_for_task.clone(),
                             skin: skin.clone(),
                         };
+                        this.catalog.selection_error = None;
                         cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
                             item, skin,
                         )));
                     }
                     Ok(Err(error)) => {
-                        let error = describe_catalog_error(&error);
-                        this.catalog.selection = CatalogSelectionState::Failed { error };
+                        this.catalog.selection_error = Some(describe_catalog_error(&error));
+                        this.catalog.selection = restore_previous_selection(previous.clone());
                     }
                     Err(error) => {
-                        this.catalog.selection = CatalogSelectionState::Failed {
-                            error: format!("皮肤目录任务失败: {error}"),
-                        };
+                        this.catalog.selection_error = Some(format!("皮肤目录任务失败: {error}"));
+                        this.catalog.selection = restore_previous_selection(previous.clone());
                     }
                 }
                 cx.notify();
@@ -431,9 +434,12 @@ impl SkinService {
     }
 
     pub fn clear_catalog_selection(&mut self, cx: &mut Context<Self>) {
-        if !matches!(self.catalog.selection, CatalogSelectionState::Idle) {
+        if !matches!(self.catalog.selection, CatalogSelectionState::Idle)
+            || self.catalog.selection_error.is_some()
+        {
             restart_cancellation(&mut self.catalog.selection_cancel);
             self.catalog.selection = CatalogSelectionState::Idle;
+            self.catalog.selection_error = None;
             cx.notify();
         }
     }
@@ -450,6 +456,7 @@ impl SkinService {
         self.catalog.has_more = false;
         self.catalog.loading = false;
         self.catalog.error = None;
+        self.catalog.selection_error = None;
         self.catalog.thumbnails = items
             .into_iter()
             .map(|item| {
@@ -473,13 +480,30 @@ impl SkinService {
         self.catalog.loading = false;
         self.catalog.error = None;
         self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_empty_error_for_test(
+        &mut self,
+        page: u32,
+        has_more: bool,
+        error: &str,
+    ) {
+        self.catalog.items.clear();
+        self.catalog.thumbnails.clear();
+        self.catalog.page = page;
+        self.catalog.has_more = has_more;
+        self.catalog.loading = false;
+        self.catalog.error = Some(error.to_owned());
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = None;
     }
 
     #[cfg(test)]
     pub(crate) fn set_catalog_failed_for_test(&mut self, error: &str) {
-        self.catalog.selection = CatalogSelectionState::Failed {
-            error: error.to_owned(),
-        };
+        self.catalog.selection = CatalogSelectionState::Idle;
+        self.catalog.selection_error = Some(error.to_owned());
     }
 
     #[cfg(test)]
@@ -916,6 +940,15 @@ fn restart_cancellation(token: &mut CancellationToken) -> CancellationToken {
     token.cancel();
     *token = CancellationToken::new();
     token.clone()
+}
+
+fn restore_previous_selection(
+    previous: Option<(String, rmcl_app::PreparedSkin)>,
+) -> CatalogSelectionState {
+    match previous {
+        Some((item_id, skin)) => CatalogSelectionState::Ready { item_id, skin },
+        None => CatalogSelectionState::Idle,
+    }
 }
 
 fn describe_profile_error(error: &rmcl_app::MicrosoftAccountServiceError) -> String {

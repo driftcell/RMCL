@@ -382,6 +382,7 @@ impl LauncherApp {
         let search_view = cx.entity().downgrade();
         let load_view = cx.entity().downgrade();
         let retry_view = cx.entity().downgrade();
+        let error_retry_view = cx.entity().downgrade();
         let more_view = cx.entity().downgrade();
         let more_empty_view = cx.entity().downgrade();
         let cards = items
@@ -482,9 +483,10 @@ impl LauncherApp {
                             }),
                     ),
             )
-            .when_some(error, |this, error| {
-                this.child(error_banner("在线皮肤加载失败", &error, cx))
-            })
+            .when_some(
+                error.clone().filter(|_| !items.is_empty()),
+                |this, error| this.child(error_banner("在线皮肤加载失败", &error, cx)),
+            )
             .when_some(selection_error, |this, error| {
                 this.child(warning_banner("无法预览这张皮肤", &error, cx))
             })
@@ -520,6 +522,41 @@ impl LauncherApp {
                                 return;
                             };
                             view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else if items.is_empty() && has_error {
+                let description = error
+                    .as_deref()
+                    .map(|error| format!("{error} 已载入的候选皮肤不会受到影响。"))
+                    .unwrap_or_else(|| {
+                        "检查网络连接后重试；已载入的候选皮肤不会受到影响。".to_owned()
+                    });
+                empty_state(
+                    IconName::Globe,
+                    "暂时无法加载在线皮肤",
+                    &description,
+                    Button::new("skin-catalog-error-retry")
+                        .debug_selector(|| "skin-catalog-error-retry".to_owned())
+                        .label(if page == 0 {
+                            "重新加载"
+                        } else {
+                            "重试本页"
+                        })
+                        .outline()
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = error_retry_view.upgrade() else {
+                                return;
+                            };
+                            if page == 0 {
+                                view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                            } else {
+                                view.update(cx, |view, cx| {
+                                    view.skin_service
+                                        .update(cx, |service, cx| service.load_more_catalog(cx));
+                                });
+                            }
                         }),
                     cx,
                 )

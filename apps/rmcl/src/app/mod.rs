@@ -8433,6 +8433,24 @@ mod tests {
 
         app.update_in(&mut cx, |app, _, cx| {
             app.skin_service.update(cx, |service, _| {
+                service.set_catalog_empty_error_for_test(0, true, "网络错误");
+            });
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        assert!(
+            cx.debug_bounds("skin-catalog-error-retry").is_some(),
+            "an empty error state should offer a retry"
+        );
+        assert!(
+            cx.debug_bounds("skin-catalog-more-empty").is_none(),
+            "an error must not be presented as a filtered page"
+        );
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
                 service.set_catalog_failed_for_test("皮肤不存在");
                 assert!(!service.catalog().is_selected("littleskin:42"));
                 assert_eq!(service.catalog().selection_error(), Some("皮肤不存在"));
