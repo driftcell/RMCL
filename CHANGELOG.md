@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0](https://github.com/driftcell/RMCL/compare/v0.14.0...v0.15.0) - 2026-11-01
+
+### Added
+
+- *(skin)* browse LittleSkin catalog with local 3D previews ([#131](https://github.com/driftcell/RMCL/pull/131))
+
 ## [0.14.0](https://github.com/driftcell/RMCL/compare/v0.13.0...v0.14.0) - 2026-10-30
 
 ### Highlights
