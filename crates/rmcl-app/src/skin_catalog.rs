@@ -348,7 +348,7 @@ pub enum SkinCatalogError {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     };
 
@@ -426,6 +426,45 @@ mod tests {
         (format!("http://{address}"), server)
     }
 
+    #[derive(Default)]
+    struct ListCapture {
+        uri: Mutex<Option<String>>,
+    }
+
+    async fn capture_list_server(
+        capture: Arc<ListCapture>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/skinlib/list",
+                get(
+                    |State(capture): State<Arc<ListCapture>>, uri: axum::http::Uri| async move {
+                        *capture.uri.lock().unwrap() = Some(uri.to_string());
+                        (
+                            [(CONTENT_TYPE, "application/json")],
+                            r#"{
+                                "current_page": 3,
+                                "data": [
+                                    {"tid": 5, "name": "Public", "type": "steve", "public": true, "hd": false, "likes": 3, "nickname": "alice"},
+                                    {"tid": 6, "name": "Private", "type": "steve", "public": false, "hd": false, "likes": 2, "nickname": "bob"},
+                                    {"tid": 7, "name": "HD", "type": "steve", "public": true, "hd": true, "likes": 1, "nickname": "carol"}
+                                ],
+                                "next_page_url": null
+                            }"#,
+                        )
+                            .into_response()
+                    },
+                ),
+            )
+            .with_state(capture);
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{address}"), server)
+    }
+
     #[tokio::test]
     async fn lists_and_filters_littleskin_skins() {
         let requests = Arc::new(AtomicUsize::new(0));
@@ -446,6 +485,36 @@ mod tests {
         assert_eq!(page.items[1].variant, SkinVariant::Slim);
         assert!(page.has_more);
         assert_eq!(requests.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sends_search_paging_and_sort_parameters_and_filters_private_entries() {
+        let capture = Arc::new(ListCapture::default());
+        let (base, server) = capture_list_server(capture.clone()).await;
+        let client = SkinCatalogClient::for_test(Url::parse(&base).unwrap()).unwrap();
+
+        let page = client
+            .list(
+                "foo bar",
+                SkinCatalogSort::Newest,
+                3,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].id, "littleskin:5");
+        assert!(!page.has_more);
+
+        let uri = capture.uri.lock().unwrap().clone().unwrap();
+        let url = Url::parse(&format!("{base}{uri}")).unwrap();
+        let pairs = url.query_pairs().into_owned().collect::<Vec<_>>();
+        assert!(pairs.contains(&("filter".to_owned(), "skin".to_owned())));
+        assert!(pairs.contains(&("sort".to_owned(), "time".to_owned())));
+        assert!(pairs.contains(&("page".to_owned(), "3".to_owned())));
+        assert!(pairs.contains(&("keyword".to_owned(), "foo bar".to_owned())));
         server.abort();
     }
 

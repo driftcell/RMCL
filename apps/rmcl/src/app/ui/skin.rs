@@ -257,7 +257,7 @@ impl LauncherApp {
         } else if selected_is_offline {
             "离线账户没有官方皮肤。这里仍可浏览和预览在线皮肤；登录 Microsoft 账户后才能一键更换。"
         } else {
-            "请先添加账户。在线皮肤可以预览，正版账户可以一键更换。"
+            "未选择账户。在线皮肤可以浏览和预览；登录 Microsoft 账户后才能一键更换。"
         };
         v_flex()
             .gap_2()
@@ -380,8 +380,10 @@ impl LauncherApp {
         let has_error = error.is_some();
         let sort = self.skin_catalog_sort;
         let search_view = cx.entity().downgrade();
+        let load_view = cx.entity().downgrade();
         let retry_view = cx.entity().downgrade();
         let more_view = cx.entity().downgrade();
+        let more_empty_view = cx.entity().downgrade();
         let cards = items
             .iter()
             .map(|item| {
@@ -508,14 +510,38 @@ impl LauncherApp {
             } else if page == 0 && items.is_empty() && !has_error {
                 empty_state(
                     IconName::Globe,
-                    "添加账户后浏览在线皮肤",
-                    "在线皮肤库需要先选择一个账户；离线账户也可以预览皮肤。",
-                    Button::new("skin-catalog-accounts")
-                        .label("管理账户…")
+                    "在线皮肤还没有加载",
+                    "从 LittleSkin 读取皮肤库；离线账户也可以预览皮肤。",
+                    Button::new("skin-catalog-load")
+                        .label("加载在线皮肤")
                         .outline()
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.open_accounts_dialog(window, cx);
-                        })),
+                        .on_click(move |_, window, cx| {
+                            let Some(view) = load_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| view.reload_skin_catalog(window, cx));
+                        }),
+                    cx,
+                )
+                .into_any_element()
+            } else if items.is_empty() && has_more {
+                empty_state(
+                    IconName::Search,
+                    "本页没有可用的标准皮肤",
+                    "继续加载 LittleSkin 的后续页面，可能会找到可上传的皮肤。",
+                    Button::new("skin-catalog-more-empty")
+                        .debug_selector(|| "skin-catalog-more-empty".to_owned())
+                        .label("加载下一页")
+                        .outline()
+                        .on_click(move |_, _, cx| {
+                            let Some(view) = more_empty_view.upgrade() else {
+                                return;
+                            };
+                            view.update(cx, |view, cx| {
+                                view.skin_service
+                                    .update(cx, |service, cx| service.load_more_catalog(cx));
+                            });
+                        }),
                     cx,
                 )
                 .into_any_element()
@@ -1151,9 +1177,6 @@ impl LauncherApp {
     }
 
     pub(crate) fn ensure_skin_page(&mut self, cx: &mut Context<Self>) {
-        if self.selected_account().is_none() {
-            return;
-        }
         let account = self.selected_microsoft_account().cloned();
         self.skin_service.update(cx, |service, cx| {
             service.ensure_catalog(cx);

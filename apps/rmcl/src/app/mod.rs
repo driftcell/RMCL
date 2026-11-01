@@ -8161,11 +8161,17 @@ mod tests {
             assert_eq!(menus[2].items.len(), Page::NAVIGATION.len());
         });
         let mut cx = VisualTestContext::from_window(handle, cx);
-        app.update_in(&mut cx, |app, _, _| {
+        app.update_in(&mut cx, |app, _, cx| {
             app.catalog.manifest = Some(Arc::new(VersionManifest {
                 latest: None,
                 versions: Vec::new(),
             }));
+            app.skin_service.update(cx, |service, _| {
+                // Navigating through the skin shortcut must not start real
+                // catalog or library I/O inside the deterministic scheduler.
+                service.set_catalog_empty_page_for_test(false);
+                service.set_recent_for_test(Vec::new());
+            });
         });
 
         cx.dispatch_action(shortcuts::SelectPage {
@@ -8410,5 +8416,27 @@ mod tests {
         assert!(first.size.width > px(120.));
         assert!(first.size.height > px(180.));
         assert_eq!(first.size.height, second.size.height);
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_empty_page_for_test(true);
+            });
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        assert!(
+            cx.debug_bounds("skin-catalog-more-empty").is_some(),
+            "a filtered empty page should still offer the next page"
+        );
+
+        app.update_in(&mut cx, |app, _, cx| {
+            app.skin_service.update(cx, |service, _| {
+                service.set_catalog_failed_for_test("皮肤不存在");
+                assert!(!service.catalog().is_selected("littleskin:42"));
+                assert_eq!(service.catalog().selection_error(), Some("皮肤不存在"));
+            });
+        });
     }
 }

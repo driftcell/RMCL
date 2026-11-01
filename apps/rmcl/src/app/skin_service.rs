@@ -185,7 +185,6 @@ enum CatalogSelectionState {
         skin: rmcl_app::PreparedSkin,
     },
     Failed {
-        item_id: String,
         error: String,
     },
 }
@@ -201,6 +200,10 @@ pub struct SkinCatalogState {
     query: String,
     sort: SkinCatalogSort,
     selection: CatalogSelectionState,
+    thumbnail_limiter: Arc<Semaphore>,
+    load_cancel: CancellationToken,
+    thumbnail_cancel: CancellationToken,
+    selection_cancel: CancellationToken,
     _load_task: Option<Task<()>>,
     thumbnail_tasks: Vec<Task<()>>,
 }
@@ -217,6 +220,10 @@ impl Default for SkinCatalogState {
             query: String::new(),
             sort: SkinCatalogSort::default(),
             selection: CatalogSelectionState::Idle,
+            thumbnail_limiter: Arc::new(Semaphore::new(4)),
+            load_cancel: CancellationToken::new(),
+            thumbnail_cancel: CancellationToken::new(),
+            selection_cancel: CancellationToken::new(),
             _load_task: None,
             thumbnail_tasks: Vec::new(),
         }
@@ -248,12 +255,13 @@ impl SkinCatalogState {
         self.error.as_deref()
     }
 
+    /// The item whose preview is loading or ready. Failed attempts are not
+    /// selected because the previous candidate may still be active.
     pub fn selected_item(&self) -> Option<&str> {
         match &self.selection {
             CatalogSelectionState::Loading { item_id, .. }
-            | CatalogSelectionState::Ready { item_id, .. }
-            | CatalogSelectionState::Failed { item_id, .. } => Some(item_id),
-            CatalogSelectionState::Idle => None,
+            | CatalogSelectionState::Ready { item_id, .. } => Some(item_id),
+            CatalogSelectionState::Failed { .. } | CatalogSelectionState::Idle => None,
         }
     }
 
@@ -312,7 +320,9 @@ impl SkinService {
     /// entering the page again; explicit searches always call [`Self::reload_catalog`].
     pub fn ensure_catalog(&mut self, cx: &mut Context<Self>) {
         if !self.catalog.loading && self.catalog.page == 0 {
-            self.reload_catalog(String::new(), SkinCatalogSort::default(), cx);
+            let query = self.catalog.query.clone();
+            let sort = self.catalog.sort;
+            self.reload_catalog(query, sort, cx);
         }
     }
 
@@ -324,6 +334,8 @@ impl SkinService {
         self.catalog.items.clear();
         self.catalog.thumbnails.clear();
         self.catalog.thumbnail_tasks.clear();
+        restart_cancellation(&mut self.catalog.thumbnail_cancel);
+        restart_cancellation(&mut self.catalog.selection_cancel);
         self.catalog.page = 0;
         self.catalog.has_more = true;
         self.catalog.error = None;
@@ -343,6 +355,7 @@ impl SkinService {
     pub fn select_catalog_item(&mut self, item: SkinCatalogItem, cx: &mut Context<Self>) {
         if let Some(CatalogThumbState::Ready { skin, .. }) = self.catalog.thumbnail(&item.id) {
             let skin = skin.clone();
+            restart_cancellation(&mut self.catalog.selection_cancel);
             self.catalog.selection = CatalogSelectionState::Ready {
                 item_id: item.id.clone(),
                 skin: skin.clone(),
@@ -360,6 +373,7 @@ impl SkinService {
             && item_id == &item.id
         {
             let skin = previous.clone();
+            restart_cancellation(&mut self.catalog.selection_cancel);
             cx.emit(SkinServiceEvent::CatalogSkinLoaded(CatalogSkin::new(
                 item,
                 skin.clone(),
@@ -376,9 +390,9 @@ impl SkinService {
         let catalog = self.services.skin_catalog.clone();
         let urls = self.services.skin_urls.clone();
         let runtime = self.services.runtime.handle().clone();
+        let cancellation = restart_cancellation(&mut self.catalog.selection_cancel);
         let task = cx.spawn(async move |this, cx| {
             let item_for_task = item.clone();
-            let cancellation = CancellationToken::new();
             let result = runtime
                 .spawn(async move { catalog.prepare(&item_for_task, &urls, &cancellation).await })
                 .await;
@@ -398,14 +412,10 @@ impl SkinService {
                     }
                     Ok(Err(error)) => {
                         let error = describe_catalog_error(&error);
-                        this.catalog.selection = CatalogSelectionState::Failed {
-                            item_id: item_id_for_task,
-                            error,
-                        };
+                        this.catalog.selection = CatalogSelectionState::Failed { error };
                     }
                     Err(error) => {
                         this.catalog.selection = CatalogSelectionState::Failed {
-                            item_id: item_id_for_task,
                             error: format!("皮肤目录任务失败: {error}"),
                         };
                     }
@@ -422,6 +432,7 @@ impl SkinService {
 
     pub fn clear_catalog_selection(&mut self, cx: &mut Context<Self>) {
         if !matches!(self.catalog.selection, CatalogSelectionState::Idle) {
+            restart_cancellation(&mut self.catalog.selection_cancel);
             self.catalog.selection = CatalogSelectionState::Idle;
             cx.notify();
         }
@@ -451,6 +462,29 @@ impl SkinService {
                 )
             })
             .collect();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_empty_page_for_test(&mut self, has_more: bool) {
+        self.catalog.items.clear();
+        self.catalog.thumbnails.clear();
+        self.catalog.page = 1;
+        self.catalog.has_more = has_more;
+        self.catalog.loading = false;
+        self.catalog.error = None;
+        self.catalog.selection = CatalogSelectionState::Idle;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_catalog_failed_for_test(&mut self, error: &str) {
+        self.catalog.selection = CatalogSelectionState::Failed {
+            error: error.to_owned(),
+        };
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_recent_for_test(&mut self, entries: Vec<SkinLibraryEntry>) {
+        self.recent = Loadable::Ready(entries);
     }
 
     /// Removes rendered thumbnails before a search so the caller can release
@@ -738,12 +772,12 @@ impl SkinService {
         let sort = self.catalog.sort;
         let catalog = self.services.skin_catalog.clone();
         let runtime = self.services.runtime.handle().clone();
+        let cancellation = restart_cancellation(&mut self.catalog.load_cancel);
         self.catalog.loading = true;
         self.catalog.error = None;
         cx.notify();
 
         let task = cx.spawn(async move |this, cx| {
-            let cancellation = CancellationToken::new();
             let result = runtime
                 .spawn(async move { catalog.list(&query, sort, page, &cancellation).await })
                 .await;
@@ -779,7 +813,8 @@ impl SkinService {
     }
 
     fn start_catalog_thumbnails(&mut self, items: Vec<SkinCatalogItem>, cx: &mut Context<Self>) {
-        let semaphore = Arc::new(Semaphore::new(4));
+        let semaphore = self.catalog.thumbnail_limiter.clone();
+        let cancellation = self.catalog.thumbnail_cancel.clone();
         let catalog = self.services.skin_catalog.clone();
         let urls = self.services.skin_urls.clone();
         let runtime = self.services.runtime.handle().clone();
@@ -793,12 +828,15 @@ impl SkinService {
             let item_id = item.id.clone();
             let item_for_task = item.clone();
             let semaphore = semaphore.clone();
+            let cancellation = cancellation.clone();
             let catalog = catalog.clone();
             let urls = urls.clone();
             let runtime = runtime.clone();
             let task = cx.spawn(async move |this, cx| {
                 let _permit = semaphore.acquire_owned().await.ok();
-                let cancellation = CancellationToken::new();
+                if cancellation.is_cancelled() {
+                    return;
+                }
                 let result = runtime
                     .spawn(async move {
                         let skin = catalog
@@ -868,6 +906,16 @@ impl SkinService {
         };
         cx.notify();
     }
+}
+
+/// Cancels in-flight inner runtime work before the next request replaces it.
+///
+/// Dropping the GPUI task cancels the outer future, but the `tokio` task spawned
+/// inside it would otherwise keep running and downloading detached.
+fn restart_cancellation(token: &mut CancellationToken) -> CancellationToken {
+    token.cancel();
+    *token = CancellationToken::new();
+    token.clone()
 }
 
 fn describe_profile_error(error: &rmcl_app::MicrosoftAccountServiceError) -> String {

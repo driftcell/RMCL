@@ -1,14 +1,14 @@
 # 在线皮肤目录与 GPU 预览调研
 
-日期：2026-10-31
+日期：2026-11-01
 
-状态：LittleSkin 在线目录、本地 3D 缩略图、候选确认和正版账户一键应用已实现（2026-10-31）；GPU 预览仍停留在方案评估，未实施
+状态：LittleSkin 在线目录、本地 3D 缩略图、候选确认和正版账户一键应用已实现（2026-10-31）；2026-11-01 修复筛选空页分页、失败选中态并取消过期目录请求；GPU 预览仍停留在方案评估，未实施
 
 ## 已实现范围
 
 - `crates/rmcl-app/src/skin_catalog.rs`：LittleSkin 列表、搜索、热门/最新排序、分页、详情 hash 解析和纹理准备；只保留 public、`steve`/`alex`、非 HD 条目。
-- `apps/rmcl/src/app/skin_service.rs`：目录加载、缩略图批量任务、选择态、纹理下载和 GPUI `RenderImage` 缓存；缩略图渲染限制 4 个并发。
-- `apps/rmcl/src/app/ui/skin.rs`：在线/本机双 tab、双列缩略图卡片、搜索/排序/加载更多、来源与外链、选中态和底部确认栏；离线/外置账户可预览但不可应用。
+- `apps/rmcl/src/app/skin_service.rs`：目录加载、缩略图批量任务、选择态、纹理下载和 GPUI `RenderImage` 缓存；列表、缩略图和选择请求持有可取消 token，缩略图共用一个 4 并发上限。
+- `apps/rmcl/src/app/ui/skin.rs`：在线/本机双 tab、双列缩略图卡片、搜索/排序/加载更多、来源与外链、选中态和底部确认栏；筛选后整页为空时仍可加载下一页，失败卡片不显示选中态，离线/外置/未选择账户可预览但不可应用。
 - 缩略图由本地 `SkinPreviewRenderer` 生成 180×240 RGBA，不依赖 LittleSkin 的预览图；选中后左侧舞台继续使用实时 3D 预览。
 - 仍未做 GPU 渲染、MineSkin 目录、自定义站点、第三方皮肤上传和 HD 皮肤上传。
 
