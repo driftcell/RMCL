@@ -2813,6 +2813,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
+dependencies = [
+ "dirs-sys 0.5.0",
+]
+
+[[package]]
 name = "dirs-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9077,7 +9086,7 @@ dependencies = [
  "rmcl-platform",
  "rmcl-store",
  "serde_json",
- "sysinfo 0.39.6",
+ "sysinfo 0.40.1",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -9134,7 +9143,7 @@ dependencies = [
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.1",
- "sysinfo 0.39.6",
+ "sysinfo 0.40.1",
  "tar",
  "tempfile",
  "thiserror 2.0.21",
@@ -9347,7 +9356,7 @@ dependencies = [
 name = "rmcl-store"
 version = "0.1.0"
 dependencies = [
- "dirs 6.0.0",
+ "dirs 7.0.0",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
@@ -10657,9 +10666,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.39.6"
+version = "0.40.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2071df9448915b71c4fe6d25deaf1c22f12bd234f01540b77312bb8e41361e6"
+checksum = "0e8a3edbe0394ce115f3917a00349dd242be09eb5a091ed509eaf67b55cfb8a8"
 dependencies = [
  "libc",
  "memchr",
