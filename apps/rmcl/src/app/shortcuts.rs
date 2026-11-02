@@ -60,6 +60,7 @@ pub fn init(cx: &mut App) {
 }
 
 /// Rebuilds native menus after the interface language changes.
+#[cfg(target_os = "macos")]
 pub fn refresh_menus(cx: &mut App) {
     cx.set_menus(menus());
 }
