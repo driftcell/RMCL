@@ -742,7 +742,7 @@ fn remove_path(path: &Path) {
 
 fn wait_for_parent(pid: u32) -> Result<(), UpdateError> {
     let pid = sysinfo::Pid::from_u32(pid);
-    let mut system = sysinfo::System::new();
+    let mut system = sysinfo::System::new().map_err(UpdateError::ProcessMonitor)?;
     let started = std::time::Instant::now();
     loop {
         system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
@@ -813,6 +813,8 @@ pub enum UpdateError {
     UnsupportedInstall(String),
     #[error("the running application did not exit before the update timeout")]
     ParentStillRunning,
+    #[error("failed to initialize process monitoring: {0}")]
+    ProcessMonitor(#[source] sysinfo::Error),
     #[error("update archive extraction failed: {0}")]
     Extraction(String),
     #[error("failed to {operation} `{path}`: {source}")]

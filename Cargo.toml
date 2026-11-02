@@ -38,7 +38,7 @@ axum = "0.8"
 base64 = "0.23"
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
 crc32fast = "1.5"
-dirs = "6"
+dirs = "7"
 fastrand = "2"
 fastnbt = "2.6"
 flate2 = "1"
@@ -79,7 +79,7 @@ schemars = "1.0"
 sha1 = "0.11"
 sha2 = "0.11"
 subtle = "2"
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 tar = "0.4"
 tempfile = "3"
 thiserror = "2"
