@@ -17,6 +17,7 @@ use rmcl_launch::LogStream;
 use super::super::{LauncherApp, Page, task_kind_label};
 use super::common::{card, empty_state, page_header};
 use super::layout;
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_logs(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -41,7 +42,7 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::ArrowLeft)
-                            .label("返回")
+                            .label(tr("app.common.back"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Home, window, cx)
                             })),
@@ -49,7 +50,7 @@ impl LauncherApp {
                     .child(
                         Switch::new("log-follow")
                             .checked(self.log_follow)
-                            .label("自动滚动")
+                            .label(tr("app.logs.auto_scroll"))
                             .on_change(move |checked, _, cx| {
                                 let _ = follow_view.update(cx, |this, cx| {
                                     this.log_follow = *checked;
@@ -65,8 +66,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::Copy)
-                            .tooltip("复制日志")
-                            .accessibility_label("复制日志")
+                            .tooltip(tr("app.logs.copy"))
+                            .accessibility_label(tr("app.logs.copy"))
                             .disabled(!has_logs)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.copy_logs(window, cx)),
@@ -77,8 +78,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::ArrowDown)
-                            .tooltip("导出日志")
-                            .accessibility_label("导出日志")
+                            .tooltip(tr("app.logs.export"))
+                            .accessibility_label(tr("app.logs.export"))
                             .disabled(!has_task)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.export_logs(window, cx)),
@@ -89,8 +90,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::FolderOpen)
-                            .tooltip("打开日志目录")
-                            .accessibility_label("打开日志目录")
+                            .tooltip(tr("app.logs.open_folder"))
+                            .accessibility_label(tr("app.logs.open_folder"))
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.open_logs_dir(window, cx)),
                             ),
@@ -100,8 +101,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::Trash)
-                            .tooltip("清除当前任务记录")
-                            .accessibility_label("清除当前任务记录")
+                            .tooltip(tr("app.logs.clear"))
+                            .accessibility_label(tr("app.logs.clear"))
                             .disabled(running)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.clear_logs(window, cx)),
@@ -114,12 +115,12 @@ impl LauncherApp {
                 None => card(cx)
                     .child(empty_state(
                         IconName::ScrollText,
-                        "还没有任务记录",
-                        "安装或启动游戏后显示。",
+                        tr("app.logs.empty_title"),
+                        tr("app.logs.empty_description"),
                         Button::new("logs-install")
                             .primary()
                             .icon(IconName::Download)
-                            .label("安装一个版本")
+                            .label(tr("app.logs.install_version"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Downloads, window, cx)
                             })),
@@ -146,8 +147,11 @@ impl LauncherApp {
                             .bg(cx.theme().list_head)
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("日志输出")
-                            .child(format!("{} 行", logs.len())),
+                            .child(tr("app.logs.output"))
+                            .child(
+                                rust_i18n::t!("app.logs.line_count", count = logs.len())
+                                    .to_string(),
+                            ),
                     )
                     .child(if logs.is_empty() {
                         v_flex()
@@ -165,7 +169,7 @@ impl LauncherApp {
                                 div()
                                     .text_sm()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("任务开始后显示游戏输出。"),
+                                    .child(tr("app.logs.output_empty")),
                             )
                             .into_any_element()
                     } else {
@@ -234,11 +238,16 @@ impl LauncherApp {
 
     fn render_task_summary(&self, snapshot: &TaskSnapshot, cx: &App) -> impl IntoElement {
         card(cx)
-            .child(div().text_lg().font_semibold().child(format!(
-                "{}任务 #{}",
-                task_kind_label(snapshot.kind),
-                snapshot.id.get()
-            )))
+            .child(
+                div().text_lg().font_semibold().child(
+                    rust_i18n::t!(
+                        "app.logs.task_title",
+                        kind = task_kind_label(snapshot.kind),
+                        id = snapshot.id.get()
+                    )
+                    .to_string(),
+                ),
+            )
             .when_some(snapshot.error.clone(), |this, error| {
                 this.child(
                     div()
@@ -256,9 +265,14 @@ impl LauncherApp {
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(match (exit.code, exit.signal) {
-                            (Some(code), _) => format!("退出码 {code}"),
-                            (_, Some(signal)) => format!("终止信号 {signal}"),
-                            _ => "未知退出状态".to_owned(),
+                            (Some(code), _) => {
+                                rust_i18n::t!("app.logs.exit_code", code = code).to_string()
+                            }
+                            (_, Some(signal)) => {
+                                rust_i18n::t!("app.logs.termination_signal", signal = signal)
+                                    .to_string()
+                            }
+                            _ => tr("app.common.unknown_exit_status"),
                         }),
                 )
             })

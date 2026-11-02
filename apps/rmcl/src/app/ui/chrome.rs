@@ -22,6 +22,7 @@ use super::super::{
     task_status_label,
 };
 use super::layout;
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -45,8 +46,8 @@ impl LauncherApp {
                         .ghost()
                         .small()
                         .icon(if dark { IconName::Sun } else { IconName::Moon })
-                        .tooltip("切换明暗主题")
-                        .accessibility_label("切换明暗主题")
+                        .tooltip(tr("app.chrome.toggle_theme"))
+                        .accessibility_label(tr("app.chrome.toggle_theme"))
                         .on_click(cx.listener(|this, _, window, cx| this.toggle_theme(window, cx))),
                 )),
         )
@@ -62,15 +63,16 @@ impl LauncherApp {
         let account = self.selected_account();
         let account_name = account
             .map(|account| account.username().to_owned())
-            .unwrap_or_else(|| "添加账户".to_owned());
+            .unwrap_or_else(|| tr("app.chrome.add_account"));
         let account_head = account.and_then(|account| self.account_heads.get(&account.uuid()));
         let account_subtitle = match account {
-            Some(rmcl_auth::Account::Microsoft(_)) => "正版账户".to_owned(),
-            Some(rmcl_auth::Account::Offline(_)) => "离线账户".to_owned(),
-            Some(rmcl_auth::Account::Authlib(account)) => {
-                account.server_name().unwrap_or("外置账户").to_owned()
-            }
-            None => "尚未添加账户".to_owned(),
+            Some(rmcl_auth::Account::Microsoft(_)) => tr("app.account.kind_microsoft"),
+            Some(rmcl_auth::Account::Offline(_)) => tr("app.account.kind_offline"),
+            Some(rmcl_auth::Account::Authlib(account)) => account
+                .server_name()
+                .map(str::to_owned)
+                .unwrap_or_else(|| tr("app.account.kind_authlib")),
+            None => tr("app.account.none"),
         };
         let selected_is_offline = matches!(account, Some(rmcl_auth::Account::Offline(_)));
 
@@ -78,7 +80,7 @@ impl LauncherApp {
             .collapsible(false)
             .w(layout::SIDEBAR_WIDTH)
             .child(
-                SidebarGroup::new("游戏").child(
+                SidebarGroup::new(tr("app.chrome.group_game")).child(
                     SidebarMenu::new()
                         .child(self.nav_item(Page::Home, cx))
                         .child(self.nav_item(Page::Versions, cx))
@@ -89,7 +91,7 @@ impl LauncherApp {
                 ),
             )
             .child(
-                SidebarGroup::new("应用").child(
+                SidebarGroup::new(tr("app.chrome.group_app")).child(
                     SidebarMenu::new()
                         .child(self.agent_nav_item(cx))
                         .child(self.nav_item(Page::Settings, cx))
@@ -155,14 +157,14 @@ impl LauncherApp {
                                 .flex_shrink_0()
                                 .icon(IconName::Pencil)
                                 .tooltip(if selected_is_offline {
-                                    "编辑离线账户"
+                                    tr("app.account.edit_offline")
                                 } else {
-                                    "账户"
+                                    tr("app.account.title")
                                 })
                                 .accessibility_label(if selected_is_offline {
-                                    "编辑离线账户"
+                                    tr("app.account.edit_offline")
                                 } else {
-                                    "账户"
+                                    tr("app.account.title")
                                 })
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     if selected_is_offline {
@@ -250,7 +252,7 @@ impl LauncherApp {
         });
         let current = task_current_item(snapshot);
         let percentage = if loading {
-            "准备中".to_owned()
+            tr("app.status.preparing")
         } else {
             format!("{value:.0}%")
         };
@@ -295,11 +297,13 @@ impl LauncherApp {
                     })
                     .when(!running, |this| {
                         this.child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .child(format!("{version_count} 个已安装版本")),
+                            div().flex_1().min_w_0().truncate().child(
+                                rust_i18n::t!(
+                                    "app.status.installed_versions",
+                                    count = version_count
+                                )
+                                .to_string(),
+                            ),
                         )
                     })
                     .when(running && can_cancel, |this| {
@@ -307,7 +311,7 @@ impl LauncherApp {
                             Button::new("status-stop")
                                 .danger()
                                 .xsmall()
-                                .label("停止")
+                                .label(tr("app.common.stop"))
                                 .on_click(
                                     cx.listener(|this, _, window, cx| this.cancel(window, cx)),
                                 ),
@@ -318,7 +322,7 @@ impl LauncherApp {
                             Button::new("status-open-logs")
                                 .outline()
                                 .xsmall()
-                                .label("查看日志")
+                                .label(tr("app.status.view_logs"))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.navigate(Page::Logs, window, cx)
                                 })),

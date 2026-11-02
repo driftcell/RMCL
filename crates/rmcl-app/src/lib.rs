@@ -1,5 +1,7 @@
 //! Headless application use cases and task orchestration.
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod accounts;
 mod authlib_accounts;
 mod authlib_injector;

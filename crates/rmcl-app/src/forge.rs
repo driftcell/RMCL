@@ -257,7 +257,13 @@ impl ForgeInstaller {
             })
             .collect::<Vec<_>>();
         let total = processors.len();
-        emit_processor(events, "准备处理器".to_owned(), 0, total).await;
+        emit_processor(
+            events,
+            rust_i18n::t!("app.loader.preparing_processors").to_string(),
+            0,
+            total,
+        )
+        .await;
         for (index, processor) in processors.iter().enumerate() {
             if cancellation.is_cancelled() {
                 return Err(AppError::Cancelled);

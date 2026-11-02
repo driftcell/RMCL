@@ -1,0 +1,169 @@
+_version: 2
+
+app:
+  agent:
+    provider_kilo:
+      en: Kilo Free
+      zh-CN: Kilo 免费模型
+    provider_openai:
+      en: OpenAI
+      zh-CN: OpenAI
+    provider_anthropic:
+      en: Anthropic
+      zh-CN: Anthropic
+    provider_gemini:
+      en: Google Gemini
+      zh-CN: Google Gemini
+    provider_deepseek:
+      en: DeepSeek
+      zh-CN: DeepSeek
+    provider_openrouter:
+      en: OpenRouter
+      zh-CN: OpenRouter
+    provider_qwen:
+      en: Qwen
+      zh-CN: 通义千问
+    provider_kimi:
+      en: Kimi
+      zh-CN: Kimi
+    provider_zhipu:
+      en: Zhipu GLM
+      zh-CN: 智谱 GLM
+    provider_custom:
+      en: Custom OpenAI-compatible
+      zh-CN: 自定义 OpenAI 兼容
+    account_none:
+      en: Not Signed In
+      zh-CN: 未登录
+    locale_name:
+      en: English
+      zh-CN: 简体中文
+    kilo_rate_limited:
+      en: The Kilo free tier is receiving too many requests. Try again later or configure your own API key in Settings.
+      zh-CN: Kilo 免费通道当前请求过多，请稍后再试，或在设置中配置自己的 API Key。
+    kilo_unavailable:
+      en: The Kilo free tier is temporarily unavailable. Try again later or choose another provider in Settings.
+      zh-CN: Kilo 免费通道暂时不可用，请稍后重试，或在设置中改用其他服务商。
+    user_stopped:
+      en: The user stopped the task
+      zh-CN: 用户停止了任务
+    user_rejected:
+      en: The user rejected this operation
+      zh-CN: 用户拒绝了此操作
+    confirm_title:
+      en: Allow “%{label}”?
+      zh-CN: 允许执行「%{label}」？
+    none:
+      en: None
+      zh-CN: 无
+    enabled:
+      en: Enable
+      zh-CN: 启用
+    disabled:
+      en: Disable
+      zh-CN: 禁用
+    tool_instances_list:
+      en: View instances
+      zh-CN: 查看实例
+    tool_instances_get:
+      en: View instance details
+      zh-CN: 查看实例详情
+    tool_instances_create:
+      en: Create instance
+      zh-CN: 创建实例
+    tool_instances_update:
+      en: Update instance
+      zh-CN: 修改实例
+    tool_instances_repair:
+      en: Repair instance
+      zh-CN: 修复实例
+    tool_instances_launch:
+      en: Launch game
+      zh-CN: 启动游戏
+    tool_instances_delete:
+      en: Delete instance
+      zh-CN: 删除实例
+    tool_versions_list:
+      en: Look up game versions
+      zh-CN: 查询游戏版本
+    tool_loaders_list:
+      en: Look up loader versions
+      zh-CN: 查询加载器版本
+    tool_content_list:
+      en: View local content
+      zh-CN: 查看本地内容
+    tool_content_search:
+      en: Search Modrinth
+      zh-CN: 搜索 Modrinth
+    tool_content_versions:
+      en: View available versions
+      zh-CN: 查看可用版本
+    tool_content_install:
+      en: Install content
+      zh-CN: 安装内容
+    tool_content_update:
+      en: Update content
+      zh-CN: 更新内容
+    tool_content_set_enabled:
+      en: Enable or disable content
+      zh-CN: 启用或禁用内容
+    tool_content_delete:
+      en: Delete content
+      zh-CN: 删除内容
+    tool_java_list:
+      en: View Java
+      zh-CN: 查看 Java
+    tool_java_ensure:
+      en: Prepare Java
+      zh-CN: 准备 Java
+    tool_accounts_list:
+      en: View accounts
+      zh-CN: 查看账户
+    tool_servers_list:
+      en: View servers
+      zh-CN: 查看服务器
+    tool_servers_ping:
+      en: Query server status
+      zh-CN: 查询服务器状态
+    tool_skins_list:
+      en: View skin library
+      zh-CN: 查看皮肤库
+    tool_skins_profile:
+      en: View Microsoft skin
+      zh-CN: 查看正版皮肤
+    tool_tasks_list:
+      en: View tasks
+      zh-CN: 查看任务
+    tool_tasks_get:
+      en: View task status
+      zh-CN: 查看任务状态
+    tool_tasks_wait:
+      en: Wait for task completion
+      zh-CN: 等待任务完成
+    tool_tasks_logs:
+      en: Read task logs
+      zh-CN: 读取任务日志
+    tool_tasks_cancel:
+      en: Cancel task
+      zh-CN: 取消任务
+    tool_report_status:
+      en: Update status
+      zh-CN: 更新状态
+    tool_call:
+      en: Call tool
+      zh-CN: 调用工具
+    confirm_delete:
+      en: Delete
+      zh-CN: 删除
+    confirm_launch:
+      en: Launch
+      zh-CN: 启动
+    confirm_install:
+      en: Install
+      zh-CN: 安装
+    confirm_continue:
+      en: Continue
+      zh-CN: 继续
+    confirm_cancel_task:
+      en: Cancel Task
+      zh-CN: 取消任务

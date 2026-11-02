@@ -21,7 +21,7 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::services::Services;
+use crate::{i18n::tr, services::Services};
 
 const PROFILE_MAX_AGE: Duration = Duration::from_secs(60);
 
@@ -419,7 +419,8 @@ impl SkinService {
                         this.catalog.selection = restore_previous_selection(previous.clone());
                     }
                     Err(error) => {
-                        this.catalog.selection_error = Some(format!("皮肤目录任务失败: {error}"));
+                        this.catalog.selection_error =
+                            Some(rust_i18n::t!("app.skin.task_failed", error = error).to_string());
                         this.catalog.selection = restore_previous_selection(previous.clone());
                     }
                 }
@@ -664,7 +665,8 @@ impl SkinService {
                         this.profiles.insert(
                             uuid,
                             ProfileState::Failed {
-                                error: format!("皮肤资料请求失败: {error}"),
+                                error: rust_i18n::t!("app.skin.profile_task_failed", error = error)
+                                    .to_string(),
                                 previous,
                             },
                         );
@@ -696,7 +698,7 @@ impl SkinService {
                 self.textures.insert(
                     account,
                     EquippedSkinState::Failed {
-                        error: "无法生成默认皮肤预览。".to_owned(),
+                        error: tr("app.skin.default_preview_failed"),
                         previous: None,
                     },
                 );
@@ -770,7 +772,8 @@ impl SkinService {
                         this.textures.insert(
                             account,
                             EquippedSkinState::Failed {
-                                error: format!("皮肤纹理任务失败: {error}"),
+                                error: rust_i18n::t!("app.skin.texture_task_failed", error = error)
+                                    .to_string(),
                                 previous,
                             },
                         );
@@ -827,7 +830,8 @@ impl SkinService {
                         this.catalog.error = Some(describe_catalog_error(&error));
                     }
                     Err(error) => {
-                        this.catalog.error = Some(format!("皮肤目录任务失败: {error}"));
+                        this.catalog.error =
+                            Some(rust_i18n::t!("app.skin.task_failed", error = error).to_string());
                     }
                 }
                 cx.notify();
@@ -913,11 +917,13 @@ impl SkinService {
                 this.recent = match result {
                     Ok(Ok(entries)) => Loadable::Ready(entries),
                     Ok(Err(error)) => Loadable::Failed {
-                        error: format!("读取最近皮肤失败: {error}"),
+                        error: rust_i18n::t!("app.skin.recent_read_failed", error = error)
+                            .to_string(),
                         previous,
                     },
                     Err(error) => Loadable::Failed {
-                        error: format!("最近皮肤任务失败: {error}"),
+                        error: rust_i18n::t!("app.skin.recent_task_failed", error = error)
+                            .to_string(),
                         previous,
                     },
                 };
@@ -960,11 +966,11 @@ fn describe_profile_error(error: &rmcl_app::MicrosoftAccountServiceError) -> Str
         | MicrosoftAccountServiceError::Auth(
             MicrosoftAuthError::ReauthenticationRequired
             | MicrosoftAuthError::MinecraftTokenRejected,
-        ) => "登录已过期，请重新登录。".to_owned(),
-        MicrosoftAccountServiceError::SecretStore(_) => "系统凭据存储不可用。".to_owned(),
+        ) => tr("app.skin.error_login_expired_short"),
+        MicrosoftAccountServiceError::SecretStore(_) => tr("app.skin.error_secret_store"),
         MicrosoftAccountServiceError::Auth(
             MicrosoftAuthError::Http { .. } | MicrosoftAuthError::HttpStatus { .. },
-        ) => "无法连接 Minecraft 服务，请稍后重试。".to_owned(),
+        ) => tr("app.skin.error_minecraft_unreachable"),
         other => other.to_string(),
     }
 }
@@ -977,44 +983,49 @@ fn render_catalog_thumbnail(texture: &SkinTexture, variant: SkinVariant) -> Arc<
 fn describe_catalog_error(error: &SkinCatalogError) -> String {
     match error {
         SkinCatalogError::HttpStatus { status } if status.as_u16() == 429 => {
-            "皮肤站请求过于频繁，请稍后再试。".to_owned()
+            tr("app.skin.error_catalog_rate_limited")
         }
         SkinCatalogError::HttpStatus { status } => {
-            format!("皮肤站返回 HTTP {status}，请稍后再试。")
+            rust_i18n::t!("app.skin.error_catalog_http", status = status).to_string()
         }
         SkinCatalogError::Http(_) | SkinCatalogError::Cancelled => {
-            "无法连接皮肤站，请检查网络。".to_owned()
+            tr("app.skin.error_catalog_network")
         }
         SkinCatalogError::InvalidResponse(_) | SkinCatalogError::InvalidTextureHash => {
-            "皮肤站返回了无法识别的数据。".to_owned()
+            tr("app.skin.error_catalog_response")
         }
-        SkinCatalogError::ResponseTooLarge { .. } => "皮肤站响应过大。".to_owned(),
+        SkinCatalogError::ResponseTooLarge { .. } => tr("app.skin.error_catalog_too_large"),
         SkinCatalogError::Source(error) => match error {
             rmcl_app::SkinSourceError::UnsupportedUploadDimensions { width, height } => {
-                format!("这张皮肤是 {width}×{height}，Java 版只能上传 64×64 或 64×32。")
+                rust_i18n::t!(
+                    "app.skin.error_catalog_dimensions",
+                    width = width,
+                    height = height
+                )
+                .to_string()
             }
             rmcl_app::SkinSourceError::UploadTooLarge => {
-                "这张皮肤超过官方 24 KiB 上传限制。".to_owned()
+                tr("app.skin.error_catalog_upload_too_large")
             }
-            _ => "皮肤纹理下载或校验失败。".to_owned(),
+            _ => tr("app.skin.error_catalog_texture"),
         },
-        SkinCatalogError::InvalidUrl(_) => "皮肤站地址无效。".to_owned(),
-        SkinCatalogError::Blocking(_) => "皮肤预览渲染失败。".to_owned(),
+        SkinCatalogError::InvalidUrl(_) => tr("app.skin.error_catalog_url"),
+        SkinCatalogError::Blocking(_) => tr("app.skin.error_catalog_render"),
     }
 }
 
 fn describe_texture_error(error: &SkinError) -> String {
     match error {
         SkinError::HostNotAllowed | SkinError::InvalidUrl(_) | SkinError::UnsupportedScheme => {
-            "官方皮肤地址无效。".to_owned()
+            tr("app.skin.error_texture_url")
         }
         SkinError::Http { .. } | SkinError::HttpStatus { .. } | SkinError::TooLarge => {
-            "皮肤纹理下载失败。".to_owned()
+            tr("app.skin.error_texture_download")
         }
         SkinError::Decode(_) | SkinError::InvalidDimensions { .. } => {
-            "皮肤纹理格式无效。".to_owned()
+            tr("app.skin.error_texture_format")
         }
-        _ => "皮肤纹理处理失败。".to_owned(),
+        _ => tr("app.skin.error_texture_process"),
     }
 }
 

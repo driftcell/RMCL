@@ -88,10 +88,14 @@ pub fn inspect_content(instance: &InstanceLayout, library: &ContentLibrary) -> C
                         },
                     );
                 }
-                Err(error) => inspection.warnings.push(format!(
-                    "无法读取资源包 {} 的元数据：{error}",
-                    item.display_name()
-                )),
+                Err(error) => inspection.warnings.push(
+                    rust_i18n::t!(
+                        "app.content.resource_pack_metadata_failed",
+                        name = item.display_name(),
+                        error = error
+                    )
+                    .to_string(),
+                ),
             },
             ContentKind::ShaderPack => match read_shader_pack_metadata(&item.path) {
                 Ok(metadata) => {
@@ -99,10 +103,14 @@ pub fn inspect_content(instance: &InstanceLayout, library: &ContentLibrary) -> C
                         .shader_packs
                         .insert(item.relative_path.clone(), metadata);
                 }
-                Err(error) => inspection.warnings.push(format!(
-                    "无法读取光影包 {} 的元数据：{error}",
-                    item.display_name()
-                )),
+                Err(error) => inspection.warnings.push(
+                    rust_i18n::t!(
+                        "app.content.shader_pack_metadata_failed",
+                        name = item.display_name(),
+                        error = error
+                    )
+                    .to_string(),
+                ),
             },
             ContentKind::Mod => {}
         }
@@ -117,7 +125,7 @@ pub fn inspect_content(instance: &InstanceLayout, library: &ContentLibrary) -> C
             Ok(order) => inspection.resource_pack_order = order,
             Err(error) => inspection
                 .warnings
-                .push(format!("无法读取资源包优先级：{error}")),
+                .push(rust_i18n::t!("app.content.priority_read_failed", error = error).to_string()),
         }
     }
 
@@ -126,9 +134,10 @@ pub fn inspect_content(instance: &InstanceLayout, library: &ContentLibrary) -> C
     if let Some(loader) = inspection.shader_loader {
         match read_shader_pack_selection(instance, loader) {
             Ok(selection) => inspection.shader_selection = selection,
-            Err(error) => inspection
-                .warnings
-                .push(format!("无法读取光影选择：{error}")),
+            Err(error) => inspection.warnings.push(
+                rust_i18n::t!("app.content.shader_selection_read_failed", error = error)
+                    .to_string(),
+            ),
         }
     }
     inspection
@@ -422,16 +431,16 @@ impl ModMetadataCache {
         if file.size.is_some_and(|size| size > MAX_PREFLIGHT_JAR_BYTES) {
             return Ok(ModMetadataFetch {
                 metadata: None,
-                warning: Some(format!(
-                    "{} 超过 16 MiB，已跳过主文件元数据预检。",
-                    file.filename
-                )),
+                warning: Some(
+                    rust_i18n::t!("app.content.main_file_too_large", name = file.filename)
+                        .to_string(),
+                ),
             });
         }
         let Some(sha1) = file.sha1 else {
             return Ok(ModMetadataFetch {
                 metadata: None,
-                warning: Some("文件没有 SHA-1，已跳过主文件元数据预检。".to_owned()),
+                warning: Some(rust_i18n::t!("app.content.main_file_no_sha1").to_string()),
             });
         };
         let path = self.directory.join(format!("{sha1}.jar"));
@@ -462,8 +471,14 @@ impl ModMetadataCache {
             return Ok(ModMetadataFetch {
                 metadata: parsed.metadata,
                 warning: Some(match parsed.warning {
-                    Some(warning) => format!("{warning}; 缓存元数据失败：{source}"),
-                    None => format!("缓存主文件元数据失败：{source}"),
+                    Some(warning) => rust_i18n::t!(
+                        "app.content.metadata_cache_failed_with_warning",
+                        warning = warning,
+                        error = source
+                    )
+                    .to_string(),
+                    None => rust_i18n::t!("app.content.metadata_cache_failed", error = source)
+                        .to_string(),
                 }),
             });
         }
@@ -480,11 +495,17 @@ impl ModMetadataCache {
             },
             Ok(Err(error)) => ModMetadataFetch {
                 metadata: None,
-                warning: Some(format!("无法读取主文件 Mod 元数据：{error}")),
+                warning: Some(
+                    rust_i18n::t!("app.content.main_metadata_read_failed", error = error)
+                        .to_string(),
+                ),
             },
             Err(error) => ModMetadataFetch {
                 metadata: None,
-                warning: Some(format!("读取主文件 Mod 元数据失败：{error}")),
+                warning: Some(
+                    rust_i18n::t!("app.content.main_metadata_task_failed", error = error)
+                        .to_string(),
+                ),
             },
         }
     }
@@ -766,20 +787,24 @@ pub async fn preflight_content_install(
     }
     for dependency in &dependencies {
         match &dependency.status {
-            ContentPreflightStatus::AlreadyInstalled { enabled: false } => warnings.push(format!(
-                "前置 {} 已安装但已禁用，请启用后再启动游戏。",
-                dependency.title
-            )),
+            ContentPreflightStatus::AlreadyInstalled { enabled: false } => warnings.push(
+                rust_i18n::t!("app.content.dependency_disabled", name = dependency.title)
+                    .to_string(),
+            ),
             ContentPreflightStatus::InstalledDifferentVersion { version, .. } => {
-                warnings.push(format!(
-                    "已安装 {} 的另一版本{}，本次会安装所需的 {}。",
-                    dependency.title,
-                    version
-                        .as_deref()
-                        .map(|version| format!(" {version}"))
-                        .unwrap_or_default(),
-                    dependency.version_number
-                ))
+                let installed_version = version
+                    .as_deref()
+                    .map(|version| format!(" {version}"))
+                    .unwrap_or_default();
+                warnings.push(
+                    rust_i18n::t!(
+                        "app.content.dependency_other_version",
+                        name = dependency.title,
+                        installed = installed_version,
+                        required = dependency.version_number
+                    )
+                    .to_string(),
+                )
             }
             ContentPreflightStatus::AlreadyInstalled { enabled: true } => {}
             ContentPreflightStatus::WillInstall | ContentPreflightStatus::Conflict => {}
@@ -789,30 +814,28 @@ pub async fn preflight_content_install(
         && let Some(installed_mod) = installed.find(&metadata.id)
         && !installed_mod.enabled
     {
-        warnings.push(format!(
-            "主 Mod {} 已安装但已禁用；本次安装会新增文件而不是启用现有文件。",
-            metadata.id
-        ));
+        warnings
+            .push(rust_i18n::t!("app.content.main_mod_disabled", name = metadata.id).to_string());
     }
     if !incompatible.is_empty() {
-        warnings.push(format!(
-            "检测到 {} 个已安装的不兼容 Mod。",
-            incompatible.len()
-        ));
-    }
-    if request.kind == ContentKind::ShaderPack && !installed.has_shader_loader() {
         warnings.push(
-            "当前实例未检测到 Iris、Oculus 或 OptiFine；光影文件可以安装，但不会生效。".to_owned(),
+            rust_i18n::t!("app.content.incompatible_count", count = incompatible.len()).to_string(),
         );
     }
+    if request.kind == ContentKind::ShaderPack && !installed.has_shader_loader() {
+        warnings.push(rust_i18n::t!("app.content.no_shader_loader").to_string());
+    }
     if request.kind == ContentKind::Mod && request.loader.is_none() {
-        warnings.push("当前实例没有 Mod 加载器，安装后 Mod 不会生效。".to_owned());
+        warnings.push(rust_i18n::t!("app.content.no_mod_loader").to_string());
     }
     if main.version_type != "release" {
-        warnings.push(format!(
-            "这是一个 {} 版本，不是正式版；建议优先选择标记为“推荐”的正式版。",
-            main.version_type
-        ));
+        warnings.push(
+            rust_i18n::t!(
+                "app.content.not_a_release",
+                version_type = main.version_type
+            )
+            .to_string(),
+        );
     }
 
     Ok(ContentInstallPreflight {
@@ -1028,7 +1051,7 @@ fn installable_file(version: &RemoteVersion, kind: ContentKind) -> Result<Remote
                 message: format!(
                     "`{}` has no installable {} file",
                     version.name,
-                    kind.label()
+                    kind.directory_name()
                 ),
             })?;
     if file.sha1.is_none() {
@@ -1164,7 +1187,7 @@ impl ContentInstaller {
             return Err(AppError::InvalidRequest(format!(
                 "remote file `{}` is not a supported {} file",
                 request.file.filename,
-                request.kind.label()
+                request.kind.directory_name()
             )));
         }
         if !matches!(request.file.url.scheme(), "http" | "https") {

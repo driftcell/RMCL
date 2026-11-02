@@ -18,13 +18,14 @@ use super::super::{LauncherApp, Page, ServerTab, short_date, version_tile, versi
 use super::common::{card, display_path, page_header, section_title, server_tile, type_tag};
 use super::layout;
 use super::servers::{server_players, server_status_line};
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.selected_version();
         let version_label = selected
             .map(|version| version.display_name().to_owned())
-            .unwrap_or_else(|| "准备安装你的第一个实例".to_owned());
+            .unwrap_or_else(|| tr("app.home.first_instance_ready"));
         let version_meta = selected
             .map(|version| {
                 let base = format!(
@@ -38,7 +39,7 @@ impl LauncherApp {
                     base
                 }
             })
-            .unwrap_or_else(|| "从下载页选择任意 Vanilla 版本开始。".to_owned());
+            .unwrap_or_else(|| tr("app.home.first_instance_hint"));
         let has_account = self.selected_account().is_some();
         let can_start = self.can_start_operation();
 
@@ -55,10 +56,10 @@ impl LauncherApp {
                     .min_h_0()
                     .gap_6()
                     .when_some(self.config_warning.clone(), |this, warning| {
-                        this.child(error_banner("配置读取失败", &warning, cx))
+                        this.child(error_banner(tr("app.home.config_read_failed"), warning, cx))
                     })
                     .when_some(self.config_save_error.clone(), |this, error| {
-                        this.child(error_banner("配置保存失败", &error, cx))
+                        this.child(error_banner(tr("app.home.config_save_failed"), error, cx))
                     })
                     .child(self.render_hero(
                         selected,
@@ -133,16 +134,19 @@ impl LauncherApp {
                                             .child(
                                                 Tag::new()
                                                     .child(if selected.is_some() {
-                                                        "当前实例"
+                                                        tr("app.home.current_instance")
                                                     } else {
-                                                        "尚未安装"
+                                                        tr("app.home.not_installed")
                                                     })
                                                     .small(),
                                             )
                                             .when_some(selected, |this, version| {
                                                 this.when(!version.is_isolated(), |this| {
                                                     this.child(
-                                                        Tag::new().outline().child("共享").small(),
+                                                        Tag::new()
+                                                            .outline()
+                                                            .child(tr("app.common.shared"))
+                                                            .small(),
                                                     )
                                                 })
                                             }),
@@ -195,7 +199,7 @@ impl LauncherApp {
                                             div()
                                                 .text_xs()
                                                 .text_color(cx.theme().warning)
-                                                .child("启动游戏前需要添加一个离线账户。"),
+                                                .child(tr("app.home.account_required")),
                                         )
                                     }),
                             ),
@@ -215,7 +219,7 @@ impl LauncherApp {
                                     .text_xs()
                                     .font_medium()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("启动配置"),
+                                    .child(tr("app.home.launch_config")),
                             )
                             .child(
                                 v_flex()
@@ -224,12 +228,12 @@ impl LauncherApp {
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("实例"),
+                                            .child(tr("app.home.instance")),
                                     )
                                     .child(
                                         Select::new(&self.version_select)
-                                            .placeholder("选择实例")
-                                            .accessibility_label("选择实例")
+                                            .placeholder(tr("app.home.select_instance"))
+                                            .accessibility_label(tr("app.home.select_instance"))
                                             .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
                                             .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
                                             .cleanable(false)
@@ -243,9 +247,9 @@ impl LauncherApp {
                                         .large()
                                         .icon(IconName::Play)
                                         .label(if self.launch_resolving {
-                                            "正在验证账户…"
+                                            tr("app.home.verifying_account")
                                         } else {
-                                            "启动游戏"
+                                            tr("app.home.launch_game")
                                         })
                                         .w_full()
                                         .disabled(
@@ -267,7 +271,7 @@ impl LauncherApp {
                                     Button::new("home-account")
                                         .outline()
                                         .icon(IconName::CircleUser)
-                                        .label("添加账户")
+                                        .label(tr("app.chrome.add_account"))
                                         .w_full()
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.open_accounts_dialog(window, cx)
@@ -280,7 +284,7 @@ impl LauncherApp {
                                         .primary()
                                         .large()
                                         .icon(IconName::Download)
-                                        .label("安装第一个实例")
+                                        .label(tr("app.home.install_first"))
                                         .w_full()
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.navigate(Page::Downloads, window, cx)
@@ -302,9 +306,9 @@ impl LauncherApp {
             .collect::<Vec<_>>();
         let (can_join, join_tooltip) = self.server_join_ready();
         let manage_label = if total > 3 {
-            format!("查看全部 {total} 个")
+            rust_i18n::t!("app.home.view_all_servers", count = total).to_string()
         } else {
-            "管理服务器".to_owned()
+            tr("app.home.manage_servers")
         };
 
         let mut server_cards = Vec::new();
@@ -373,11 +377,14 @@ impl LauncherApp {
                                 Button::new(format!("home-server-join-{id}"))
                                     .primary()
                                     .icon(IconName::Play)
-                                    .label("进入")
+                                    .label(tr("app.servers.join"))
                                     .flex_shrink_0()
                                     .disabled(!can_join)
-                                    .tooltip(join_tooltip)
-                                    .accessibility_label(format!("进入 {name}"))
+                                    .tooltip(join_tooltip.clone())
+                                    .accessibility_label(
+                                        rust_i18n::t!("app.home.join_named", name = name)
+                                            .to_string(),
+                                    )
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.join_server(id.clone(), window, cx)
                                     })),
@@ -396,7 +403,7 @@ impl LauncherApp {
                     .items_center()
                     .justify_between()
                     .gap_4()
-                    .child(section_title("快速连接", "", cx))
+                    .child(section_title(tr("app.home.quick_connect"), "", cx))
                     .when(total > 0, |this| {
                         this.child(
                             Button::new("home-servers-manage")
@@ -435,15 +442,16 @@ impl LauncherApp {
                                     .min_w_0()
                                     .gap_0p5()
                                     .child(
-                                        div().text_sm().font_medium().child("还没有收藏的服务器"),
+                                        div()
+                                            .text_sm()
+                                            .font_medium()
+                                            .child(tr("app.home.no_favorite_servers")),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(
-                                                "添加服务器或收藏精选条目后，可以从首页直接进入。",
-                                            ),
+                                            .child(tr("app.home.no_favorite_servers_hint")),
                                     ),
                             )
                             .child(
@@ -451,7 +459,7 @@ impl LauncherApp {
                                     .primary()
                                     .small()
                                     .icon(IconName::Plus)
-                                    .label("添加服务器")
+                                    .label(tr("app.servers.add"))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_server_dialog(None, window, cx)
                                     })),
@@ -460,7 +468,7 @@ impl LauncherApp {
                                 Button::new("home-server-discover")
                                     .ghost()
                                     .small()
-                                    .label("浏览精选")
+                                    .label(tr("app.home.browse_featured"))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.navigate(Page::Servers, window, cx);
                                         this.select_server_tab(ServerTab::Discover, window, cx);
@@ -482,7 +490,7 @@ impl LauncherApp {
         }
         card(cx)
             .h_full()
-            .child(section_title("最近实例", "", cx))
+            .child(section_title(tr("app.home.recent_instances"), "", cx))
             .when(self.installed_versions.is_empty(), |this| {
                 this.child(
                     v_flex()
@@ -499,7 +507,7 @@ impl LauncherApp {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("还没有已安装实例"),
+                                .child(tr("app.home.no_installed_instances")),
                         ),
                 )
             })
@@ -545,14 +553,14 @@ impl LauncherApp {
             )
             .child(type_tag(version.version_type.as_deref()))
             .when(!version.is_isolated(), |this| {
-                this.child(Tag::new().outline().child("共享").small())
+                this.child(Tag::new().outline().child(tr("app.common.shared")).small())
             })
             .child(
                 Button::new(format!("home-row-play-{id}"))
                     .outline()
                     .small()
                     .icon(IconName::Play)
-                    .label("启动")
+                    .label(tr("app.home.launch"))
                     .disabled(!can_start)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.start_launch(id.clone(), window, cx)
@@ -563,12 +571,12 @@ impl LauncherApp {
     fn render_quick_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         card(cx)
             .h_full()
-            .child(section_title("快速操作", "", cx))
+            .child(section_title(tr("app.home.quick_actions"), "", cx))
             .child(
                 Button::new("quick-install")
                     .outline()
                     .icon(IconName::Download)
-                    .label("安装新实例")
+                    .label(tr("app.home.install_new_instance"))
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.navigate(Page::Downloads, window, cx)
@@ -578,7 +586,7 @@ impl LauncherApp {
                 Button::new("quick-folder")
                     .outline()
                     .icon(IconName::FolderOpen)
-                    .label("打开游戏目录")
+                    .label(tr("app.home.open_game_folder"))
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| this.open_game_folder(window, cx))),
             )
@@ -630,7 +638,13 @@ fn hero_tile(has_version: bool, cx: &App) -> impl IntoElement {
         )
 }
 
-fn error_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
+fn error_banner(
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement {
+    let title = title.into();
+    let message = message.into();
     h_flex()
         .w_full()
         .gap_3()
@@ -654,13 +668,13 @@ fn error_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
                         .text_sm()
                         .font_medium()
                         .text_color(cx.theme().danger)
-                        .child(title.to_owned()),
+                        .child(title.clone()),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child(message.to_owned()),
+                        .child(message.clone()),
                 ),
         )
 }

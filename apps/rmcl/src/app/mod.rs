@@ -48,13 +48,13 @@ use rmcl_app::{
     ResourcePackOrder, ServerIconCache, ServerPingError, ServerStatus, ServerStatusClient,
     ShaderLoader, SkinCatalogSort, TaskEvent, TaskId, TaskKind, TaskPhase, TaskProgress,
     TaskSnapshot, TaskStatus, TaskSubject, UpdatePlan, UpdateProgress, UpdateRelease,
-    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary, WorldCopyProgress,
-    WorldId, delete_installed_version, delete_instance_content, discover_installed_versions,
-    featured_servers, import_instance_content, migrate_instance_to_isolated,
-    move_instance_resource_pack, preflight_content_install, recommended_version,
-    remove_server_bookmark, rename_instance, scan_and_inspect_instance_content,
-    scan_installed_mods, set_instance_content_enabled, set_instance_java,
-    set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
+    VanillaInstallRequest, VersionManifest, VersionSource, VersionSummary, WorldCompatibility,
+    WorldCopyProgress, WorldId, delete_installed_version, delete_instance_content,
+    discover_installed_versions, featured_servers, import_instance_content,
+    migrate_instance_to_isolated, move_instance_resource_pack, preflight_content_install,
+    recommended_version, remove_server_bookmark, rename_instance,
+    scan_and_inspect_instance_content, scan_installed_mods, set_instance_content_enabled,
+    set_instance_java, set_instance_launch_settings, set_instance_shader_pack, spawn_apply_helper,
     upsert_server_bookmark,
 };
 use rmcl_auth::{
@@ -65,8 +65,8 @@ use rmcl_domain::{Architecture, OperatingSystem, Platform, ServerAddress};
 use rmcl_launch::{AuthlibLaunchConfig, GameLog, LaunchAccount, LogStream};
 use rmcl_net::{MirrorHealth, MirrorPreference, MirrorProbe};
 use rmcl_store::{
-    AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LauncherConfig,
-    LauncherVisibility, StoredAccountKind, ThemePreference,
+    AccentColor, CONFIG_SCHEMA_VERSION, DownloadSourcePreference, LanguagePreference,
+    LauncherConfig, LauncherVisibility, StoredAccountKind, ThemePreference,
 };
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
@@ -74,6 +74,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
+    i18n::tr,
     services::{
         Bootstrap, Services, load_account, load_authlib_account, load_microsoft_account, open_path,
         stored_account, stored_authlib_account, stored_microsoft_account,
@@ -93,10 +94,6 @@ use self::{
     },
 };
 
-const THEME_ITEMS: [&str; 3] = ["跟随系统", "浅色", "深色"];
-const ACCENT_ITEMS: [&str; 5] = ["翡翠", "海蓝", "紫罗兰", "琥珀", "玫瑰"];
-const VISIBILITY_ITEMS: [&str; 2] = ["保持显示", "游戏运行时隐藏"];
-const DOWNLOAD_SOURCE_ITEMS: [&str; 3] = ["自动", "官方源", "国内镜像"];
 const SERVER_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SERVER_PING_CONCURRENCY: usize = 4;
 
@@ -121,11 +118,11 @@ impl SkinTab {
         Self::ALL.get(index).copied().unwrap_or(Self::Online)
     }
 
-    fn label(self) -> &'static str {
-        match self {
-            Self::Online => "在线皮肤",
-            Self::Local => "本机与导入",
-        }
+    fn label(self) -> String {
+        tr(match self {
+            Self::Online => "app.skin.tab_online",
+            Self::Local => "app.skin.tab_local",
+        })
     }
 }
 
@@ -159,38 +156,38 @@ impl Page {
         Self::Logs,
     ];
 
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Home => "主页",
-            Self::Agent => "AI 助手",
-            Self::Versions => "实例",
-            Self::Worlds => "地图",
-            Self::Skin => "皮肤",
-            Self::Servers => "联机",
-            Self::Instance => "实例详情",
-            Self::CreateInstance => "新建实例",
-            Self::ContentBrowser => "在线内容",
-            Self::Downloads => "下载游戏",
-            Self::Logs => "日志",
-            Self::Settings => "设置",
-        }
+    pub fn title(self) -> String {
+        tr(match self {
+            Self::Home => "app.page.home.title",
+            Self::Agent => "app.page.agent.title",
+            Self::Versions => "app.page.versions.title",
+            Self::Worlds => "app.page.worlds.title",
+            Self::Skin => "app.page.skin.title",
+            Self::Servers => "app.page.servers.title",
+            Self::Instance => "app.page.instance.title",
+            Self::CreateInstance => "app.page.create_instance.title",
+            Self::ContentBrowser => "app.page.content_browser.title",
+            Self::Downloads => "app.page.downloads.title",
+            Self::Logs => "app.page.logs.title",
+            Self::Settings => "app.page.settings.title",
+        })
     }
 
-    pub fn subtitle(self) -> &'static str {
-        match self {
-            Self::Home => "选择一个实例，立即开始游戏。",
-            Self::Agent => "用自然语言管理实例、内容和任务。",
-            Self::Versions => "管理已安装的游戏实例与版本。",
-            Self::Worlds => "管理当前实例的地图存档。",
-            Self::Skin => "浏览在线皮肤库，实时预览；正版账户可一键更换。",
-            Self::Servers => "",
-            Self::Instance => "管理该实例的 Mod、资源包和光影。",
-            Self::CreateInstance => "选择 Minecraft 版本、加载器和实例目录。",
-            Self::ContentBrowser => "从 Modrinth 搜索并安装到当前实例。",
-            Self::Downloads => "从 Mojang 官方源安装新的 Vanilla 版本。",
-            Self::Logs => "查看安装、启动和游戏运行日志。",
-            Self::Settings => "配置游戏目录、外观与 Java。",
-        }
+    pub fn subtitle(self) -> String {
+        tr(match self {
+            Self::Home => "app.page.home.subtitle",
+            Self::Agent => "app.page.agent.subtitle",
+            Self::Versions => "app.page.versions.subtitle",
+            Self::Worlds => "app.page.worlds.subtitle",
+            Self::Skin => "app.page.skin.subtitle",
+            Self::Servers => "app.page.servers.subtitle",
+            Self::Instance => "app.page.instance.subtitle",
+            Self::CreateInstance => "app.page.create_instance.subtitle",
+            Self::ContentBrowser => "app.page.content_browser.subtitle",
+            Self::Downloads => "app.page.downloads.subtitle",
+            Self::Logs => "app.page.logs.subtitle",
+            Self::Settings => "app.page.settings.subtitle",
+        })
     }
 
     fn icon(self) -> IconName {
@@ -221,11 +218,11 @@ pub enum ServerTab {
 impl ServerTab {
     pub const ALL: [Self; 2] = [Self::Favorites, Self::Discover];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Favorites => "收藏",
-            Self::Discover => "发现",
-        }
+    pub fn label(self) -> String {
+        tr(match self {
+            Self::Favorites => "app.servers.tab_favorites",
+            Self::Discover => "app.servers.tab_discover",
+        })
     }
 
     pub fn index(self) -> usize {
@@ -309,8 +306,8 @@ struct UpdateState {
 impl ContentTab {
     pub const ALL: [Self; 3] = [Self::Mods, Self::ResourcePacks, Self::ShaderPacks];
 
-    pub fn label(self) -> &'static str {
-        self.kind().label()
+    pub fn label(self) -> String {
+        content_kind_label(self.kind())
     }
 
     pub fn kind(self) -> ContentKind {
@@ -363,13 +360,13 @@ impl VersionFilter {
     pub const ALL: [Self; 4] = [Self::All, Self::Release, Self::Snapshot, Self::Old];
     pub const DOWNLOADS: [Self; 3] = [Self::Release, Self::Snapshot, Self::Old];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::All => "全部",
-            Self::Release => "正式版",
-            Self::Snapshot => "快照",
-            Self::Old => "旧版",
-        }
+    pub fn label(self) -> String {
+        tr(match self {
+            Self::All => "app.version_filter.all",
+            Self::Release => "app.version_filter.release",
+            Self::Snapshot => "app.version_filter.snapshot",
+            Self::Old => "app.version_filter.old",
+        })
     }
 
     fn index(self) -> usize {
@@ -604,6 +601,7 @@ pub struct LauncherApp {
     accent_select: Entity<SelectState<SearchableVec<String>>>,
     visibility_select: Entity<SelectState<SearchableVec<String>>>,
     download_source_select: Entity<SelectState<SearchableVec<String>>>,
+    language_select: Entity<SelectState<SearchableVec<String>>>,
     mirror_status: String,
     _mirror_probe_task: Option<Task<()>>,
     log_state: LauncherState,
@@ -731,7 +729,7 @@ impl LauncherApp {
 
         let theme_select = cx.new(|cx| {
             SelectState::new(
-                SearchableVec::new(THEME_ITEMS.map(str::to_owned).to_vec()),
+                SearchableVec::new(theme_items()),
                 Some(IndexPath::default().row(theme_index(config.appearance.theme))),
                 window,
                 cx,
@@ -739,7 +737,7 @@ impl LauncherApp {
         });
         let accent_select = cx.new(|cx| {
             SelectState::new(
-                SearchableVec::new(ACCENT_ITEMS.map(str::to_owned).to_vec()),
+                SearchableVec::new(accent_items()),
                 Some(IndexPath::default().row(accent_index(config.appearance.accent))),
                 window,
                 cx,
@@ -747,7 +745,7 @@ impl LauncherApp {
         });
         let visibility_select = cx.new(|cx| {
             SelectState::new(
-                SearchableVec::new(VISIBILITY_ITEMS.map(str::to_owned).to_vec()),
+                SearchableVec::new(visibility_items()),
                 Some(IndexPath::default().row(visibility_index(config.launcher_visibility))),
                 window,
                 cx,
@@ -755,8 +753,16 @@ impl LauncherApp {
         });
         let download_source_select = cx.new(|cx| {
             SelectState::new(
-                SearchableVec::new(DOWNLOAD_SOURCE_ITEMS.map(str::to_owned).to_vec()),
+                SearchableVec::new(download_source_items()),
                 Some(IndexPath::default().row(download_source_index(config.download_source))),
+                window,
+                cx,
+            )
+        });
+        let language_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(language_items()),
+                Some(IndexPath::default().row(language_index(config.language))),
                 window,
                 cx,
             )
@@ -769,20 +775,34 @@ impl LauncherApp {
             config.download_source,
         );
 
-        let downloads_query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索版本 ID，例如 1.21.1"));
-        let versions_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索已安装实例"));
-        let content_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索本地内容"));
-        let world_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索地图"));
-        let remote_query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索 Modrinth 项目"));
-        let server_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索服务器"));
-        let discover_query = cx.new(|cx| InputState::new(window, cx).placeholder("搜索精选服务器"));
+        let downloads_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_versions"))
+        });
+        let versions_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_instances"))
+        });
+        let content_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_local_content"))
+        });
+        let world_query = cx
+            .new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.search_worlds")));
+        let remote_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_modrinth"))
+        });
+        let server_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_servers"))
+        });
+        let discover_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_featured"))
+        });
         let server_name_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用服务器地址"));
-        let server_address_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("例如 play.example.com:25565"));
-        let create_base_input = cx.new(|cx| InputState::new(window, cx).placeholder("例如 1.21.1"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.server_name")));
+        let server_address_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.server_address"))
+        });
+        let create_base_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.version_example"))
+        });
         let create_version_select = cx.new(|cx| {
             ComboboxState::new(
                 SearchableVec::<CreateVersionChoice>::new(Vec::new()),
@@ -792,25 +812,22 @@ impl LauncherApp {
             )
             .searchable(true)
         });
-        let create_name_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
-        let create_id_input = cx.new(|cx| InputState::new(window, cx).placeholder("留空自动生成"));
-        let instance_name_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用实例 ID"));
+        let create_name_input = cx
+            .new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.instance_name")));
+        let create_id_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.instance_id")));
+        let instance_name_input = cx
+            .new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.instance_name")));
         let java_path_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("例如 /Library/Java/.../bin/java"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.java_path")));
         let launch_memory_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("留空使用 JVM 默认值"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.jvm_default")));
         let launch_width_input = cx.new(|cx| InputState::new(window, cx).placeholder("1280"));
         let launch_height_input = cx.new(|cx| InputState::new(window, cx).placeholder("720"));
-        let account_input = cx.new(|cx| InputState::new(window, cx).placeholder("离线玩家名"));
-        let authlib_server_items = SearchableVec::new(
-            AUTHLIB_SERVER_PRESETS
-                .iter()
-                .map(|preset| preset.name.to_owned())
-                .chain(std::iter::once("自定义服务器".to_owned()))
-                .collect::<Vec<_>>(),
-        );
+        let account_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.offline_username"))
+        });
+        let authlib_server_items = authlib_server_items();
         let authlib_server_select = cx.new(|cx| {
             SelectState::new(
                 authlib_server_items,
@@ -822,14 +839,19 @@ impl LauncherApp {
         let authlib_server_input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("https://example.com/api/yggdrasil/")
         });
-        let authlib_username_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("邮箱或用户名"));
-        let authlib_password_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("密码").masked(true));
+        let authlib_username_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.email_or_username"))
+        });
+        let authlib_password_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(tr("app.placeholder.password"))
+                .masked(true)
+        });
         let skin_link_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("粘贴 PNG 图片直链"));
-        let skin_catalog_query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("搜索 LittleSkin 皮肤"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("app.placeholder.png_url")));
+        let skin_catalog_query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(tr("app.placeholder.search_littleskin"))
+        });
 
         let skin_service = cx.new(|cx| SkinService::new(services.clone(), cx));
         let skin_viewer = cx.new(|cx| SkinViewer::new(services.runtime.handle().clone(), cx));
@@ -974,11 +996,20 @@ impl LauncherApp {
                 }
             },
         ));
+        subscriptions.push(cx.subscribe_in(
+            &language_select,
+            window,
+            |this, _, event: &SelectEvent<SearchableVec<String>>, window, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    this.set_language(value.clone(), window, cx);
+                }
+            },
+        ));
         subscriptions.push(cx.subscribe(
             &authlib_server_select,
             |this, _, event: &SelectEvent<SearchableVec<String>>, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
-                    this.authlib_custom_server = value == "自定义服务器";
+                    this.authlib_custom_server = *value == authlib_custom_server_label();
                     cx.notify();
                 }
             },
@@ -1146,6 +1177,7 @@ impl LauncherApp {
             accent_select,
             visibility_select,
             download_source_select,
+            language_select,
             mirror_status,
             _mirror_probe_task: mirror_probe_task,
             log_state: LauncherState::new(),
@@ -1294,10 +1326,14 @@ impl LauncherApp {
                         view.update.up_to_date = false;
                         if !manual {
                             window.push_notification(
-                                Notification::info(format!(
-                                    "发现新版本 v{version}，可在设置中下载并安装。"
-                                ))
-                                .title("更新"),
+                                Notification::info(
+                                    rust_i18n::t!(
+                                        "app.updates.available_notice",
+                                        version = version
+                                    )
+                                    .to_string(),
+                                )
+                                .title(tr("app.updates.title")),
                                 cx,
                             );
                         }
@@ -1313,7 +1349,10 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         if manual {
-                            view.update.error = Some(format!("后台任务失败: {error}"));
+                            view.update.error = Some(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -1342,8 +1381,7 @@ impl LauncherApp {
         };
         if !updates_installable() {
             window.push_notification(
-                Notification::warning("开发构建不执行自动更新；请使用发布包验证更新流程。")
-                    .title("更新"),
+                Notification::warning(tr("app.updates.dev_build")).title(tr("app.updates.title")),
                 cx,
             );
             return;
@@ -1359,7 +1397,10 @@ impl LauncherApp {
             let save_view = view.clone();
             let save_release = dialog_release.clone();
             dialog
-                .title(format!("更新到 RMCL {}", dialog_release.version))
+                .title(
+                    rust_i18n::t!("app.updates.dialog_title", version = dialog_release.version)
+                        .to_string(),
+                )
                 .width(layout::rem_px(cx, layout::DIALOG_XLARGE))
                 .child(
                     v_flex()
@@ -1399,7 +1440,7 @@ impl LauncherApp {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("该版本没有提供更新说明。"),
+                                            .child(tr("app.updates.no_notes")),
                                     )
                                 }),
                         )
@@ -1407,15 +1448,21 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("下载后会校验 SHA-256，替换当前程序并自动重启。"),
+                                .child(tr("app.updates.verify_notice")),
                         ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("confirm-update").primary().label("下载并安装")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("confirm-update")
+                                    .primary()
+                                    .label(tr("app.updates.download_and_install")),
+                            ),
                         ),
                 )
                 .on_ok(move |_, window, cx| {
@@ -1441,15 +1488,15 @@ impl LauncherApp {
         }
         if !updates_installable() {
             window.push_notification(
-                Notification::warning("开发构建不执行自动更新；请使用发布包验证更新流程。")
-                    .title("更新"),
+                Notification::warning(tr("app.updates.dev_build")).title(tr("app.updates.title")),
                 cx,
             );
             return;
         }
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("请等待当前任务结束后再更新启动器。").title("更新"),
+                Notification::warning(tr("app.updates.wait_for_task"))
+                    .title(tr("app.updates.title")),
                 cx,
             );
             return;
@@ -1503,8 +1550,8 @@ impl LauncherApp {
                                         Ok(plan) => match spawn_apply_helper(&plan) {
                                             Ok(()) => {
                                                 window.push_notification(
-                                                    Notification::info("RMCL 将退出并完成更新。")
-                                                        .title("正在更新"),
+                                                    Notification::info(tr("app.updates.restarting"))
+                                                        .title(tr("app.updates.updating")),
                                                     cx,
                                                 );
                                                 cx.quit();
@@ -1654,11 +1701,14 @@ impl LauncherApp {
     }
 
     fn set_theme(&mut self, value: String, cx: &mut Context<Self>) {
-        let theme = match value.as_str() {
-            "跟随系统" => ThemePreference::System,
-            "浅色" => ThemePreference::Light,
-            "深色" => ThemePreference::Dark,
-            _ => return,
+        let theme = if value == theme_label(ThemePreference::System) {
+            ThemePreference::System
+        } else if value == theme_label(ThemePreference::Light) {
+            ThemePreference::Light
+        } else if value == theme_label(ThemePreference::Dark) {
+            ThemePreference::Dark
+        } else {
+            return;
         };
         if self.config.appearance.theme == theme {
             return;
@@ -1670,13 +1720,18 @@ impl LauncherApp {
     }
 
     fn set_accent(&mut self, value: String, cx: &mut Context<Self>) {
-        let accent = match value.as_str() {
-            "翡翠" => AccentColor::Emerald,
-            "海蓝" => AccentColor::Ocean,
-            "紫罗兰" => AccentColor::Violet,
-            "琥珀" => AccentColor::Amber,
-            "玫瑰" => AccentColor::Rose,
-            _ => return,
+        let accent = if value == accent_label(AccentColor::Emerald) {
+            AccentColor::Emerald
+        } else if value == accent_label(AccentColor::Ocean) {
+            AccentColor::Ocean
+        } else if value == accent_label(AccentColor::Violet) {
+            AccentColor::Violet
+        } else if value == accent_label(AccentColor::Amber) {
+            AccentColor::Amber
+        } else if value == accent_label(AccentColor::Rose) {
+            AccentColor::Rose
+        } else {
+            return;
         };
         if self.config.appearance.accent == accent {
             return;
@@ -1688,10 +1743,12 @@ impl LauncherApp {
     }
 
     fn set_visibility(&mut self, value: String, cx: &mut Context<Self>) {
-        let visibility = match value.as_str() {
-            "保持显示" => LauncherVisibility::KeepVisible,
-            "游戏运行时隐藏" => LauncherVisibility::HideWhileRunning,
-            _ => return,
+        let visibility = if value == visibility_label(LauncherVisibility::KeepVisible) {
+            LauncherVisibility::KeepVisible
+        } else if value == visibility_label(LauncherVisibility::HideWhileRunning) {
+            LauncherVisibility::HideWhileRunning
+        } else {
+            return;
         };
         if self.config.launcher_visibility == visibility {
             return;
@@ -1702,11 +1759,14 @@ impl LauncherApp {
     }
 
     fn set_download_source(&mut self, value: String, cx: &mut Context<Self>) {
-        let source = match value.as_str() {
-            "自动" => DownloadSourcePreference::Auto,
-            "官方源" => DownloadSourcePreference::Official,
-            "国内镜像" => DownloadSourcePreference::Mirror,
-            _ => return,
+        let source = if value == download_source_label(DownloadSourcePreference::Auto) {
+            DownloadSourcePreference::Auto
+        } else if value == download_source_label(DownloadSourcePreference::Official) {
+            DownloadSourcePreference::Official
+        } else if value == download_source_label(DownloadSourcePreference::Mirror) {
+            DownloadSourcePreference::Mirror
+        } else {
+            return;
         };
         if self.config.download_source == source {
             return;
@@ -1724,6 +1784,128 @@ impl LauncherApp {
         );
         self.save_config();
         cx.notify();
+    }
+
+    fn set_language(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>) {
+        let language = if value == language_label(LanguagePreference::System) {
+            LanguagePreference::System
+        } else if value == language_label(LanguagePreference::Chinese) {
+            LanguagePreference::Chinese
+        } else if value == language_label(LanguagePreference::English) {
+            LanguagePreference::English
+        } else {
+            return;
+        };
+        if self.config.language == language {
+            return;
+        }
+        self.config.language = language;
+        crate::i18n::apply(language);
+        self.mirror_status = initial_mirror_status(self.config.download_source);
+        self.save_config();
+        self.refresh_localized_controls(window, cx);
+        #[cfg(target_os = "macos")]
+        self::shortcuts::refresh_menus(cx);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    /// Rebuilds select labels that are captured when the entity is created.
+    fn refresh_localized_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let theme = self.config.appearance.theme;
+        self.theme_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(theme_items()), window, cx);
+            state.set_selected_index(
+                Some(IndexPath::default().row(theme_index(theme))),
+                window,
+                cx,
+            );
+        });
+        let accent = self.config.appearance.accent;
+        self.accent_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(accent_items()), window, cx);
+            state.set_selected_index(
+                Some(IndexPath::default().row(accent_index(accent))),
+                window,
+                cx,
+            );
+        });
+        let visibility = self.config.launcher_visibility;
+        self.visibility_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(visibility_items()), window, cx);
+            state.set_selected_index(
+                Some(IndexPath::default().row(visibility_index(visibility))),
+                window,
+                cx,
+            );
+        });
+        let source = self.config.download_source;
+        self.download_source_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(download_source_items()), window, cx);
+            state.set_selected_index(
+                Some(IndexPath::default().row(download_source_index(source))),
+                window,
+                cx,
+            );
+        });
+        self.agent.refresh_provider_labels(window, cx);
+        let language = self.config.language;
+        self.language_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(language_items()), window, cx);
+            state.set_selected_index(
+                Some(IndexPath::default().row(language_index(language))),
+                window,
+                cx,
+            );
+        });
+        let authlib_custom = self.authlib_custom_server;
+        let authlib_row = self
+            .authlib_server_select
+            .read(cx)
+            .selected_index(cx)
+            .map(|index| index.row)
+            .unwrap_or(0);
+        self.authlib_server_select.update(cx, |state, cx| {
+            state.set_items(authlib_server_items(), window, cx);
+            let row = if authlib_custom {
+                AUTHLIB_SERVER_PRESETS.len()
+            } else {
+                authlib_row.min(AUTHLIB_SERVER_PRESETS.len().saturating_sub(1))
+            };
+            state.set_selected_index(Some(IndexPath::default().row(row)), window, cx);
+        });
+        for (input, key) in [
+            (&self.downloads_query, "app.placeholder.search_versions"),
+            (&self.versions_query, "app.placeholder.search_instances"),
+            (&self.content_query, "app.placeholder.search_local_content"),
+            (&self.world_query, "app.placeholder.search_worlds"),
+            (&self.remote_query, "app.placeholder.search_modrinth"),
+            (&self.server_query, "app.placeholder.search_servers"),
+            (&self.discover_query, "app.placeholder.search_featured"),
+            (&self.server_name_input, "app.placeholder.server_name"),
+            (&self.server_address_input, "app.placeholder.server_address"),
+            (&self.create_base_input, "app.placeholder.version_example"),
+            (&self.create_name_input, "app.placeholder.instance_name"),
+            (&self.create_id_input, "app.placeholder.instance_id"),
+            (&self.instance_name_input, "app.placeholder.instance_name"),
+            (&self.java_path_input, "app.placeholder.java_path"),
+            (&self.launch_memory_input, "app.placeholder.jvm_default"),
+            (&self.account_input, "app.placeholder.offline_username"),
+            (
+                &self.authlib_username_input,
+                "app.placeholder.email_or_username",
+            ),
+            (&self.authlib_password_input, "app.placeholder.password"),
+            (&self.skin_link.input, "app.placeholder.png_url"),
+            (
+                &self.skin_catalog_query,
+                "app.placeholder.search_littleskin",
+            ),
+        ] {
+            input.update(cx, |state, cx| {
+                state.set_placeholder(tr(key), window, cx);
+            });
+        }
     }
 
     fn retry_mirror_probe(&mut self, cx: &mut Context<Self>) {
@@ -1946,15 +2128,15 @@ impl LauncherApp {
         self.log_state.can_start() && !self.content_operations_pending()
     }
 
-    fn server_join_ready(&self) -> (bool, &'static str) {
+    fn server_join_ready(&self) -> (bool, String) {
         if self.selected_version().is_none() {
-            (false, "请先选择一个实例")
+            (false, tr("app.servers.join_requires_instance"))
         } else if self.selected_account().is_none() {
-            (false, "请先添加一个账户")
+            (false, tr("app.servers.join_requires_account"))
         } else if !self.can_start_operation() {
-            (false, "当前有任务或游戏正在运行，请先停止")
+            (false, tr("app.servers.join_busy"))
         } else {
-            (true, "使用当前实例和账户进入服务器")
+            (true, tr("app.servers.join_ready"))
         }
     }
 
@@ -2037,7 +2219,9 @@ impl LauncherApp {
                 Err(error) => {
                     status.loading = false;
                     status.status = None;
-                    status.error = Some(format!("地址无效：{error}"));
+                    status.error = Some(
+                        rust_i18n::t!("app.servers.invalid_address", error = error).to_string(),
+                    );
                 }
             }
         }
@@ -2088,7 +2272,10 @@ impl LauncherApp {
                             let status = view.servers.statuses.entry(id).or_default();
                             status.loading = false;
                             status.status = None;
-                            status.error = Some(format!("后台任务失败：{error}"));
+                            status.error = Some(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -2180,7 +2367,13 @@ impl LauncherApp {
                             if let Some(status) = view.servers.featured.statuses.get_mut(&id) {
                                 status.loading = false;
                                 status.status = None;
-                                status.error = Some(format!("后台任务失败：{error}"));
+                                status.error = Some(
+                                    rust_i18n::t!(
+                                        "app.common.background_task_failed",
+                                        error = error
+                                    )
+                                    .to_string(),
+                                );
                             }
                         }
                     }
@@ -2214,7 +2407,11 @@ impl LauncherApp {
             self.config.servers.remove(index);
             self.save_config();
             cx.notify();
-            window.push_notification(Notification::info("已取消收藏。").title("服务器"), cx);
+            window.push_notification(
+                Notification::info(tr("app.servers.unfavorited"))
+                    .title(tr("app.page.servers.title")),
+                cx,
+            );
             return;
         }
         if let Err(error) = upsert_server_bookmark(
@@ -2224,7 +2421,7 @@ impl LauncherApp {
             &server.address.to_string(),
         ) {
             window.push_notification(
-                Notification::error(error.to_string()).title("无法收藏服务器"),
+                Notification::error(error.to_string()).title(tr("app.servers.favorite_failed")),
                 cx,
             );
             return;
@@ -2232,7 +2429,7 @@ impl LauncherApp {
         self.save_config();
         cx.notify();
         window.push_notification(
-            Notification::success("已加入服务器收藏。").title("服务器"),
+            Notification::success(tr("app.servers.favorited")).title(tr("app.page.servers.title")),
             cx,
         );
     }
@@ -2245,15 +2442,16 @@ impl LauncherApp {
     ) {
         if server.requires_mods {
             window.push_notification(
-                Notification::warning("该服务器需要客户端 Mod 或整合包，请先准备对应实例。")
-                    .title("需要整合包"),
+                Notification::warning(tr("app.servers.modpack_required_notice"))
+                    .title(tr("app.servers.requires_modpack")),
                 cx,
             );
             return;
         }
         let Some(version) = self.selected_version() else {
             window.push_notification(
-                Notification::warning("请先在主页或实例页选择一个实例。").title("无法进入服务器"),
+                Notification::warning(tr("app.servers.select_instance_notice"))
+                    .title(tr("app.servers.cannot_join")),
                 cx,
             );
             return;
@@ -2261,15 +2459,16 @@ impl LauncherApp {
         let version_id = version.id.as_str().to_owned();
         if self.selected_account().is_none() {
             window.push_notification(
-                Notification::warning("请先添加一个账户。").title("无法进入服务器"),
+                Notification::warning(tr("app.servers.add_account_notice"))
+                    .title(tr("app.servers.cannot_join")),
                 cx,
             );
             return;
         }
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法进入服务器"),
+                Notification::warning(tr("app.servers.busy_notice"))
+                    .title(tr("app.servers.cannot_join")),
                 cx,
             );
             return;
@@ -2317,7 +2516,11 @@ impl LauncherApp {
             let save_address = address_input.clone();
             let save_id = editing_id.clone();
             dialog
-                .title(if is_edit { "编辑服务器" } else { "添加服务器" })
+                .title(if is_edit {
+                    tr("app.servers.edit")
+                } else {
+                    tr("app.servers.add")
+                })
                 .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(
                     v_flex()
@@ -2325,36 +2528,45 @@ impl LauncherApp {
                         .child(
                             v_flex()
                                 .gap_1()
-                                .child(div().text_sm().font_medium().child("名称"))
+                                .child(div().text_sm().font_medium().child(tr("app.servers.name")))
                                 .child(div().child(Input::new(&name_input).w_full()))
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("留空时使用服务器地址。"),
+                                        .child(tr("app.servers.name_hint")),
                                 ),
                         )
                         .child(
                             v_flex()
                                 .gap_1()
-                                .child(div().text_sm().font_medium().child("地址"))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_medium()
+                                        .child(tr("app.servers.address")),
+                                )
                                 .child(div().child(Input::new(&address_input).w_full()))
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child(
-                                            "支持 host、host:port 和 [IPv6]:port；省略端口时使用 25565。",
-                                        ),
+                                        .child(tr("app.servers.address_hint")),
                                 ),
                         ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("save-server").primary().label("保存")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("save-server")
+                                    .primary()
+                                    .label(tr("app.common.save")),
+                            ),
                         ),
                 )
                 .on_ok(move |_, window, cx| {
@@ -2384,7 +2596,7 @@ impl LauncherApp {
     ) -> bool {
         if let Err(error) = upsert_server_bookmark(&mut self.config, id, &name, &address) {
             window.push_notification(
-                Notification::error(error.to_string()).title("无法保存服务器"),
+                Notification::error(error.to_string()).title(tr("app.servers.save_failed")),
                 cx,
             );
             return false;
@@ -2393,7 +2605,10 @@ impl LauncherApp {
         self.save_config();
         self.refresh_servers(window, cx);
         cx.notify();
-        window.push_notification(Notification::success("服务器已保存。").title("服务器"), cx);
+        window.push_notification(
+            Notification::success(tr("app.servers.saved")).title(tr("app.page.servers.title")),
+            cx,
+        );
         true
     }
 
@@ -2416,9 +2631,9 @@ impl LauncherApp {
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("删除服务器 {}？", server.name))
-                .description("只删除 RMCL 中的收藏，不会修改游戏内的 servers.dat。")
-                .ok_text("删除")
+                .title(rust_i18n::t!("app.servers.delete_title", name = server.name).to_string())
+                .description(tr("app.servers.delete_description"))
+                .ok_text(tr("app.common.delete"))
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok({
                     let server_id = server_id.clone();
@@ -2445,7 +2660,10 @@ impl LauncherApp {
         self.save_config();
         self.refresh_servers(window, cx);
         cx.notify();
-        window.push_notification(Notification::info("服务器已删除。").title("服务器"), cx);
+        window.push_notification(
+            Notification::info(tr("app.servers.deleted")).title(tr("app.page.servers.title")),
+            cx,
+        );
     }
 
     fn join_server(&mut self, server_id: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -2462,7 +2680,7 @@ impl LauncherApp {
             Ok(address) => address,
             Err(error) => {
                 window.push_notification(
-                    Notification::error(error.to_string()).title("无法进入服务器"),
+                    Notification::error(error.to_string()).title(tr("app.servers.cannot_join")),
                     cx,
                 );
                 return;
@@ -2470,7 +2688,8 @@ impl LauncherApp {
         };
         let Some(version) = self.selected_version() else {
             window.push_notification(
-                Notification::warning("请先在主页或实例页选择一个实例。").title("无法进入服务器"),
+                Notification::warning(tr("app.servers.select_instance_notice"))
+                    .title(tr("app.servers.cannot_join")),
                 cx,
             );
             return;
@@ -2559,15 +2778,17 @@ impl LauncherApp {
                         let message = error.to_string();
                         view.catalog.error = Some(message.clone());
                         window.push_notification(
-                            Notification::error(message).title("版本列表加载失败"),
+                            Notification::error(message).title(tr("app.downloads.load_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
-                        let message = format!("后台任务失败: {error}");
+                        let message =
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string();
                         view.catalog.error = Some(message.clone());
                         window.push_notification(
-                            Notification::error(message).title("版本列表加载失败"),
+                            Notification::error(message).title(tr("app.downloads.load_failed")),
                             cx,
                         );
                     }
@@ -2611,14 +2832,17 @@ impl LauncherApp {
     ) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法开始安装"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.install.cannot_start")),
                 cx,
             );
             return;
         }
         window.push_notification(
-            Notification::info(format!("正在检查并安装 {version_id}。")).title("已开始安装"),
+            Notification::info(
+                rust_i18n::t!("app.install.checking", version = version_id).to_string(),
+            )
+            .title(tr("app.install.started")),
             cx,
         );
         self.spawn_command(Command::Install(request), version_id, window, cx);
@@ -2634,14 +2858,17 @@ impl LauncherApp {
     ) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法安装内容"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.content_install.cannot_start")),
                 cx,
             );
             return;
         }
         window.push_notification(
-            Notification::info(format!("正在安装 {display_name}。")).title("已开始下载"),
+            Notification::info(
+                rust_i18n::t!("app.content_install.installing", name = display_name).to_string(),
+            )
+            .title(tr("app.content_install.started")),
             cx,
         );
         self.spawn_command(Command::ContentInstall(request), instance_id, window, cx);
@@ -2684,15 +2911,16 @@ impl LauncherApp {
         }
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法启动游戏"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.launch.cannot_start")),
                 cx,
             );
             return;
         }
         let Some(account) = self.selected_account().cloned() else {
             window.push_notification(
-                Notification::error("请先添加一个账户。").title("无法启动游戏"),
+                Notification::error(tr("app.launch.account_required"))
+                    .title(tr("app.launch.cannot_start")),
                 cx,
             );
             return;
@@ -2730,16 +2958,15 @@ impl LauncherApp {
                                 view.update_resolved_microsoft(&resolved, window, cx);
                                 if let Some(warning) = resolved.persistence_warning.as_ref() {
                                     window.push_notification(
-                                        Notification::warning(warning.clone()).title("账户"),
+                                        Notification::warning(warning.clone())
+                                            .title(tr("app.account.title")),
                                         cx,
                                     );
                                 }
                                 if !view.can_start_operation() {
                                     window.push_notification(
-                                        Notification::warning(
-                                            "已有任务或内容操作正在运行，请等待完成或先停止它。",
-                                        )
-                                        .title("无法启动游戏"),
+                                        Notification::warning(tr("app.common.operation_busy"))
+                                            .title(tr("app.launch.cannot_start")),
                                         cx,
                                     );
                                 } else {
@@ -2757,14 +2984,20 @@ impl LauncherApp {
                             Ok(Err(error)) => {
                                 window.push_notification(
                                     Notification::error(microsoft_error_message(&error))
-                                        .title("无法启动游戏"),
+                                        .title(tr("app.launch.cannot_start")),
                                     cx,
                                 );
                             }
                             Err(error) => {
                                 window.push_notification(
-                                    Notification::error(format!("后台任务失败: {error}"))
-                                        .title("无法启动游戏"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.common.background_task_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.launch.cannot_start")),
                                     cx,
                                 );
                             }
@@ -2797,16 +3030,15 @@ impl LauncherApp {
                                 view.update_resolved_authlib(&resolved, window, cx);
                                 if let Some(warning) = resolved.persistence_warning.as_ref() {
                                     window.push_notification(
-                                        Notification::warning(warning.clone()).title("账户"),
+                                        Notification::warning(warning.clone())
+                                            .title(tr("app.account.title")),
                                         cx,
                                     );
                                 }
                                 if !view.can_start_operation() {
                                     window.push_notification(
-                                        Notification::warning(
-                                            "已有任务或内容操作正在运行，请等待完成或先停止它。",
-                                        )
-                                        .title("无法启动游戏"),
+                                        Notification::warning(tr("app.common.operation_busy"))
+                                            .title(tr("app.launch.cannot_start")),
                                         cx,
                                     );
                                 } else {
@@ -2829,14 +3061,20 @@ impl LauncherApp {
                             Ok(Err(error)) => {
                                 window.push_notification(
                                     Notification::error(authlib_launch_error_message(&error))
-                                        .title("无法启动游戏"),
+                                        .title(tr("app.launch.cannot_start")),
                                     cx,
                                 );
                             }
                             Err(error) => {
                                 window.push_notification(
-                                    Notification::error(format!("后台任务失败: {error}"))
-                                        .title("无法启动游戏"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.common.background_task_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.launch.cannot_start")),
                                     cx,
                                 );
                             }
@@ -2861,8 +3099,8 @@ impl LauncherApp {
     ) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法启动游戏"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.launch.cannot_start")),
                 cx,
             );
             return;
@@ -3002,7 +3240,7 @@ impl LauncherApp {
                     let _ = this.update_in(cx, |view, window, cx| {
                         view.log_state.fail_command(message.clone());
                         window.push_notification(
-                            Notification::error(message).title("任务启动失败"),
+                            Notification::error(message).title(tr("app.task.start_failed")),
                             cx,
                         );
                         view.replay_deferred_task_terminals(window, cx);
@@ -3010,11 +3248,12 @@ impl LauncherApp {
                     });
                 }
                 Err(error) => {
-                    let message = format!("后台任务失败: {error}");
+                    let message = rust_i18n::t!("app.common.background_task_failed", error = error)
+                        .to_string();
                     let _ = this.update_in(cx, |view, window, cx| {
                         view.log_state.fail_command(message.clone());
                         window.push_notification(
-                            Notification::error(message).title("任务启动失败"),
+                            Notification::error(message).title(tr("app.task.start_failed")),
                             cx,
                         );
                         view.replay_deferred_task_terminals(window, cx);
@@ -3053,14 +3292,17 @@ impl LauncherApp {
                 match result {
                     Ok(_) => {
                         window.push_notification(
-                            Notification::info("已请求停止当前任务。").title("正在停止"),
+                            Notification::info(tr("app.task.stop_requested"))
+                                .title(tr("app.common.stopping")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("取消命令失败: {error}"))
-                                .title("无法停止任务"),
+                            Notification::error(
+                                rust_i18n::t!("app.task.cancel_failed", error = error).to_string(),
+                            )
+                            .title(tr("app.task.cannot_stop")),
                             cx,
                         );
                     }
@@ -3142,7 +3384,7 @@ impl LauncherApp {
                 let is_loader_instance = loader_source.is_some();
                 let (instance_id, name) = match snapshot.subject {
                     Some(TaskSubject::Instance { id, name }) => (Some(id), name),
-                    _ => (None, "实例".to_owned()),
+                    _ => (None, tr("app.home.instance")),
                 };
                 self.reload_versions(window, cx);
                 if let Some(instance_id) = instance_id {
@@ -3160,16 +3402,19 @@ impl LauncherApp {
                 }
                 if is_loader_instance {
                     window.push_notification(
-                        Notification::success(format!(
-                            "加载器实例 {name} 已创建，并复制了原实例内容。"
-                        ))
-                        .title("加载器安装完成"),
+                        Notification::success(
+                            rust_i18n::t!("app.task.loader_instance_created", name = name)
+                                .to_string(),
+                        )
+                        .title(tr("app.task.loader_install_complete")),
                         cx,
                     );
                 } else {
                     window.push_notification(
-                        Notification::success(format!("实例 {name} 已创建。"))
-                            .title("实例创建完成"),
+                        Notification::success(
+                            rust_i18n::t!("app.task.instance_created", name = name).to_string(),
+                        )
+                        .title(tr("app.task.instance_create_complete")),
                         cx,
                     );
                 }
@@ -3179,7 +3424,7 @@ impl LauncherApp {
                     Some(TaskSubject::Content {
                         instance_id, name, ..
                     }) => (Some(instance_id), name),
-                    _ => (None, "内容".to_owned()),
+                    _ => (None, tr("app.task.content")),
                 };
                 if self.page == Page::Instance
                     && self.selected_instance.as_deref() == instance_id.as_deref()
@@ -3187,7 +3432,10 @@ impl LauncherApp {
                     self.load_instance_content(window, cx);
                 }
                 window.push_notification(
-                    Notification::success(format!("{name} 已安装到实例。")).title("内容安装完成"),
+                    Notification::success(
+                        rust_i18n::t!("app.task.content_installed", name = name).to_string(),
+                    )
+                    .title(tr("app.task.content_install_complete")),
                     cx,
                 );
             }
@@ -3198,8 +3446,8 @@ impl LauncherApp {
                 self.reload_versions(window, cx);
                 self.save_config();
                 window.push_notification(
-                    Notification::success("Minecraft 安装已完成，可以开始游戏了。")
-                        .title("安装完成"),
+                    Notification::success(tr("app.task.install_complete_notice"))
+                        .title(tr("app.task.install_complete")),
                     cx,
                 );
             }
@@ -3213,14 +3461,22 @@ impl LauncherApp {
                         .exit
                         .as_ref()
                         .map(|exit| match (exit.code, exit.signal) {
-                            (Some(code), _) => format!("退出码 {code}"),
-                            (_, Some(signal)) => format!("信号 {signal}"),
-                            _ => "未知退出状态".to_owned(),
+                            (Some(code), _) => {
+                                rust_i18n::t!("app.logs.exit_code", code = code).to_string()
+                            }
+                            (_, Some(signal)) => {
+                                rust_i18n::t!("app.logs.termination_signal", signal = signal)
+                                    .to_string()
+                            }
+                            _ => tr("app.common.unknown_exit_status"),
                         })
-                        .unwrap_or_else(|| "未知退出状态".to_owned());
+                        .unwrap_or_else(|| tr("app.common.unknown_exit_status"));
                     window.push_notification(
-                        Notification::warning(format!("游戏异常退出（{detail}）。"))
-                            .title("游戏异常退出"),
+                        Notification::warning(
+                            rust_i18n::t!("app.task.game_exited_abnormally", detail = detail)
+                                .to_string(),
+                        )
+                        .title(tr("app.task.game_abnormal_exit")),
                         cx,
                     );
                 }
@@ -3232,14 +3488,18 @@ impl LauncherApp {
                         snapshot
                             .error
                             .clone()
-                            .unwrap_or_else(|| "任务失败，请查看日志。".to_owned()),
+                            .unwrap_or_else(|| tr("app.task.failed_check_logs")),
                     )
-                    .title("任务失败"),
+                    .title(tr("app.task.failed")),
                     cx,
                 );
             }
             TaskStatus::Cancelled => {
-                window.push_notification(Notification::info("任务已取消。").title("已取消"), cx);
+                window.push_notification(
+                    Notification::info(tr("app.task.cancelled_notice"))
+                        .title(tr("app.task.cancelled")),
+                    cx,
+                );
             }
             TaskStatus::Running | TaskStatus::Cancelling => {}
         }
@@ -3251,7 +3511,7 @@ impl LauncherApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("选择 Minecraft 目录".into()),
+            prompt: Some(tr("app.settings.choose_minecraft_dir").into()),
         });
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
@@ -3266,8 +3526,14 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开目录选择器: {error}"))
-                                .title("选择目录失败"),
+                            Notification::error(
+                                rust_i18n::t!(
+                                    "app.settings.directory_picker_failed",
+                                    error = error
+                                )
+                                .to_string(),
+                            )
+                            .title(tr("app.settings.choose_directory_failed")),
                             cx,
                         );
                     });
@@ -3275,8 +3541,8 @@ impl LauncherApp {
                 Err(_) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error("目录选择器已取消或窗口已关闭。")
-                                .title("选择目录失败"),
+                            Notification::error(tr("app.settings.directory_picker_cancelled"))
+                                .title(tr("app.settings.choose_directory_failed")),
                             cx,
                         );
                     });
@@ -3296,10 +3562,14 @@ impl LauncherApp {
         self.save_config();
         self.reload_versions(window, cx);
         if let Some(error) = self.versions_error.clone() {
-            window.push_notification(Notification::error(error).title("无法读取版本列表"), cx);
+            window.push_notification(
+                Notification::error(error).title(tr("app.versions.read_failed")),
+                cx,
+            );
         } else {
             window.push_notification(
-                Notification::success("游戏目录已更新。").title("设置已保存"),
+                Notification::success(tr("app.settings.game_dir_updated"))
+                    .title(tr("app.settings.saved")),
                 cx,
             );
         }
@@ -3310,7 +3580,7 @@ impl LauncherApp {
         self.config.auto_install_java = enabled;
         self.save_config();
         window.push_notification(
-            Notification::info("Java 自动获取设置将在下次启动 RMCL 时生效。").title("设置已保存"),
+            Notification::info(tr("app.settings.auto_java_saved")).title(tr("app.settings.saved")),
             cx,
         );
         cx.notify();
@@ -3337,12 +3607,16 @@ impl LauncherApp {
                 let username = account.username().to_owned();
                 let is_selected = selected_id.as_deref() == Some(key.as_str());
                 let subtitle = match account {
-                    Account::Microsoft(_) => "正版账户".to_owned(),
-                    Account::Authlib(account) => format!(
-                        "外置登录 · {}",
-                        account.server_name().unwrap_or("外部认证服务器")
-                    ),
-                    Account::Offline(_) => "离线账户".to_owned(),
+                    Account::Microsoft(_) => tr("app.account.kind_microsoft"),
+                    Account::Authlib(account) => rust_i18n::t!(
+                        "app.account.authlib_subtitle",
+                        server = account
+                            .server_name()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| tr("app.account.external_server"))
+                    )
+                    .to_string(),
+                    Account::Offline(_) => tr("app.account.kind_offline"),
                 };
                 let head = heads.get(&account.uuid());
                 let server_url = match account {
@@ -3406,8 +3680,8 @@ impl LauncherApp {
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::Trash)
-                                .tooltip("删除账户")
-                                .accessibility_label("删除账户")
+                                .tooltip(tr("app.account.delete"))
+                                .accessibility_label(tr("app.account.delete"))
                                 .on_click(move |_, window, cx| {
                                     cx.stop_propagation();
                                     if let Some(view) = delete_view.upgrade() {
@@ -3438,7 +3712,7 @@ impl LauncherApp {
                         .text_center()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child("还没有账户"),
+                        .child(tr("app.account.not_added")),
                 );
             }
 
@@ -3446,7 +3720,7 @@ impl LauncherApp {
             let offline_view = view.clone();
             let authlib_view = view.clone();
             dialog
-                .title("账户")
+                .title(tr("app.account.title"))
                 .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(list)
                 .footer(
@@ -3454,13 +3728,13 @@ impl LauncherApp {
                         .child(
                             Button::new("accounts-close")
                                 .ghost()
-                                .label("关闭")
+                                .label(tr("app.common.close"))
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
                             Button::new("offline-add")
                                 .outline()
-                                .label("添加离线账户")
+                                .label(tr("app.account.add_offline"))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     if let Some(view) = offline_view.upgrade() {
@@ -3473,7 +3747,7 @@ impl LauncherApp {
                         .child(
                             Button::new("authlib-login")
                                 .outline()
-                                .label("外置登录")
+                                .label(tr("app.authlib.login"))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     if let Some(view) = authlib_view.upgrade() {
@@ -3486,7 +3760,7 @@ impl LauncherApp {
                         .child(
                             Button::new("microsoft-login")
                                 .primary()
-                                .label("正版登录")
+                                .label(tr("app.account.microsoft_login"))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     if let Some(view) = login_view.upgrade() {
@@ -3526,9 +3800,9 @@ impl LauncherApp {
         let input = self.account_input.clone();
         let view = cx.entity().downgrade();
         let title = if editing.is_some() {
-            "编辑离线账户"
+            tr("app.account.edit_offline")
         } else {
-            "添加离线账户"
+            tr("app.account.add_offline")
         };
         let first_focus = Cell::new(true);
         window.open_dialog(cx, move |dialog, window, cx| {
@@ -3536,21 +3810,32 @@ impl LauncherApp {
                 input.read(cx).focus_handle(cx).focus(window, cx);
             }
             dialog
-                .title(title)
+                .title(title.clone())
                 .child(
                     v_flex().gap_3().child(
                         v_flex()
                             .gap_1()
-                            .child(div().text_sm().font_medium().child("玩家名"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(tr("app.account.player_name")),
+                            )
                             .child(div().p_1().child(Input::new(&input).w_full())),
                     ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("save-account").primary().label("保存并切换")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("save-account")
+                                    .primary()
+                                    .label(tr("app.account.save_and_switch")),
+                            ),
                         ),
                 )
                 .on_ok({
@@ -3622,10 +3907,13 @@ impl LauncherApp {
 
             let content = if let Some((login, profiles)) = selecting.as_ref() {
                 let mut list = v_flex().gap_2().child(
-                    div()
-                        .text_sm()
-                        .font_medium()
-                        .child(format!("{} · 选择角色", login.server().display_name())),
+                    div().text_sm().font_medium().child(
+                        rust_i18n::t!(
+                            "app.authlib.choose_profile",
+                            server = login.server().display_name()
+                        )
+                        .to_string(),
+                    ),
                 );
                 for profile in profiles {
                     let profile_view = view.clone();
@@ -3653,40 +3941,47 @@ impl LauncherApp {
                 let mut form = v_flex()
                     .gap_3()
                     .child(
-                        v_flex().gap_1().child(field_label("认证服务器")).child(
-                            Select::new(&server_select)
-                                .accessibility_label("认证服务器")
-                                .menu_width(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
-                                .menu_max_h(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
-                                .cleanable(false)
-                                .w_full(),
-                        ),
+                        v_flex()
+                            .gap_1()
+                            .child(field_label(tr("app.authlib.server")))
+                            .child(
+                                Select::new(&server_select)
+                                    .accessibility_label(tr("app.authlib.server"))
+                                    .menu_width(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
+                                    .menu_max_h(layout::rem_px(cx, layout::SELECT_MENU_WIDTH))
+                                    .cleanable(false)
+                                    .w_full(),
+                            ),
                     )
                     .child(if custom {
                         v_flex()
                             .gap_1()
-                            .child(field_label("服务器地址"))
+                            .child(field_label(tr("app.authlib.server_address")))
                             .child(Input::new(&server_input).w_full())
-                            .child(help("支持 HTTP/HTTPS；未填写协议时默认使用 HTTPS。", cx))
+                            .child(help(tr("app.authlib.server_address_help"), cx))
                             .into_any_element()
                     } else {
                         v_flex()
                             .gap_1()
-                            .child(help(format!("API 地址：{selected_server}"), cx))
+                            .child(help(
+                                rust_i18n::t!("app.authlib.api_address", address = selected_server)
+                                    .to_string(),
+                                cx,
+                            ))
                             .into_any_element()
                     })
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(field_label("邮箱或用户名"))
+                            .child(field_label(tr("app.authlib.email_or_username")))
                             .child(Input::new(&username_input).w_full()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(field_label("密码"))
+                            .child(field_label(tr("app.authlib.password")))
                             .child(Input::new(&password_input).mask_toggle().w_full())
-                            .child(help("密码只用于本次登录，不会保存。", cx)),
+                            .child(help(tr("app.authlib.password_help"), cx)),
                     );
                 if let Some(message) = failed {
                     form = form.child(div().text_xs().text_color(cx.theme().danger).child(message));
@@ -3701,24 +3996,29 @@ impl LauncherApp {
                                     .with_size(Size::Small)
                                     .color(cx.theme().primary),
                             )
-                            .child(div().text_sm().child("正在登录…")),
+                            .child(div().text_sm().child(tr("app.authlib.logging_in"))),
                     );
                 }
                 form.into_any_element()
             };
 
-            let mut footer = DialogFooter::new()
-                .child(DialogClose::new().trigger(|button| button.label("取消").outline()));
+            let mut footer = DialogFooter::new().child(
+                DialogClose::new()
+                    .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+            );
             if selecting.is_none() {
                 footer = footer.child(
-                    DialogAction::new()
-                        .child(Button::new("authlib-submit").primary().label("登录")),
+                    DialogAction::new().child(
+                        Button::new("authlib-submit")
+                            .primary()
+                            .label(tr("app.authlib.login_button")),
+                    ),
                 );
             }
 
             let close_view = view.clone();
             dialog
-                .title("外置登录")
+                .title(tr("app.authlib.login"))
                 .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(content)
                 .footer(footer)
@@ -3764,7 +4064,8 @@ impl LauncherApp {
         };
         if server.is_empty() {
             window.push_notification(
-                Notification::error("请选择认证服务器或填写服务器地址。").title("无法登录"),
+                Notification::error(tr("app.authlib.server_required"))
+                    .title(tr("app.authlib.login_failed")),
                 cx,
             );
             return false;
@@ -3778,13 +4079,18 @@ impl LauncherApp {
         let password = self.authlib_password_input.read(cx).value().to_string();
         if username.is_empty() {
             window.push_notification(
-                Notification::error("邮箱或用户名不能为空。").title("无法登录"),
+                Notification::error(tr("app.authlib.username_required"))
+                    .title(tr("app.authlib.login_failed")),
                 cx,
             );
             return false;
         }
         if password.is_empty() {
-            window.push_notification(Notification::error("密码不能为空。").title("无法登录"), cx);
+            window.push_notification(
+                Notification::error(tr("app.authlib.password_required"))
+                    .title(tr("app.authlib.login_failed")),
+                cx,
+            );
             return false;
         }
 
@@ -3827,7 +4133,7 @@ impl LauncherApp {
                         if let Some(profile) = login.single_profile().cloned() {
                             view.complete_authlib_login_with_profile(login, profile, window, cx);
                         } else if login.available_profiles().is_empty() {
-                            view.fail_authlib_login("该账户没有可用的游戏角色。".to_owned(), cx);
+                            view.fail_authlib_login(tr("app.authlib.no_profiles"), cx);
                         } else {
                             let profiles = login.available_profiles().to_vec();
                             view.authlib_login = Some(AuthlibLoginUi::SelectingProfile {
@@ -3841,7 +4147,11 @@ impl LauncherApp {
                     Ok(Err(error)) => {
                         view.fail_authlib_login(authlib_login_error_message(&error), cx)
                     }
-                    Err(error) => view.fail_authlib_login(format!("后台任务失败: {error}"), cx),
+                    Err(error) => view.fail_authlib_login(
+                        rust_i18n::t!("app.common.background_task_failed", error = error)
+                            .to_string(),
+                        cx,
+                    ),
                 }
             });
         }));
@@ -3905,14 +4215,19 @@ impl LauncherApp {
                         view.add_authlib_account(account, window, cx);
                         window.close_dialog(cx);
                         window.push_notification(
-                            Notification::success("外置账户已登录。").title("账户"),
+                            Notification::success(tr("app.authlib.logged_in"))
+                                .title(tr("app.account.title")),
                             cx,
                         );
                     }
                     Ok(Err(error)) => {
                         view.fail_authlib_login(authlib_login_error_message(&error), cx)
                     }
-                    Err(error) => view.fail_authlib_login(format!("后台任务失败: {error}"), cx),
+                    Err(error) => view.fail_authlib_login(
+                        rust_i18n::t!("app.common.background_task_failed", error = error)
+                            .to_string(),
+                        cx,
+                    ),
                 }
                 cx.notify();
             });
@@ -3994,7 +4309,8 @@ impl LauncherApp {
                     return;
                 }
                 Err(error) => {
-                    let message = format!("后台任务失败: {error}");
+                    let message = rust_i18n::t!("app.common.background_task_failed", error = error)
+                        .to_string();
                     let _ = this.update_in(cx, move |view, _, cx| {
                         view.fail_microsoft_login(message);
                         cx.notify();
@@ -4052,7 +4368,8 @@ impl LauncherApp {
                                 view.add_microsoft_account(authenticated.account, window, cx);
                                 window.close_dialog(cx);
                                 window.push_notification(
-                                    Notification::success("正版账户已登录。").title("账户"),
+                                    Notification::success(tr("app.account.microsoft_logged_in"))
+                                        .title(tr("app.account.title")),
                                     cx,
                                 );
                                 cx.notify();
@@ -4066,7 +4383,9 @@ impl LauncherApp {
                             });
                         }
                         Err(error) => {
-                            let message = format!("后台任务失败: {error}");
+                            let message =
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string();
                             let _ = this.update_in(cx, move |view, _, cx| {
                                 view.fail_microsoft_login(message);
                                 cx.notify();
@@ -4086,7 +4405,8 @@ impl LauncherApp {
                     });
                 }
                 Err(error) => {
-                    let message = format!("后台任务失败: {error}");
+                    let message = rust_i18n::t!("app.common.background_task_failed", error = error)
+                        .to_string();
                     let _ = this.update_in(cx, move |view, _, cx| {
                         view.fail_microsoft_login(message);
                         cx.notify();
@@ -4121,7 +4441,7 @@ impl LauncherApp {
                                     .with_size(Size::Small)
                                     .color(cx.theme().primary),
                             )
-                            .child(div().text_sm().child("正在获取登录代码…")),
+                            .child(div().text_sm().child(tr("app.account.fetching_code"))),
                     )
                     .into_any_element(),
                 MicrosoftLoginUi::Waiting {
@@ -4142,9 +4462,13 @@ impl LauncherApp {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!(
-                                    "在浏览器中打开 {verification_label}，输入下方代码。"
-                                )),
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.account.open_and_enter_code",
+                                        site = verification_label
+                                    )
+                                    .to_string(),
+                                ),
                         )
                         .child(
                             v_flex()
@@ -4154,7 +4478,7 @@ impl LauncherApp {
                                         .text_xs()
                                         .font_medium()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("登录代码"),
+                                        .child(tr("app.account.login_code")),
                                 )
                                 .child(
                                     h_flex()
@@ -4182,14 +4506,14 @@ impl LauncherApp {
                                                     IconName::Copy
                                                 })
                                                 .tooltip(if code_copied {
-                                                    "已复制"
+                                                    tr("app.account.copied")
                                                 } else {
-                                                    "复制登录代码"
+                                                    tr("app.account.copy_code")
                                                 })
                                                 .accessibility_label(if code_copied {
-                                                    "已复制"
+                                                    tr("app.account.copied")
                                                 } else {
-                                                    "复制登录代码"
+                                                    tr("app.account.copy_code")
                                                 })
                                                 .on_click(move |_, window, cx| {
                                                     cx.write_to_clipboard(
@@ -4216,7 +4540,7 @@ impl LauncherApp {
                                 .primary()
                                 .cursor_pointer()
                                 .icon(IconName::ExternalLink)
-                                .label("打开浏览器")
+                                .label(tr("app.account.open_browser"))
                                 .w_full()
                                 .on_click(move |_, _, cx| {
                                     cx.open_url(&open_uri);
@@ -4234,7 +4558,7 @@ impl LauncherApp {
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("等待登录完成，完成后会自动继续。"),
+                                        .child(tr("app.account.waiting_for_login")),
                                 ),
                         )
                         .into_any_element()
@@ -4249,7 +4573,7 @@ impl LauncherApp {
                                     .with_size(Size::Small)
                                     .color(cx.theme().primary),
                             )
-                            .child(div().text_sm().child("正在获取 Minecraft 账户…")),
+                            .child(div().text_sm().child(tr("app.account.fetching_profile"))),
                     )
                     .into_any_element(),
                 MicrosoftLoginUi::Failed { message } => v_flex()
@@ -4263,7 +4587,7 @@ impl LauncherApp {
                     .child(
                         Button::new("close-microsoft-login")
                             .ghost()
-                            .label("关闭")
+                            .label(tr("app.common.close"))
                             .on_click({
                                 let view = view.clone();
                                 move |_, window, cx| {
@@ -4278,7 +4602,7 @@ impl LauncherApp {
                     .child(
                         Button::new("retry-microsoft-login")
                             .primary()
-                            .label("重试")
+                            .label(tr("app.common.retry"))
                             .on_click(move |_, window, cx| {
                                 if let Some(view) = retry_view.upgrade() {
                                     view.update(cx, |this, cx| {
@@ -4293,7 +4617,7 @@ impl LauncherApp {
                 DialogFooter::new().child(
                     Button::new("cancel-microsoft-login")
                         .ghost()
-                        .label("取消")
+                        .label(tr("app.common.cancel"))
                         .on_click({
                             let view = view.clone();
                             move |_, window, cx| {
@@ -4308,7 +4632,7 @@ impl LauncherApp {
             };
 
             dialog
-                .title("正版登录")
+                .title(tr("app.account.microsoft_login"))
                 .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(content)
                 .footer(footer)
@@ -4506,24 +4830,24 @@ impl LauncherApp {
             let clicked_account = account.clone();
             let confirm_view = view.clone();
             dialog
-                .title("删除账户")
+                .title(tr("app.account.delete"))
                 .width(layout::rem_px(cx, layout::DIALOG_SMALL))
                 .child(
                     v_flex()
                         .gap_2()
-                        .child(
-                            div()
-                                .text_sm()
-                                .child(format!("确定要删除账户「{name}」吗？")),
-                        )
+                        .child(div().text_sm().child(
+                            rust_i18n::t!("app.account.delete_confirm", name = name).to_string(),
+                        ))
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
                                 .child(match kind {
-                                    AccountKind::Microsoft => "删除后会同时退出该正版账户。",
-                                    AccountKind::Authlib => "删除后会同时退出该外置账户。",
-                                    AccountKind::Offline => "此操作不会删除游戏文件。",
+                                    AccountKind::Microsoft => {
+                                        tr("app.account.delete_microsoft_notice")
+                                    }
+                                    AccountKind::Authlib => tr("app.account.delete_authlib_notice"),
+                                    AccountKind::Offline => tr("app.account.delete_offline_notice"),
                                 }),
                         ),
                 )
@@ -4532,13 +4856,13 @@ impl LauncherApp {
                         .child(
                             Button::new("cancel-delete-account")
                                 .ghost()
-                                .label("取消")
+                                .label(tr("app.common.cancel"))
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
                             Button::new("confirm-delete-account")
                                 .danger()
-                                .label("删除")
+                                .label(tr("app.common.delete"))
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     if let Some(view) = confirm_view.upgrade() {
@@ -4574,17 +4898,27 @@ impl LauncherApp {
                             }
                             Ok(Err(error)) => {
                                 window.push_notification(
-                                    Notification::error(format!(
-                                        "无法删除系统钥匙串中的登录凭据: {error}"
-                                    ))
-                                    .title("无法删除账户"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.account.credential_delete_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.account.delete_failed")),
                                     cx,
                                 );
                             }
                             Err(error) => {
                                 window.push_notification(
-                                    Notification::error(format!("后台任务失败: {error}"))
-                                        .title("无法删除账户"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.common.background_task_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.account.delete_failed")),
                                     cx,
                                 );
                             }
@@ -4612,17 +4946,27 @@ impl LauncherApp {
                             }
                             Ok(Err(error)) => {
                                 window.push_notification(
-                                    Notification::error(format!(
-                                        "无法删除系统钥匙串中的登录凭据: {error}"
-                                    ))
-                                    .title("无法删除账户"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.account.credential_delete_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.account.delete_failed")),
                                     cx,
                                 );
                             }
                             Err(error) => {
                                 window.push_notification(
-                                    Notification::error(format!("后台任务失败: {error}"))
-                                        .title("无法删除账户"),
+                                    Notification::error(
+                                        rust_i18n::t!(
+                                            "app.common.background_task_failed",
+                                            error = error
+                                        )
+                                        .to_string(),
+                                    )
+                                    .title(tr("app.account.delete_failed")),
                                     cx,
                                 );
                             }
@@ -4668,7 +5012,10 @@ impl LauncherApp {
             self.skin_apply = ApplyState::Idle;
             self.ensure_skin_page(cx);
         }
-        window.push_notification(Notification::success("账户已删除。").title("账户"), cx);
+        window.push_notification(
+            Notification::success(tr("app.account.deleted")).title(tr("app.account.title")),
+            cx,
+        );
         cx.notify();
     }
 
@@ -4676,7 +5023,8 @@ impl LauncherApp {
         let username = value.trim().to_owned();
         if username.is_empty() {
             window.push_notification(
-                Notification::error("玩家名不能为空。").title("无法保存账户"),
+                Notification::error(tr("app.account.username_required"))
+                    .title(tr("app.account.save_failed")),
                 cx,
             );
             return false;
@@ -4685,7 +5033,7 @@ impl LauncherApp {
             Ok(account) => account,
             Err(error) => {
                 window.push_notification(
-                    Notification::error(error.to_string()).title("无法保存账户"),
+                    Notification::error(error.to_string()).title(tr("app.account.save_failed")),
                     cx,
                 );
                 return false;
@@ -4707,7 +5055,10 @@ impl LauncherApp {
         self.config.selected_account_kind = StoredAccountKind::Offline;
         self.config.selected_account_id = Some(format!("offline:{uuid}"));
         self.save_config();
-        window.push_notification(Notification::success("离线账户已保存。").title("账户"), cx);
+        window.push_notification(
+            Notification::success(tr("app.account.offline_saved")).title(tr("app.account.title")),
+            cx,
+        );
         cx.notify();
         true
     }
@@ -4725,7 +5076,7 @@ impl LauncherApp {
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             dialog
-                .title("安装版本")
+                .title(tr("app.install.dialog_title"))
                 .child(
                     v_flex()
                         .gap_3()
@@ -4748,7 +5099,7 @@ impl LauncherApp {
                         .child(
                             v_flex()
                                 .gap_1()
-                                .child(div().text_xs().child("安装到"))
+                                .child(div().text_xs().child(tr("app.install.install_to")))
                                 .child(
                                     div()
                                         .text_xs()
@@ -4761,15 +5112,21 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("各实例的 mods、资源包、光影和存档互不影响。"),
+                                .child(tr("app.install.isolation_notice")),
                         ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("install-version").primary().label("安装")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("install-version")
+                                    .primary()
+                                    .label(tr("app.common.install")),
+                            ),
                         ),
                 )
                 .on_ok({
@@ -4791,25 +5148,28 @@ impl LauncherApp {
     fn copy_logs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = formatted_logs(&self.log_state.logs);
         if text.is_empty() {
-            window.push_notification(Notification::info("当前没有可复制的日志。"), cx);
+            window.push_notification(Notification::info(tr("app.logs.nothing_to_copy")), cx);
             return;
         }
         cx.write_to_clipboard(ClipboardItem::new_string(text));
         window.push_notification(
-            Notification::success("日志已复制到剪贴板。").title("已复制"),
+            Notification::success(tr("app.logs.copied")).title(tr("app.account.copied")),
             cx,
         );
     }
 
     fn export_logs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.log_state.active_id() else {
-            window.push_notification(Notification::info("当前没有任务日志。"), cx);
+            window.push_notification(Notification::info(tr("app.logs.no_task_logs")), cx);
             return;
         };
         let directory = self.services.config_store.logs_dir();
         if let Err(error) = std::fs::create_dir_all(&directory) {
             window.push_notification(
-                Notification::error(format!("无法创建日志目录: {error}")).title("导出失败"),
+                Notification::error(
+                    rust_i18n::t!("app.logs.create_dir_failed", error = error).to_string(),
+                )
+                .title(tr("app.logs.export_failed")),
                 cx,
             );
             return;
@@ -4835,12 +5195,17 @@ impl LauncherApp {
         text.push('\n');
         match std::fs::write(&path, text) {
             Ok(()) => window.push_notification(
-                Notification::success(format!("已导出到 {}", display_path(&path)))
-                    .title("日志已导出"),
+                Notification::success(
+                    rust_i18n::t!("app.logs.exported", path = display_path(&path)).to_string(),
+                )
+                .title(tr("app.logs.exported_title")),
                 cx,
             ),
             Err(error) => window.push_notification(
-                Notification::error(format!("无法写入日志: {error}")).title("导出失败"),
+                Notification::error(
+                    rust_i18n::t!("app.logs.write_failed", error = error).to_string(),
+                )
+                .title(tr("app.logs.export_failed")),
                 cx,
             ),
         }
@@ -4851,7 +5216,10 @@ impl LauncherApp {
         let _ = std::fs::create_dir_all(&directory);
         if let Err(error) = open_path(&directory) {
             window.push_notification(
-                Notification::error(format!("无法打开日志目录: {error}")).title("打开失败"),
+                Notification::error(
+                    rust_i18n::t!("app.logs.open_dir_failed", error = error).to_string(),
+                )
+                .title(tr("app.common.open_failed")),
                 cx,
             );
         }
@@ -4865,7 +5233,7 @@ impl LauncherApp {
             )
         {
             window.push_notification(
-                Notification::warning("请先停止正在运行的任务。").title("无法清除日志"),
+                Notification::warning(tr("app.logs.stop_first")).title(tr("app.logs.cannot_clear")),
                 cx,
             );
             return;
@@ -4894,17 +5262,17 @@ impl LauncherApp {
             .find(|version| version.id.as_str() == version_id)
             .is_some_and(InstalledVersion::is_isolated);
         let description = if isolated {
-            "将删除整个实例目录，包括 mods、资源包、光影和存档；共享 libraries 和 assets 不受影响。"
+            tr("app.versions.delete_isolated_description")
         } else {
-            "将删除整个版本目录；共享 libraries 和 assets 不受影响。"
+            tr("app.versions.delete_shared_description")
         };
         let view = cx.entity().downgrade();
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("删除实例 {version_id}？"))
-                .description(description)
-                .ok_text("删除")
+                .title(rust_i18n::t!("app.versions.delete_title", version = version_id).to_string())
+                .description(description.clone())
+                .ok_text(tr("app.common.delete"))
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok({
                     let version_id = version_id.clone();
@@ -4925,7 +5293,8 @@ impl LauncherApp {
     fn delete_version(&mut self, version_id: String, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("请先等待当前任务或内容操作结束。").title("无法删除实例"),
+                Notification::warning(tr("app.versions.wait_for_task"))
+                    .title(tr("app.versions.cannot_delete")),
                 cx,
             );
             return;
@@ -4943,20 +5312,27 @@ impl LauncherApp {
                     view.reload_versions(window, cx);
                     view.save_config();
                     window.push_notification(
-                        Notification::success(format!("已删除版本 {display}。"))
-                            .title("版本已删除"),
+                        Notification::success(
+                            rust_i18n::t!("app.versions.deleted", version = display).to_string(),
+                        )
+                        .title(tr("app.versions.deleted_title")),
                         cx,
                     );
                 }
                 Ok(Err(error)) => {
                     window.push_notification(
-                        Notification::error(error.to_string()).title("删除版本失败"),
+                        Notification::error(error.to_string())
+                            .title(tr("app.versions.delete_failed")),
                         cx,
                     );
                 }
                 Err(error) => {
                     window.push_notification(
-                        Notification::error(format!("后台任务失败: {error}")).title("删除版本失败"),
+                        Notification::error(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        )
+                        .title(tr("app.versions.delete_failed")),
                         cx,
                     );
                 }
@@ -4982,7 +5358,10 @@ impl LauncherApp {
         let _ = std::fs::create_dir_all(&directory);
         if let Err(error) = open_path(&directory) {
             window.push_notification(
-                Notification::error(format!("无法打开实例目录: {error}")).title("打开失败"),
+                Notification::error(
+                    rust_i18n::t!("app.instance.open_folder_failed", error = error).to_string(),
+                )
+                .title(tr("app.common.open_failed")),
                 cx,
             );
         }
@@ -4996,7 +5375,11 @@ impl LauncherApp {
         let _ = std::fs::create_dir_all(&root);
         if let Err(error) = open_path(&root) {
             window.push_notification(
-                Notification::error(format!("无法打开游戏目录: {error}")).title("打开失败"),
+                Notification::error(
+                    rust_i18n::t!("app.instance.open_game_folder_failed", error = error)
+                        .to_string(),
+                )
+                .title(tr("app.common.open_failed")),
                 cx,
             );
         }
@@ -5020,11 +5403,9 @@ impl LauncherApp {
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("为 {name} 启用版本隔离？"))
-                .description(
-                    "游戏将使用实例目录作为工作目录。全局 mods、资源包和光影会复制到该实例，不覆盖已有文件，原全局内容保留。",
-                )
-                .ok_text("启用隔离")
+                .title(rust_i18n::t!("app.versions.isolation_title", name = name).to_string())
+                .description(tr("app.versions.isolation_description"))
+                .ok_text(tr("app.versions.enable_isolation_confirm"))
                 .on_ok({
                     let version_id = version_id.clone();
                     let view = view.clone();
@@ -5049,7 +5430,8 @@ impl LauncherApp {
     ) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("请先等待当前任务或内容操作结束。").title("无法启用隔离"),
+                Notification::warning(tr("app.versions.wait_for_task"))
+                    .title(tr("app.versions.cannot_enable_isolation")),
                 cx,
             );
             return;
@@ -5070,23 +5452,28 @@ impl LauncherApp {
                         view.reload_versions(window, cx);
                         view.save_config();
                         window.push_notification(
-                            Notification::success(format!(
-                                "已为 {display} 启用版本隔离，全局内容已复制到实例。"
-                            ))
-                            .title("版本隔离已启用"),
+                            Notification::success(
+                                rust_i18n::t!("app.versions.isolation_enabled", version = display)
+                                    .to_string(),
+                            )
+                            .title(tr("app.versions.isolation_enabled_title")),
                             cx,
                         );
                     }
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("启用隔离失败"),
+                            Notification::error(error.to_string())
+                                .title(tr("app.versions.isolation_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("启用隔离失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.versions.isolation_failed")),
                             cx,
                         );
                     }
@@ -5112,7 +5499,8 @@ impl LauncherApp {
     ) {
         if self.content_action_pending {
             window.push_notification(
-                Notification::warning("已有内容操作正在进行，请稍候。").title("无法打开实例"),
+                Notification::warning(tr("app.instance.content_busy"))
+                    .title(tr("app.instance.cannot_open")),
                 cx,
             );
             return;
@@ -5123,7 +5511,8 @@ impl LauncherApp {
             .any(|version| version.id.as_str() == version_id)
         {
             window.push_notification(
-                Notification::error("实例不存在或已被删除。").title("无法打开实例"),
+                Notification::error(tr("app.instance.missing_notice"))
+                    .title(tr("app.instance.cannot_open")),
                 cx,
             );
             return;
@@ -5175,28 +5564,39 @@ impl LauncherApp {
             let save_input = input.clone();
             let save_id = version_id.clone();
             dialog
-                .title("重命名实例")
+                .title(tr("app.instance.rename"))
                 .width(layout::rem_px(cx, layout::DIALOG_SMALL))
                 .child(
                     v_flex().gap_3().child(
                         v_flex()
                             .gap_1()
-                            .child(div().text_sm().font_medium().child("显示名称"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_medium()
+                                    .child(tr("app.create_instance.display_name")),
+                            )
                             .child(div().p_1().child(Input::new(&input).w_full()))
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("留空时显示实例 ID；不会重命名目录。"),
+                                    .child(tr("app.instance.rename_hint")),
                             ),
                     ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("save-instance-name").primary().label("保存")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("save-instance-name")
+                                    .primary()
+                                    .label(tr("app.common.save")),
+                            ),
                         ),
                 )
                 .on_ok(move |_, window, cx| {
@@ -5229,7 +5629,8 @@ impl LauncherApp {
             .cloned()
         else {
             window.push_notification(
-                Notification::error("实例不存在或已被删除。").title("无法重命名实例"),
+                Notification::error(tr("app.instance.missing_notice"))
+                    .title(tr("app.instance.rename_failed")),
                 cx,
             );
             return false;
@@ -5244,14 +5645,14 @@ impl LauncherApp {
                     } else {
                         name.trim().to_owned()
                     })
-                    .title("实例已重命名"),
+                    .title(tr("app.instance.renamed")),
                     cx,
                 );
                 true
             }
             Err(error) => {
                 window.push_notification(
-                    Notification::error(error.to_string()).title("无法重命名实例"),
+                    Notification::error(error.to_string()).title(tr("app.instance.rename_failed")),
                     cx,
                 );
                 false
@@ -5310,7 +5711,7 @@ impl LauncherApp {
             let save_height = height_input.clone();
             let save_id = version_id.clone();
             dialog
-                .title("启动设置")
+                .title(tr("app.instance.launch_settings"))
                 .width(layout::rem_px(cx, layout::DIALOG_MEDIUM))
                 .child(
                     v_flex()
@@ -5318,19 +5719,29 @@ impl LauncherApp {
                         .child(
                             v_flex()
                                 .gap_1()
-                                .child(div().text_sm().font_medium().child("最大内存 (MiB)"))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_medium()
+                                        .child(tr("app.instance.max_memory")),
+                                )
                                 .child(div().child(Input::new(&memory_input).w_full()))
                                 .child(
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("留空使用 JVM 默认值；允许 256–262144。"),
+                                        .child(tr("app.instance.max_memory_hint")),
                                 ),
                         )
                         .child(
                             v_flex()
                                 .gap_1()
-                                .child(div().text_sm().font_medium().child("窗口尺寸"))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_medium()
+                                        .child(tr("app.instance.window_size")),
+                                )
                                 .child(
                                     h_flex()
                                         .gap_2()
@@ -5353,18 +5764,22 @@ impl LauncherApp {
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child(
-                                            "宽高需同时填写，允许 320–16384；留空使用游戏默认。",
-                                        ),
+                                        .child(tr("app.instance.window_size_hint")),
                                 ),
                         ),
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
                         .child(
-                            DialogAction::new()
-                                .child(Button::new("save-launch-settings").primary().label("保存")),
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
+                        .child(
+                            DialogAction::new().child(
+                                Button::new("save-launch-settings")
+                                    .primary()
+                                    .label(tr("app.common.save")),
+                            ),
                         ),
                 )
                 .on_ok(move |_, window, cx| {
@@ -5405,7 +5820,8 @@ impl LauncherApp {
         let (Ok(memory), Ok(width), Ok(height)) = (parse(&memory), parse(&width), parse(&height))
         else {
             window.push_notification(
-                Notification::error("内存和窗口尺寸必须是整数。").title("无法保存启动设置"),
+                Notification::error(tr("app.instance.numeric_required"))
+                    .title(tr("app.instance.save_launch_failed")),
                 cx,
             );
             return false;
@@ -5417,7 +5833,8 @@ impl LauncherApp {
             .cloned()
         else {
             window.push_notification(
-                Notification::error("实例不存在或已被删除。").title("无法保存启动设置"),
+                Notification::error(tr("app.instance.missing_notice"))
+                    .title(tr("app.instance.save_launch_failed")),
                 cx,
             );
             return false;
@@ -5427,14 +5844,16 @@ impl LauncherApp {
             Ok(()) => {
                 self.reload_versions(window, cx);
                 window.push_notification(
-                    Notification::info("内存和窗口设置已更新。").title("启动设置已保存"),
+                    Notification::info(tr("app.instance.launch_settings_updated"))
+                        .title(tr("app.instance.launch_settings_saved")),
                     cx,
                 );
                 true
             }
             Err(error) => {
                 window.push_notification(
-                    Notification::error(error.to_string()).title("无法保存启动设置"),
+                    Notification::error(error.to_string())
+                        .title(tr("app.instance.save_launch_failed")),
                     cx,
                 );
                 false
@@ -5475,7 +5894,7 @@ impl LauncherApp {
         let view = cx.entity().downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             let Some(view) = view.upgrade() else {
-                return dialog.title("选择 Java");
+                return dialog.title(tr("app.java.select"));
             };
             let this = view.read(cx);
             let loading = this.java_dialog_loading;
@@ -5531,12 +5950,12 @@ impl LauncherApp {
                             .flex_1()
                             .min_w_0()
                             .gap_0p5()
-                            .child(div().text_sm().font_medium().child("自动选择"))
+                            .child(div().text_sm().font_medium().child(tr("app.java.auto")))
                             .child(
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("按游戏版本选择兼容 runtime，缺失时自动获取"),
+                                    .child(tr("app.java.auto_description")),
                             ),
                     )
                     .when(auto_selected, |this| {
@@ -5630,7 +6049,7 @@ impl LauncherApp {
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child("仅影响当前实例。自动选择会跟随游戏版本和 Java 自动获取设置。"),
+                        .child(tr("app.java.instance_only_notice")),
                 )
                 .when(loading, |this| {
                     this.child(
@@ -5642,7 +6061,7 @@ impl LauncherApp {
                                     .with_size(Size::Small)
                                     .color(cx.theme().primary),
                             )
-                            .child(div().text_sm().child("正在探测本机 Java…")),
+                            .child(div().text_sm().child(tr("app.java.probing"))),
                     )
                 })
                 .when_some(error, |this, error: String| {
@@ -5655,7 +6074,12 @@ impl LauncherApp {
                         .pt_2()
                         .border_t_1()
                         .border_color(cx.theme().border)
-                        .child(div().text_sm().font_medium().child("自定义可执行文件"))
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_medium()
+                                .child(tr("app.java.custom_executable")),
+                        )
                         .child(
                             h_flex()
                                 .gap_2()
@@ -5669,9 +6093,9 @@ impl LauncherApp {
                                     Button::new("java-custom-use")
                                         .outline()
                                         .label(if custom_probing {
-                                            "检测中…"
+                                            tr("app.java.detecting")
                                         } else {
-                                            "使用此路径"
+                                            tr("app.java.use_path")
                                         })
                                         .disabled(custom_probing || loading)
                                         .on_click(move |_, window, cx| {
@@ -5697,13 +6121,13 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("必须指向 java 或 java.exe；启动时会重新校验版本与平台。"),
+                                .child(tr("app.java.path_hint")),
                         ),
                 );
 
             let retry_view = view.downgrade();
             dialog
-                .title("选择 Java")
+                .title(tr("app.java.select"))
                 .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(body)
                 .footer(
@@ -5711,13 +6135,13 @@ impl LauncherApp {
                         .child(
                             Button::new("java-dialog-close")
                                 .ghost()
-                                .label("关闭")
+                                .label(tr("app.common.close"))
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
                             Button::new("java-dialog-retry")
                                 .outline()
-                                .label("重新检测")
+                                .label(tr("app.java.redetect"))
                                 .disabled(loading)
                                 .on_click(move |_, window, cx| {
                                     if let Some(view) = retry_view.upgrade() {
@@ -5749,15 +6173,16 @@ impl LauncherApp {
                         this.java_dialog_runtimes = discovery.runtimes;
                         if this.java_dialog_runtimes.is_empty() {
                             this.java_dialog_error = Some(if failure_count == 0 {
-                                "没有找到 Java。请检查 JAVA_HOME、PATH 或 RMCL 管理的 runtime。"
-                                    .to_owned()
+                                tr("app.java.not_found")
                             } else {
-                                format!("没有可用 Java；{failure_count} 个候选探测失败。")
+                                rust_i18n::t!("app.java.none_available", count = failure_count)
+                                    .to_string()
                             });
                         }
                     }
                     Err(error) => {
-                        this.java_dialog_error = Some(format!("Java 探测任务失败：{error}"));
+                        this.java_dialog_error =
+                            Some(rust_i18n::t!("app.java.probe_failed", error = error).to_string());
                     }
                 }
                 cx.notify();
@@ -5781,7 +6206,9 @@ impl LauncherApp {
             let result = runtime
                 .spawn(async move { java.probe(path).await.map_err(|error| error.to_string()) })
                 .await;
-            let result = result.unwrap_or_else(|error| Err(format!("Java 探测任务失败：{error}")));
+            let result = result.unwrap_or_else(|error| {
+                Err(rust_i18n::t!("app.java.probe_failed", error = error).to_string())
+            });
             let _ = view.update_in(cx, |this, window, cx| {
                 this.java_custom_probing = false;
                 match result {
@@ -5797,7 +6224,7 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(error).title("无法使用该 Java"),
+                            Notification::error(error).title(tr("app.java.cannot_use")),
                             cx,
                         );
                     }
@@ -5821,7 +6248,8 @@ impl LauncherApp {
             .cloned()
         else {
             window.push_notification(
-                Notification::error("实例不存在或已被删除。").title("无法保存 Java 设置"),
+                Notification::error(tr("app.instance.missing_notice"))
+                    .title(tr("app.java.save_failed")),
                 cx,
             );
             return false;
@@ -5831,13 +6259,14 @@ impl LauncherApp {
             Ok(()) => {
                 self.java_dialog_target = None;
                 self.reload_versions(window, cx);
-                let label = java.map_or_else(|| "自动选择".to_owned(), |path| display_path(&path));
-                window.push_notification(Notification::info(label).title("实例 Java 已更新"), cx);
+                let label = java.map_or_else(|| tr("app.java.auto"), |path| display_path(&path));
+                window
+                    .push_notification(Notification::info(label).title(tr("app.java.updated")), cx);
                 true
             }
             Err(error) => {
                 window.push_notification(
-                    Notification::error(error.to_string()).title("无法保存 Java 设置"),
+                    Notification::error(error.to_string()).title(tr("app.java.save_failed")),
                     cx,
                 );
                 false
@@ -5858,42 +6287,46 @@ impl LauncherApp {
             .cloned()
         else {
             window.push_notification(
-                Notification::error("实例不存在或已被移动。").title("无法添加加载器"),
+                Notification::error(tr("app.instance.missing_or_moved"))
+                    .title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
         };
         if let Some(loader) = version.loader.as_ref() {
             window.push_notification(
-                Notification::warning(format!(
-                    "当前实例已安装 {} {}。",
-                    loader.kind.label(),
-                    loader.version
-                ))
-                .title("无法添加加载器"),
+                Notification::warning(
+                    rust_i18n::t!(
+                        "app.loader.already_installed",
+                        kind = loader.kind.label(),
+                        version = loader.version
+                    )
+                    .to_string(),
+                )
+                .title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
         }
         if !version.manifest_present {
             window.push_notification(
-                Notification::warning("旧版实例缺少 RMCL 配置，暂不支持添加加载器。")
-                    .title("无法添加加载器"),
+                Notification::warning(tr("app.instance.loader_legacy"))
+                    .title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
         }
         if let Some(error) = version.manifest_error.as_ref() {
             window.push_notification(
-                Notification::error(error.clone()).title("无法添加加载器"),
+                Notification::error(error.clone()).title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
         }
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法添加加载器"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
@@ -6031,7 +6464,7 @@ impl LauncherApp {
                         .find(|version| version.id.as_str() == id.as_str())
                 })
                 .map(|version| version.display_name().to_owned())
-                .unwrap_or_else(|| "实例".to_owned());
+                .unwrap_or_else(|| tr("app.home.instance"));
             let name = loader.map_or(source_name.clone(), |kind| {
                 format!("{} {}", kind.label(), source_name)
             });
@@ -6057,7 +6490,7 @@ impl LauncherApp {
         };
         let base = self.create_base_input.read(cx).value().trim().to_owned();
         if base.is_empty() {
-            self.create_loader_error = Some("请先选择 Minecraft 版本。".to_owned());
+            self.create_loader_error = Some(tr("app.create_instance.version_required"));
             cx.notify();
             return;
         }
@@ -6097,7 +6530,10 @@ impl LauncherApp {
                         }
                     }
                     Err(error) => {
-                        view.create_loader_error = Some(format!("后台任务失败: {error}"));
+                        view.create_loader_error = Some(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -6161,15 +6597,16 @@ impl LauncherApp {
     fn create_instance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_start_operation() {
             window.push_notification(
-                Notification::warning("已有任务或内容操作正在运行，请等待完成或先停止它。")
-                    .title("无法创建实例"),
+                Notification::warning(tr("app.common.operation_busy"))
+                    .title(tr("app.create_instance.cannot_create")),
                 cx,
             );
             return;
         }
         if self.create_copy_source.is_some() && self.create_loader.is_none() {
             window.push_notification(
-                Notification::error("请选择一个 Mod 加载器。").title("无法添加加载器"),
+                Notification::error(tr("app.create_instance.loader_required"))
+                    .title(tr("app.loader.cannot_add")),
                 cx,
             );
             return;
@@ -6177,7 +6614,8 @@ impl LauncherApp {
         let base = self.create_base_input.read(cx).value().trim().to_owned();
         if base.is_empty() {
             window.push_notification(
-                Notification::error("请选择 Minecraft 版本。").title("无法创建实例"),
+                Notification::error(tr("app.create_instance.version_required"))
+                    .title(tr("app.create_instance.cannot_create")),
                 cx,
             );
             return;
@@ -6192,7 +6630,8 @@ impl LauncherApp {
         };
         if id.is_empty() {
             window.push_notification(
-                Notification::error("实例 ID 不能为空。").title("无法创建实例"),
+                Notification::error(tr("app.create_instance.id_required"))
+                    .title(tr("app.create_instance.cannot_create")),
                 cx,
             );
             return;
@@ -6202,7 +6641,8 @@ impl LauncherApp {
             Some(kind) => {
                 let Some(version) = self.create_loader_version.clone() else {
                     window.push_notification(
-                        Notification::error("请先获取并选择加载器版本。").title("无法创建实例"),
+                        Notification::error(tr("app.create_instance.loader_version_required"))
+                            .title(tr("app.create_instance.cannot_create")),
                         cx,
                     );
                     return;
@@ -6235,7 +6675,10 @@ impl LauncherApp {
         cx: &mut Context<Self>,
     ) {
         window.push_notification(
-            Notification::info(format!("正在创建实例 {instance_id}。")).title("已开始创建"),
+            Notification::info(
+                rust_i18n::t!("app.create_instance.creating", id = instance_id).to_string(),
+            )
+            .title(tr("app.create_instance.started")),
             cx,
         );
         self.spawn_command(Command::CreateInstance(request), instance_id, window, cx);
@@ -6249,7 +6692,8 @@ impl LauncherApp {
     ) {
         let Some(version) = self.selected_instance_version().cloned() else {
             window.push_notification(
-                Notification::error("实例不存在或已被删除。").title("无法打开在线内容"),
+                Notification::error(tr("app.instance.missing_notice"))
+                    .title(tr("app.content_browser.cannot_open")),
                 cx,
             );
             return;
@@ -6537,7 +6981,10 @@ impl LauncherApp {
                         }
                     }
                     Err(error) => {
-                        view.content_browser.search_error = Some(format!("后台任务失败: {error}"));
+                        view.content_browser.search_error = Some(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -6647,8 +7094,10 @@ impl LauncherApp {
                         }
                     }
                     Err(error) => {
-                        view.content_browser.versions_error =
-                            Some(format!("后台任务失败: {error}"));
+                        view.content_browser.versions_error = Some(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -6680,14 +7129,16 @@ impl LauncherApp {
         };
         let Some(file) = version.installable_file(kind) else {
             window.push_notification(
-                Notification::error("该版本没有适用于当前内容类型的文件。").title("无法安装"),
+                Notification::error(tr("app.content.no_file_for_kind"))
+                    .title(tr("app.content.cannot_install")),
                 cx,
             );
             return;
         };
         if file.sha1.is_none() {
             window.push_notification(
-                Notification::error("该文件没有 SHA-1 校验值，已拒绝安装。").title("无法安装"),
+                Notification::error(tr("app.content.missing_sha1"))
+                    .title(tr("app.content.cannot_install")),
                 cx,
             );
             return;
@@ -6701,7 +7152,7 @@ impl LauncherApp {
             .project
             .as_ref()
             .map(|project| project.title.clone())
-            .unwrap_or_else(|| kind.label().to_owned());
+            .unwrap_or_else(|| content_kind_label(kind));
         let display_name = format!("{project_title} {}", version.version_number);
         let request = ContentGraphInstallRequest {
             instance: instance_layout,
@@ -6763,14 +7214,18 @@ impl LauncherApp {
                     Ok(Err(AppError::Cancelled)) => {}
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("无法检查安装"),
+                            Notification::error(error.to_string())
+                                .title(tr("app.content.preflight_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("无法检查安装"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.preflight_failed")),
                             cx,
                         );
                     }
@@ -6795,9 +7250,12 @@ impl LauncherApp {
                 .iter()
                 .map(|item| item.title.as_str())
                 .collect::<Vec<_>>()
-                .join("、");
+                .join(", ");
             window.push_notification(
-                Notification::error(format!("检测到不兼容的已安装 Mod：{names}")).title("无法安装"),
+                Notification::error(
+                    rust_i18n::t!("app.content.incompatible_mods", names = names).to_string(),
+                )
+                .title(tr("app.content.cannot_install")),
                 cx,
             );
             return;
@@ -6812,7 +7270,7 @@ impl LauncherApp {
             let save_instance = instance_id.clone();
             let save_name = display_name.clone();
             dialog
-                .title(format!("安装 {display_name}"))
+                .title(rust_i18n::t!("app.content.install_title", name = display_name).to_string())
                 .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(
                     v_flex()
@@ -6824,7 +7282,7 @@ impl LauncherApp {
                                     .text_xs()
                                     .font_medium()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("必需前置"),
+                                    .child(tr("app.content.required_dependencies")),
                             )
                             .children(
                                 dialog_preflight
@@ -6838,10 +7296,13 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!(
-                                        "另有 {} 个可选前置未自动安装。",
-                                        dialog_preflight.optional_count
-                                    )),
+                                    .child(
+                                        rust_i18n::t!(
+                                            "app.content.optional_dependencies",
+                                            count = dialog_preflight.optional_count
+                                        )
+                                        .to_string(),
+                                    ),
                             )
                         })
                         .when(!dialog_preflight.warnings.is_empty(), |this| {
@@ -6862,12 +7323,15 @@ impl LauncherApp {
                 )
                 .footer(
                     DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline()))
+                        .child(
+                            DialogClose::new()
+                                .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                        )
                         .child(
                             DialogAction::new().child(
                                 Button::new("confirm-content-preflight")
                                     .primary()
-                                    .label("安装"),
+                                    .label(tr("app.common.install")),
                             ),
                         ),
                 )
@@ -6908,7 +7372,7 @@ impl LauncherApp {
         let Some(version) = self.selected_instance_version().cloned() else {
             self.content_loading = false;
             self.content_library = None;
-            self.content_error = Some("实例不存在或已被删除。".to_owned());
+            self.content_error = Some(tr("app.instance.missing_notice"));
             cx.notify();
             return;
         };
@@ -6933,7 +7397,10 @@ impl LauncherApp {
                     }
                     Ok(Err(error)) => view.content_error = Some(error.to_string()),
                     Err(error) => {
-                        view.content_error = Some(format!("后台任务失败: {error}"));
+                        view.content_error = Some(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -6962,7 +7429,11 @@ impl LauncherApp {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some(format!("选择 {} 文件", kind.label()).into()),
+            prompt: Some(
+                rust_i18n::t!("app.content.choose_files", kind = content_kind_label(kind))
+                    .to_string()
+                    .into(),
+            ),
         });
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
@@ -6975,8 +7446,11 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开文件选择器: {error}"))
-                                .title("选择文件失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.file_picker_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.file_selection_failed")),
                             cx,
                         );
                     });
@@ -6984,8 +7458,8 @@ impl LauncherApp {
                 Err(_) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error("文件选择器已取消或窗口已关闭。")
-                                .title("选择文件失败"),
+                            Notification::error(tr("app.content.file_picker_cancelled"))
+                                .title(tr("app.content.file_selection_failed")),
                             cx,
                         );
                     });
@@ -7047,28 +7521,40 @@ impl LauncherApp {
                         }
                         if failures.is_empty() {
                             window.push_notification(
-                                Notification::success(format!(
-                                    "已导入 {imported} 个 {} 文件。",
-                                    kind.label()
-                                ))
-                                .title("导入完成"),
+                                Notification::success(
+                                    rust_i18n::t!(
+                                        "app.content.imported",
+                                        count = imported,
+                                        kind = content_kind_label(kind)
+                                    )
+                                    .to_string(),
+                                )
+                                .title(tr("app.content.import_complete")),
                                 cx,
                             );
                         } else {
                             window.push_notification(
-                                Notification::warning(format!(
-                                    "已导入 {imported} 个文件，{} 个失败：{}",
-                                    failures.len(),
-                                    failures.join("；")
-                                ))
-                                .title("部分导入失败"),
+                                Notification::warning(
+                                    rust_i18n::t!(
+                                        "app.content.import_partial",
+                                        imported = imported,
+                                        failed = failures.len(),
+                                        errors = failures.join("; ")
+                                    )
+                                    .to_string(),
+                                )
+                                .title(tr("app.content.import_partial_title")),
                                 cx,
                             );
                         }
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}")).title("导入失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.import_failed")),
                             cx,
                         );
                     }
@@ -7117,7 +7603,8 @@ impl LauncherApp {
                     Ok((changed, snapshot)) => {
                         if let Err(error) = changed {
                             window.push_notification(
-                                Notification::error(error.to_string()).title("更新内容失败"),
+                                Notification::error(error.to_string())
+                                    .title(tr("app.content.update_failed")),
                                 cx,
                             );
                         }
@@ -7130,8 +7617,11 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("更新内容失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.update_failed")),
                             cx,
                         );
                     }
@@ -7174,7 +7664,8 @@ impl LauncherApp {
                     Ok((changed, snapshot)) => {
                         if let Err(error) = changed {
                             window.push_notification(
-                                Notification::error(error.to_string()).title("调整优先级失败"),
+                                Notification::error(error.to_string())
+                                    .title(tr("app.content.priority_failed")),
                                 cx,
                             );
                         }
@@ -7187,8 +7678,11 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("调整优先级失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.priority_failed")),
                             cx,
                         );
                     }
@@ -7230,7 +7724,8 @@ impl LauncherApp {
                     Ok((changed, snapshot)) => {
                         if let Err(error) = changed {
                             window.push_notification(
-                                Notification::error(error.to_string()).title("切换光影失败"),
+                                Notification::error(error.to_string())
+                                    .title(tr("app.content.shader_failed")),
                                 cx,
                             );
                         }
@@ -7243,8 +7738,11 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("切换光影失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.shader_failed")),
                             cx,
                         );
                     }
@@ -7267,9 +7765,9 @@ impl LauncherApp {
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("删除 {display_name}？"))
-                .description("将从实例中永久删除该内容条目。")
-                .ok_text("删除")
+                .title(rust_i18n::t!("app.content.delete_title", name = display_name).to_string())
+                .description(tr("app.content.delete_description"))
+                .ok_text(tr("app.common.delete"))
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok({
                     let relative_path = relative_path.clone();
@@ -7327,8 +7825,11 @@ impl LauncherApp {
                     Ok((deleted, snapshot)) => match deleted {
                         Ok(()) => {
                             window.push_notification(
-                                Notification::success(format!("已删除 {display_name}。"))
-                                    .title("内容已删除"),
+                                Notification::success(
+                                    rust_i18n::t!("app.content.deleted", name = display_name)
+                                        .to_string(),
+                                )
+                                .title(tr("app.content.deleted_title")),
                                 cx,
                             );
                             match snapshot {
@@ -7340,15 +7841,19 @@ impl LauncherApp {
                         }
                         Err(error) => {
                             window.push_notification(
-                                Notification::error(error.to_string()).title("删除内容失败"),
+                                Notification::error(error.to_string())
+                                    .title(tr("app.content.delete_failed")),
                                 cx,
                             );
                         }
                     },
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("删除内容失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.content.delete_failed")),
                             cx,
                         );
                     }
@@ -7373,7 +7878,10 @@ impl LauncherApp {
         let _ = std::fs::create_dir_all(&directory);
         if let Err(error) = open_path(&directory) {
             window.push_notification(
-                Notification::error(format!("无法打开内容目录: {error}")).title("打开失败"),
+                Notification::error(
+                    rust_i18n::t!("app.content.open_folder_failed", error = error).to_string(),
+                )
+                .title(tr("app.common.open_failed")),
                 cx,
             );
         }
@@ -7402,7 +7910,10 @@ impl LauncherApp {
         self.reload_versions(window, cx);
         self.save_config();
         if let Some(error) = self.versions_error.clone() {
-            window.push_notification(Notification::error(error).title("无法读取版本列表"), cx);
+            window.push_notification(
+                Notification::error(error).title(tr("app.versions.read_failed")),
+                cx,
+            );
         }
     }
 
@@ -7491,18 +8002,21 @@ impl Render for LauncherApp {
 
 fn preflight_item_row(item: &ContentPreflightItem, cx: &App) -> AnyElement {
     let (label, variant) = match &item.status {
-        ContentPreflightStatus::AlreadyInstalled { enabled: true } => ("已安装", Tag::success()),
+        ContentPreflightStatus::AlreadyInstalled { enabled: true } => {
+            (tr("app.content.status_installed"), Tag::success())
+        }
         ContentPreflightStatus::AlreadyInstalled { enabled: false } => {
-            ("已安装但禁用", Tag::warning())
+            (tr("app.content.status_installed_disabled"), Tag::warning())
         }
         ContentPreflightStatus::InstalledDifferentVersion { enabled: true, .. } => {
-            ("已安装其他版本", Tag::warning())
+            (tr("app.content.status_other_version"), Tag::warning())
         }
-        ContentPreflightStatus::InstalledDifferentVersion { enabled: false, .. } => {
-            ("已安装其他版本（禁用）", Tag::warning())
-        }
-        ContentPreflightStatus::WillInstall => ("将安装", Tag::info()),
-        ContentPreflightStatus::Conflict => ("冲突", Tag::danger()),
+        ContentPreflightStatus::InstalledDifferentVersion { enabled: false, .. } => (
+            tr("app.content.status_other_version_disabled"),
+            Tag::warning(),
+        ),
+        ContentPreflightStatus::WillInstall => (tr("app.content.status_will_install"), Tag::info()),
+        ContentPreflightStatus::Conflict => (tr("app.content.status_conflict"), Tag::danger()),
     };
     h_flex()
         .w_full()
@@ -7542,12 +8056,12 @@ fn updates_installable() -> bool {
     !cfg!(debug_assertions) || std::env::var_os("RMCL_ALLOW_DEV_UPDATE").is_some()
 }
 
-fn java_source_label(source: JavaRuntimeSource) -> &'static str {
+fn java_source_label(source: JavaRuntimeSource) -> String {
     match source {
-        JavaRuntimeSource::Managed => "RMCL 管理",
-        JavaRuntimeSource::JavaHome => "JAVA_HOME",
-        JavaRuntimeSource::System => "系统 PATH",
-        JavaRuntimeSource::Custom => "自定义",
+        JavaRuntimeSource::Managed => tr("app.java.source_managed"),
+        JavaRuntimeSource::JavaHome => "JAVA_HOME".to_owned(),
+        JavaRuntimeSource::System => tr("app.java.source_system"),
+        JavaRuntimeSource::Custom => tr("app.java.source_custom"),
     }
 }
 
@@ -7681,26 +8195,32 @@ fn authlib_login_error_message(error: &AuthlibAccountServiceError) -> String {
             if code == "ForbiddenOperationException" =>
         {
             if message.trim().is_empty() {
-                "登录失败：用户名或密码错误。".to_owned()
+                tr("app.authlib.error_bad_credentials")
             } else {
-                format!("登录失败：{message}")
+                rust_i18n::t!("app.authlib.error_login", message = message).to_string()
             }
         }
-        ServiceError::Auth(AuthlibError::InvalidUsername) => "用户名不能为空。".to_owned(),
-        ServiceError::Auth(AuthlibError::InvalidPassword) => "密码不能为空。".to_owned(),
+        ServiceError::Auth(AuthlibError::InvalidUsername) => {
+            tr("app.authlib.error_invalid_username")
+        }
+        ServiceError::Auth(AuthlibError::InvalidPassword) => {
+            tr("app.authlib.error_invalid_password")
+        }
         ServiceError::Auth(AuthlibError::InvalidServerUrl(message)) => {
-            format!("认证服务器地址无效：{message}")
+            rust_i18n::t!("app.authlib.error_invalid_server", message = message).to_string()
         }
         ServiceError::Auth(AuthlibError::InsecureRedirect) => {
-            "认证服务器尝试从 HTTPS 降级到 HTTP，已拒绝。".to_owned()
+            tr("app.authlib.error_insecure_redirect")
         }
-        ServiceError::Auth(AuthlibError::Cancelled) => "登录已取消。".to_owned(),
-        ServiceError::CredentialsMissing => "外置账户登录已失效，请重新登录。".to_owned(),
-        ServiceError::ProfileSelectionRequired => "该账户有多个角色，请先选择角色。".to_owned(),
+        ServiceError::Auth(AuthlibError::Cancelled) => tr("app.authlib.error_cancelled"),
+        ServiceError::CredentialsMissing => tr("app.authlib.error_credentials_missing"),
+        ServiceError::ProfileSelectionRequired => tr("app.authlib.error_profile_required"),
         ServiceError::SecretStore(error) => {
-            format!("系统凭据存储不可用：{error}")
+            rust_i18n::t!("app.authlib.error_secret_store", error = error).to_string()
         }
-        ServiceError::Auth(error) => format!("外置登录失败：{error}"),
+        ServiceError::Auth(error) => {
+            rust_i18n::t!("app.authlib.error_login_generic", error = error).to_string()
+        }
         other => other.to_string(),
     }
 }
@@ -7708,7 +8228,9 @@ fn authlib_login_error_message(error: &AuthlibAccountServiceError) -> String {
 fn authlib_launch_error_message(error: &AppError) -> String {
     match error {
         AppError::AuthlibAccount(error) => authlib_login_error_message(error),
-        AppError::AuthlibInjector(error) => format!("无法获取 authlib-injector：{error}"),
+        AppError::AuthlibInjector(error) => {
+            rust_i18n::t!("app.authlib.error_injector", error = error).to_string()
+        }
         other => other.to_string(),
     }
 }
@@ -7718,41 +8240,41 @@ fn microsoft_error_message(error: &MicrosoftAccountServiceError) -> String {
         MicrosoftAccountServiceError::CredentialsMissing
         | MicrosoftAccountServiceError::Auth(MicrosoftAuthError::ReauthenticationRequired)
         | MicrosoftAccountServiceError::Auth(MicrosoftAuthError::MinecraftTokenRejected) => {
-            "正版账户登录已失效，请重新登录。".to_owned()
+            tr("app.account.error_login_expired")
         }
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::NoMinecraftEntitlement) => {
-            "该 Microsoft 账户未拥有 Minecraft: Java Edition。".to_owned()
+            tr("app.account.error_no_entitlement")
         }
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::ProfileNotFound) => {
-            "该账户还没有 Minecraft 玩家档案，请先在官方启动器登录一次。".to_owned()
+            tr("app.account.error_profile_not_found")
         }
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
             code: Some(2148916233),
             ..
-        }) => "该账户还没有 Xbox 档案，请先在 minecraft.net 登录一次。".to_owned(),
+        }) => tr("app.account.error_no_xbox_profile"),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
             code: Some(2148916238),
             ..
-        }) => "该账户是儿童账户，需要先加入 Microsoft 家庭组。".to_owned(),
+        }) => tr("app.account.error_child_account"),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
             code: Some(2148916235),
             ..
-        }) => "该账户所在地区不支持 Xbox Live。".to_owned(),
+        }) => tr("app.account.error_region"),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Xbox {
             code: Some(2148916227),
             ..
-        }) => "该账户已被 Xbox Live 封禁。".to_owned(),
+        }) => tr("app.account.error_banned"),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::DeviceCodeExpired) => {
-            "登录代码已过期，请重新开始。".to_owned()
+            tr("app.account.error_code_expired")
         }
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::DeviceCodeDeclined) => {
-            "Microsoft 登录已取消。".to_owned()
+            tr("app.account.error_cancelled")
         }
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::Cancelled) => {
-            "Microsoft 登录已取消。".to_owned()
+            tr("app.account.error_cancelled")
         }
         MicrosoftAccountServiceError::SecretStore(error) => {
-            format!("无法访问系统钥匙串: {error}")
+            rust_i18n::t!("app.account.error_keychain", error = error).to_string()
         }
         _ => error.to_string(),
     }
@@ -7766,12 +8288,50 @@ fn theme_index(theme: ThemePreference) -> usize {
     }
 }
 
+fn theme_label(theme: ThemePreference) -> String {
+    tr(match theme {
+        ThemePreference::System => "app.settings.theme_system",
+        ThemePreference::Light => "app.settings.theme_light",
+        ThemePreference::Dark => "app.settings.theme_dark",
+    })
+}
+
+fn theme_items() -> Vec<String> {
+    [
+        ThemePreference::System,
+        ThemePreference::Light,
+        ThemePreference::Dark,
+    ]
+    .into_iter()
+    .map(theme_label)
+    .collect()
+}
+
 fn download_source_index(source: DownloadSourcePreference) -> usize {
     match source {
         DownloadSourcePreference::Auto => 0,
         DownloadSourcePreference::Official => 1,
         DownloadSourcePreference::Mirror => 2,
     }
+}
+
+fn download_source_label(source: DownloadSourcePreference) -> String {
+    tr(match source {
+        DownloadSourcePreference::Auto => "app.settings.download_source_auto",
+        DownloadSourcePreference::Official => "app.settings.download_source_official",
+        DownloadSourcePreference::Mirror => "app.settings.download_source_mirror",
+    })
+}
+
+fn download_source_items() -> Vec<String> {
+    [
+        DownloadSourcePreference::Auto,
+        DownloadSourcePreference::Official,
+        DownloadSourcePreference::Mirror,
+    ]
+    .into_iter()
+    .map(download_source_label)
+    .collect()
 }
 
 fn mirror_preference(source: DownloadSourcePreference) -> MirrorPreference {
@@ -7784,26 +8344,26 @@ fn mirror_preference(source: DownloadSourcePreference) -> MirrorPreference {
 
 fn initial_mirror_status(source: DownloadSourcePreference) -> String {
     match source {
-        DownloadSourcePreference::Auto => "正在探测国内镜像…".to_owned(),
-        DownloadSourcePreference::Official => "仅使用官方源".to_owned(),
-        DownloadSourcePreference::Mirror => "国内镜像优先，正在探测…".to_owned(),
+        DownloadSourcePreference::Auto => tr("app.mirror.probing_auto"),
+        DownloadSourcePreference::Official => tr("app.mirror.official_only"),
+        DownloadSourcePreference::Mirror => tr("app.mirror.probing_mirror"),
     }
 }
 
 fn mirror_probe_status(source: DownloadSourcePreference, probe: &MirrorProbe) -> String {
     match source {
-        DownloadSourcePreference::Official => "仅使用官方源".to_owned(),
+        DownloadSourcePreference::Official => tr("app.mirror.official_only"),
         DownloadSourcePreference::Auto => match (probe.ok, probe.latency) {
             (true, Some(latency)) => {
-                format!("国内镜像可用（{} ms）", latency.as_millis())
+                rust_i18n::t!("app.mirror.available", latency = latency.as_millis()).to_string()
             }
-            _ => "国内镜像不可用，使用官方源".to_owned(),
+            _ => tr("app.mirror.unavailable"),
         },
         DownloadSourcePreference::Mirror => match (probe.ok, probe.latency) {
             (true, Some(latency)) => {
-                format!("国内镜像优先（{} ms）", latency.as_millis())
+                rust_i18n::t!("app.mirror.preferred", latency = latency.as_millis()).to_string()
             }
-            _ => "国内镜像优先；当前探测失败，将回退官方源".to_owned(),
+            _ => tr("app.mirror.preferred_fallback"),
         },
     }
 }
@@ -7845,6 +8405,23 @@ fn visibility_index(visibility: LauncherVisibility) -> usize {
     }
 }
 
+fn visibility_label(visibility: LauncherVisibility) -> String {
+    tr(match visibility {
+        LauncherVisibility::KeepVisible => "app.settings.visibility_keep",
+        LauncherVisibility::HideWhileRunning => "app.settings.visibility_hide",
+    })
+}
+
+fn visibility_items() -> Vec<String> {
+    [
+        LauncherVisibility::KeepVisible,
+        LauncherVisibility::HideWhileRunning,
+    ]
+    .into_iter()
+    .map(visibility_label)
+    .collect()
+}
+
 fn accent_index(accent: AccentColor) -> usize {
     match accent {
         AccentColor::Emerald => 0,
@@ -7855,23 +8432,121 @@ fn accent_index(accent: AccentColor) -> usize {
     }
 }
 
-pub fn version_type_label(version_type: Option<&str>) -> &'static str {
-    match version_type {
-        Some("release") => "正式版",
-        Some("snapshot") => "快照",
-        Some("old_beta") => "旧版 Beta",
-        Some("old_alpha") => "旧版 Alpha",
-        Some(_) => "其他",
-        None => "未知",
+fn accent_label(accent: AccentColor) -> String {
+    tr(match accent {
+        AccentColor::Emerald => "app.settings.accent_emerald",
+        AccentColor::Ocean => "app.settings.accent_ocean",
+        AccentColor::Violet => "app.settings.accent_violet",
+        AccentColor::Amber => "app.settings.accent_amber",
+        AccentColor::Rose => "app.settings.accent_rose",
+    })
+}
+
+fn accent_items() -> Vec<String> {
+    [
+        AccentColor::Emerald,
+        AccentColor::Ocean,
+        AccentColor::Violet,
+        AccentColor::Amber,
+        AccentColor::Rose,
+    ]
+    .into_iter()
+    .map(accent_label)
+    .collect()
+}
+
+fn language_index(language: LanguagePreference) -> usize {
+    match language {
+        LanguagePreference::System => 0,
+        LanguagePreference::Chinese => 1,
+        LanguagePreference::English => 2,
     }
+}
+
+fn language_label(language: LanguagePreference) -> String {
+    tr(match language {
+        LanguagePreference::System => "app.settings.language_system",
+        LanguagePreference::Chinese => "app.settings.language_chinese",
+        LanguagePreference::English => "app.settings.language_english",
+    })
+}
+
+fn language_items() -> Vec<String> {
+    [
+        LanguagePreference::System,
+        LanguagePreference::Chinese,
+        LanguagePreference::English,
+    ]
+    .into_iter()
+    .map(language_label)
+    .collect()
+}
+
+fn authlib_custom_server_label() -> String {
+    tr("app.authlib.custom_server")
+}
+
+fn authlib_server_items() -> SearchableVec<String> {
+    SearchableVec::new(
+        AUTHLIB_SERVER_PRESETS
+            .iter()
+            .map(|preset| preset.name.to_owned())
+            .chain(std::iter::once(authlib_custom_server_label()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn content_kind_label(kind: ContentKind) -> String {
+    tr(match kind {
+        ContentKind::Mod => "app.content_kind.mod",
+        ContentKind::ResourcePack => "app.content_kind.resource_pack",
+        ContentKind::ShaderPack => "app.content_kind.shader_pack",
+    })
+}
+
+pub fn remote_sort_label(sort: RemoteSort) -> String {
+    tr(match sort {
+        RemoteSort::Relevance => "app.remote_sort.relevance",
+        RemoteSort::Downloads => "app.remote_sort.downloads",
+        RemoteSort::Follows => "app.remote_sort.follows",
+        RemoteSort::Newest => "app.remote_sort.newest",
+        RemoteSort::Updated => "app.remote_sort.updated",
+    })
+}
+
+pub fn skin_sort_label(sort: SkinCatalogSort) -> String {
+    tr(match sort {
+        SkinCatalogSort::Popular => "app.skin.sort_popular",
+        SkinCatalogSort::Newest => "app.skin.sort_newest",
+    })
+}
+
+pub fn world_compatibility_label(compatibility: WorldCompatibility) -> String {
+    tr(match compatibility {
+        WorldCompatibility::Same => "app.worlds.compat_same",
+        WorldCompatibility::Upgrade => "app.worlds.compat_upgrade",
+        WorldCompatibility::Downgrade => "app.worlds.compat_downgrade",
+        WorldCompatibility::Unknown => "app.worlds.compat_unknown",
+    })
+}
+
+pub fn version_type_label(version_type: Option<&str>) -> String {
+    tr(match version_type {
+        Some("release") => "app.version_filter.release",
+        Some("snapshot") => "app.version_filter.snapshot",
+        Some("old_beta") => "app.version_filter.old_beta",
+        Some("old_alpha") => "app.version_filter.old_alpha",
+        Some(_) => "app.version_filter.other",
+        None => "app.version_filter.unknown",
+    })
 }
 
 pub fn short_date(value: Option<&str>) -> String {
     value
         .and_then(|value| value.get(..10))
         .filter(|value| value.len() == 10)
-        .unwrap_or("日期未知")
-        .to_owned()
+        .map(str::to_owned)
+        .unwrap_or_else(|| tr("app.common.date_unknown"))
 }
 
 pub fn formatted_logs(logs: &std::collections::VecDeque<GameLog>) -> String {
@@ -7929,12 +8604,13 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
         return String::new();
     };
     match progress {
-        TaskProgress::Download(progress) => format!(
-            "{} / {} 个文件 · {}",
-            progress.completed_files,
-            progress.total_files,
-            display_path(&progress.current)
-        ),
+        TaskProgress::Download(progress) => rust_i18n::t!(
+            "app.task.progress_download",
+            completed = progress.completed_files,
+            total = progress.total_files,
+            current = display_path(&progress.current)
+        )
+        .to_string(),
         TaskProgress::Content(progress) => {
             let current = progress
                 .current
@@ -7951,86 +8627,122 @@ pub fn task_current_item(snapshot: Option<&TaskSnapshot>) -> String {
                 String::new()
             };
             match progress.total_bytes {
-                Some(total) => format!(
-                    "{position}{current} · {} / {} 字节",
-                    progress.downloaded_bytes, total
-                ),
-                None => format!("{position}{current} · {} 字节", progress.downloaded_bytes),
+                Some(total) => rust_i18n::t!(
+                    "app.task.progress_content_bytes",
+                    position = position,
+                    current = current,
+                    downloaded = progress.downloaded_bytes,
+                    total = total
+                )
+                .to_string(),
+                None => rust_i18n::t!(
+                    "app.task.progress_content",
+                    position = position,
+                    current = current,
+                    downloaded = progress.downloaded_bytes
+                )
+                .to_string(),
             }
         }
         TaskProgress::Processors {
             current,
             completed,
             total,
-        } => format!("{completed} / {total} 个加载器处理器 · {current}"),
+        } => rust_i18n::t!(
+            "app.task.progress_processors",
+            completed = completed,
+            total = total,
+            current = current
+        )
+        .to_string(),
         TaskProgress::Natives {
             current,
             completed_archives,
             total_archives,
-        } => format!(
-            "{completed_archives} / {total_archives} 个 native JAR · {}",
-            display_path(current)
-        ),
+        } => rust_i18n::t!(
+            "app.task.progress_natives",
+            completed = completed_archives,
+            total = total_archives,
+            current = display_path(current)
+        )
+        .to_string(),
     }
 }
 
 pub fn task_phase_label(snapshot: Option<&TaskSnapshot>) -> String {
     let Some(phase) = snapshot.and_then(|snapshot| snapshot.phase) else {
-        return "就绪".to_owned();
+        return tr("app.task.ready");
     };
-    match phase {
-        TaskPhase::Install(InstallPhase::ResolvingVersion) => "解析版本 manifest",
-        TaskPhase::Install(InstallPhase::ReadingVersion) => "读取版本 JSON",
-        TaskPhase::Install(InstallPhase::PersistingVersion) => "保存版本 JSON",
-        TaskPhase::Install(InstallPhase::PlanningBase) => "规划游戏文件",
-        TaskPhase::Install(InstallPhase::DownloadingBase) => "下载游戏文件",
-        TaskPhase::Install(InstallPhase::ReadingAssetIndex) => "读取资源索引",
-        TaskPhase::Install(InstallPhase::PlanningAssets) => "规划资源对象",
-        TaskPhase::Install(InstallPhase::DownloadingAssets) => "下载资源对象",
-        TaskPhase::Install(InstallPhase::MaterializingAssets) => "展开旧版资源",
-        TaskPhase::Install(InstallPhase::DownloadingLoader) => "下载加载器文件",
-        TaskPhase::Install(InstallPhase::MergingNatives) => "合并 natives",
-        TaskPhase::Install(InstallPhase::Completed) => "安装已完成",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::Preparing) => "准备实例",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingBase) => "安装基础版本",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::FetchingLoader) => "获取加载器元数据",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::WritingInstance) => "写入实例配置",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::CopyingContent) => "复制实例内容",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingLoader) => "安装实例文件",
-        TaskPhase::InstanceCreate(InstanceCreatePhase::Completed) => "实例创建完成",
-        TaskPhase::Content(ContentInstallPhase::Preparing) => "准备内容下载",
-        TaskPhase::Content(ContentInstallPhase::Downloading) => "下载内容文件",
-        TaskPhase::Content(ContentInstallPhase::Installing) => "写入实例内容",
-        TaskPhase::Content(ContentInstallPhase::Completed) => "内容安装完成",
-        TaskPhase::Inspecting => "检查版本文件",
-        TaskPhase::CheckingJava => "检查 Java",
-        TaskPhase::InstallingJava => "安装 Java",
-        TaskPhase::PreparingLaunch => "准备启动参数",
-        TaskPhase::StartingGame => "创建游戏进程",
-        TaskPhase::RunningGame => "游戏运行中",
-    }
-    .to_owned()
+    tr(match phase {
+        TaskPhase::Install(InstallPhase::ResolvingVersion) => "app.task.phase_resolving_version",
+        TaskPhase::Install(InstallPhase::ReadingVersion) => "app.task.phase_reading_version",
+        TaskPhase::Install(InstallPhase::PersistingVersion) => "app.task.phase_persisting_version",
+        TaskPhase::Install(InstallPhase::PlanningBase) => "app.task.phase_planning_base",
+        TaskPhase::Install(InstallPhase::DownloadingBase) => "app.task.phase_downloading_base",
+        TaskPhase::Install(InstallPhase::ReadingAssetIndex) => "app.task.phase_reading_assets",
+        TaskPhase::Install(InstallPhase::PlanningAssets) => "app.task.phase_planning_assets",
+        TaskPhase::Install(InstallPhase::DownloadingAssets) => "app.task.phase_downloading_assets",
+        TaskPhase::Install(InstallPhase::MaterializingAssets) => {
+            "app.task.phase_materializing_assets"
+        }
+        TaskPhase::Install(InstallPhase::DownloadingLoader) => "app.task.phase_downloading_loader",
+        TaskPhase::Install(InstallPhase::MergingNatives) => "app.task.phase_merging_natives",
+        TaskPhase::Install(InstallPhase::Completed) => "app.task.phase_install_complete",
+        TaskPhase::InstanceCreate(InstanceCreatePhase::Preparing) => {
+            "app.task.phase_preparing_instance"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingBase) => {
+            "app.task.phase_installing_base"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::FetchingLoader) => {
+            "app.task.phase_fetching_loader"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::WritingInstance) => {
+            "app.task.phase_writing_instance"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::CopyingContent) => {
+            "app.task.phase_copying_content"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::InstallingLoader) => {
+            "app.task.phase_installing_loader"
+        }
+        TaskPhase::InstanceCreate(InstanceCreatePhase::Completed) => {
+            "app.task.instance_create_complete"
+        }
+        TaskPhase::Content(ContentInstallPhase::Preparing) => "app.task.phase_preparing_content",
+        TaskPhase::Content(ContentInstallPhase::Downloading) => {
+            "app.task.phase_downloading_content"
+        }
+        TaskPhase::Content(ContentInstallPhase::Installing) => "app.task.phase_installing_content",
+        TaskPhase::Content(ContentInstallPhase::Completed) => "app.task.content_install_complete",
+        TaskPhase::Inspecting => "app.task.phase_inspecting",
+        TaskPhase::CheckingJava => "app.task.phase_checking_java",
+        TaskPhase::InstallingJava => "app.task.phase_installing_java",
+        TaskPhase::PreparingLaunch => "app.task.phase_preparing_launch",
+        TaskPhase::StartingGame => "app.task.phase_starting_game",
+        TaskPhase::RunningGame => "app.task.phase_running_game",
+    })
 }
 
 pub fn task_status_label(snapshot: Option<&TaskSnapshot>) -> String {
     match snapshot.map(|snapshot| snapshot.status) {
-        None => "就绪".to_owned(),
-        Some(TaskStatus::Running) => "运行中".to_owned(),
-        Some(TaskStatus::Cancelling) => "正在停止".to_owned(),
+        None => tr("app.task.ready"),
+        Some(TaskStatus::Running) => tr("app.task.running"),
+        Some(TaskStatus::Cancelling) => tr("app.common.stopping"),
         Some(TaskStatus::Completed)
             if snapshot.map(|snapshot| snapshot.kind) == Some(TaskKind::InstanceCreate) =>
         {
-            "实例创建完成".to_owned()
+            tr("app.task.instance_create_complete")
         }
         Some(TaskStatus::Completed)
             if snapshot.map(|snapshot| snapshot.kind) == Some(TaskKind::ContentInstall) =>
         {
-            "内容安装完成".to_owned()
+            tr("app.task.content_install_complete")
         }
-        Some(TaskStatus::Completed) => "安装完成".to_owned(),
-        Some(TaskStatus::Cancelled) => "已取消".to_owned(),
-        Some(TaskStatus::Failed) => "任务失败".to_owned(),
-        Some(TaskStatus::Exited) => "游戏已退出".to_owned(),
+        Some(TaskStatus::Completed) => tr("app.task.install_complete"),
+        Some(TaskStatus::Cancelled) => tr("app.task.cancelled"),
+        Some(TaskStatus::Failed) => tr("app.task.failed"),
+        Some(TaskStatus::Exited) => tr("app.task.game_exited"),
     }
 }
 
@@ -8053,14 +8765,14 @@ fn shader_loader_filter(loader: ShaderLoader) -> &'static str {
     }
 }
 
-pub fn task_kind_label(kind: TaskKind) -> &'static str {
-    match kind {
-        TaskKind::VanillaInstall => "安装",
-        TaskKind::InstanceCreate => "创建实例",
-        TaskKind::ContentInstall => "安装内容",
-        TaskKind::GameLaunch => "启动",
-        TaskKind::JavaInstall => "安装 Java",
-    }
+pub fn task_kind_label(kind: TaskKind) -> String {
+    tr(match kind {
+        TaskKind::VanillaInstall => "app.task.kind_install",
+        TaskKind::InstanceCreate => "app.task.kind_instance_create",
+        TaskKind::ContentInstall => "app.task.kind_content_install",
+        TaskKind::GameLaunch => "app.task.kind_launch",
+        TaskKind::JavaInstall => "app.task.kind_java_install",
+    })
 }
 
 pub fn version_tile(icon: IconName, color: Hsla, cx: &App) -> impl IntoElement {
@@ -8157,7 +8869,8 @@ mod tests {
                 .iter()
                 .map(|menu| menu.name.to_string())
                 .collect::<Vec<_>>();
-            assert_eq!(names, ["RMCL", "文件", "前往", "窗口"]);
+            rust_i18n::set_locale("en");
+            assert_eq!(names, ["RMCL", "File", "Go", "Window"]);
             assert_eq!(menus[2].items.len(), Page::NAVIGATION.len());
         });
         let mut cx = VisualTestContext::from_window(handle, cx);
@@ -8201,6 +8914,50 @@ mod tests {
         assert_eq!(cx.read(|cx| app.read(cx).page), Page::Versions);
         cx.simulate_keystrokes("cmd-w");
         assert!(cx.read(|cx| cx.windows().is_empty()));
+    }
+
+    #[gpui::test]
+    fn language_switch_updates_the_active_locale(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            shortcuts::init(cx);
+        });
+        let temporary = TempDir::new().unwrap();
+        let config = LauncherConfig {
+            minecraft_root: temporary.path().join("minecraft"),
+            java_store: temporary.path().join("java"),
+            ..LauncherConfig::default()
+        };
+        let store = ConfigStore::new(temporary.path().join("config.toml"));
+        let services = Services::new(&config, store.clone()).unwrap();
+        let bootstrap = Bootstrap {
+            config,
+            config_store: store,
+            config_warning: None,
+            save_on_start: false,
+        };
+        let (handle, app) = cx
+            .update(|cx| {
+                gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                    cx.new(|cx| LauncherApp::new(window, cx, services, bootstrap))
+                })
+            })
+            .unwrap();
+        let mut cx = VisualTestContext::from_window(handle, cx);
+
+        app.update_in(&mut cx, |app, window, cx| {
+            app.set_language("简体中文".to_owned(), window, cx);
+            assert_eq!(&*rust_i18n::locale(), "zh-CN");
+            assert_eq!(app.config.language, rmcl_store::LanguagePreference::Chinese);
+
+            app.set_language("English".to_owned(), window, cx);
+            assert_eq!(&*rust_i18n::locale(), "en");
+            assert_eq!(app.config.language, rmcl_store::LanguagePreference::English);
+        });
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+        rust_i18n::set_locale("en");
     }
 
     #[gpui::test]

@@ -24,6 +24,7 @@ use super::common::{
     card, display_path, empty_state, empty_state_message, error_banner, format_size, mono,
     section_title, type_tag, warning_banner,
 };
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_instance(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -37,7 +38,7 @@ impl LauncherApp {
                     Button::new("instance-back")
                         .ghost()
                         .icon(IconName::ArrowLeft)
-                        .label("返回实例列表")
+                        .label(tr("app.content_browser.back_instances"))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.navigate(Page::Versions, window, cx)
                         })),
@@ -45,11 +46,11 @@ impl LauncherApp {
                 .child(
                     card(cx).child(empty_state(
                         IconName::TriangleAlert,
-                        "实例不存在",
-                        "该实例可能已被删除或移动，请返回实例列表重新扫描。",
+                        tr("app.content_browser.instance_missing"),
+                        tr("app.content_browser.instance_missing_description"),
                         Button::new("instance-missing-back")
                             .primary()
-                            .label("返回实例列表")
+                            .label(tr("app.content_browser.back_instances"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Versions, window, cx)
                             })),
@@ -71,7 +72,8 @@ impl LauncherApp {
         });
         let warning = library.and_then(|library| library.warnings.first());
         let warning_count = library.map_or(0, |library| library.warnings.len());
-        let warning_title = format!("扫描警告（{warning_count}）");
+        let warning_title =
+            rust_i18n::t!("app.instance.scan_warnings", count = warning_count).to_string();
         let content_count = counts
             .get(self.content_tab.index())
             .copied()
@@ -92,7 +94,7 @@ impl LauncherApp {
                     .overflow_y_scrollbar()
                     .child(self.render_instance_summary(&version, counts, cx))
                     .when_some(self.content_error.clone(), |this, error: String| {
-                        this.child(error_banner("内容扫描失败", &error, cx))
+                        this.child(error_banner(tr("app.instance.scan_failed"), error, cx))
                     })
                     .when_some(
                         warning.map(|warning| warning.message()),
@@ -126,7 +128,7 @@ impl LauncherApp {
                                 Button::new("instance-browse-online")
                                     .outline()
                                     .icon(IconName::Globe)
-                                    .label("下载内容")
+                                    .label(tr("app.instance.download_content"))
                                     .disabled(pending)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.open_content_browser(
@@ -148,7 +150,13 @@ impl LauncherApp {
                                     .primary()
                                     .w(rems(8.))
                                     .icon(IconName::Plus)
-                                    .label(format!("导入 {}", self.content_tab.label()))
+                                    .label(
+                                        rust_i18n::t!(
+                                            "app.instance.import_kind",
+                                            kind = self.content_tab.label()
+                                        )
+                                        .to_string(),
+                                    )
                                     .disabled(pending)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.pick_content_files(kind, window, cx)
@@ -158,8 +166,8 @@ impl LauncherApp {
                                 Button::new("instance-content-folder")
                                     .ghost()
                                     .icon(IconName::FolderOpen)
-                                    .tooltip("打开内容目录")
-                                    .accessibility_label("打开内容目录")
+                                    .tooltip(tr("app.instance.open_content_folder"))
+                                    .accessibility_label(tr("app.instance.open_content_folder"))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.open_content_folder(kind, window, cx)
                                     })),
@@ -168,8 +176,8 @@ impl LauncherApp {
                                 Button::new("instance-content-refresh")
                                     .ghost()
                                     .icon(IconName::RefreshCw)
-                                    .tooltip("重新扫描内容")
-                                    .accessibility_label("重新扫描内容")
+                                    .tooltip(tr("app.instance.rescan_content"))
+                                    .accessibility_label(tr("app.instance.rescan_content"))
                                     .disabled(pending)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.load_instance_content(window, cx)
@@ -193,7 +201,7 @@ impl LauncherApp {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("正在扫描实例内容…"),
+                                            .child(tr("app.instance.scanning")),
                                     ),
                             )
                             .into_any_element()
@@ -201,7 +209,11 @@ impl LauncherApp {
                         card(cx)
                             .child(empty_state_message(
                                 self.content_tab.icon(),
-                                &format!("还没有 {}", self.content_tab.label()),
+                                rust_i18n::t!(
+                                    "app.instance.empty_kind",
+                                    kind = self.content_tab.label()
+                                )
+                                .to_string(),
                                 empty_description(kind),
                                 cx,
                             ))
@@ -210,10 +222,12 @@ impl LauncherApp {
                         card(cx)
                             .child(section_title(
                                 self.content_tab.label(),
-                                &format!(
-                                    "共 {} 个，已启用 {} 个",
-                                    content_count.0, content_count.1
-                                ),
+                                rust_i18n::t!(
+                                    "app.instance.content_counts",
+                                    total = content_count.0,
+                                    enabled = content_count.1
+                                )
+                                .to_string(),
                                 cx,
                             ))
                             .children(items.iter().map(|item| {
@@ -261,8 +275,8 @@ impl LauncherApp {
                 Button::new("instance-back")
                     .ghost()
                     .icon(IconName::ArrowLeft)
-                    .tooltip("返回实例列表")
-                    .accessibility_label("返回实例列表")
+                    .tooltip(tr("app.content_browser.back_instances"))
+                    .accessibility_label(tr("app.content_browser.back_instances"))
                     .on_click(
                         cx.listener(|this, _, window, cx| {
                             this.navigate(Page::Versions, window, cx)
@@ -286,7 +300,9 @@ impl LauncherApp {
                                     .child(version.display_name().to_owned()),
                             )
                             .when(!version.is_isolated(), |this| {
-                                this.child(Tag::new().outline().child("共享").small())
+                                this.child(
+                                    Tag::new().outline().child(tr("app.common.shared")).small(),
+                                )
                             })
                             .when_some(loader, |this, loader| {
                                 this.child(
@@ -322,23 +338,23 @@ impl LauncherApp {
                             && version.manifest_error.is_none()
                             && self.can_start_operation();
                         let tooltip = if !version.manifest_present {
-                            "旧版实例缺少 RMCL 配置，暂不支持添加加载器"
+                            tr("app.instance.loader_legacy")
                         } else if version.manifest_error.is_some() {
-                            "实例配置异常，请先修复或重新创建"
+                            tr("app.instance.loader_manifest_invalid")
                         } else if !self.can_start_operation() {
-                            "已有任务或内容操作正在运行"
+                            tr("app.instance.busy")
                         } else {
-                            "创建新的加载器实例并复制当前实例内容"
+                            tr("app.instance.loader_help")
                         };
                         let install_id = loader_id.clone();
                         this.child(
                             Button::new("instance-install-loader")
                                 .outline()
                                 .icon(IconName::PackagePlus)
-                                .label("添加 Mod 加载器")
+                                .label(tr("app.create_instance.add_loader_title"))
                                 .disabled(!enabled)
                                 .tooltip(tooltip)
-                                .accessibility_label("添加 Mod 加载器")
+                                .accessibility_label(tr("app.create_instance.add_loader_title"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.open_create_loader(install_id.clone(), window, cx)
                                 })),
@@ -348,7 +364,7 @@ impl LauncherApp {
                         Button::new("instance-launch")
                             .outline()
                             .icon(IconName::Play)
-                            .label("启动")
+                            .label(tr("app.home.launch"))
                             .disabled(
                                 !self.log_state.can_start() || self.content_operations_pending(),
                             )
@@ -360,8 +376,8 @@ impl LauncherApp {
                         Button::new("instance-open-folder")
                             .ghost()
                             .icon(IconName::FolderOpen)
-                            .tooltip("打开实例目录")
-                            .accessibility_label("打开实例目录")
+                            .tooltip(tr("app.instance.open_instance_folder"))
+                            .accessibility_label(tr("app.instance.open_instance_folder"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_instance_folder(folder_id.as_str(), window, cx)
                             })),
@@ -370,8 +386,8 @@ impl LauncherApp {
                         Button::new("instance-rename")
                             .ghost()
                             .icon(IconName::Pencil)
-                            .tooltip("重命名实例")
-                            .accessibility_label("重命名实例")
+                            .tooltip(tr("app.instance.rename"))
+                            .accessibility_label(tr("app.instance.rename"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_rename_instance_dialog(rename_id.clone(), window, cx)
                             })),
@@ -380,8 +396,8 @@ impl LauncherApp {
                         Button::new("instance-refresh-all")
                             .ghost()
                             .icon(IconName::RefreshCw)
-                            .tooltip("刷新实例信息")
-                            .accessibility_label("刷新实例信息")
+                            .tooltip(tr("app.instance.refresh"))
+                            .accessibility_label(tr("app.instance.refresh"))
                             .disabled(self.content_operations_pending())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reload_versions(window, cx);
@@ -405,12 +421,12 @@ impl LauncherApp {
         let java_label = version
             .java
             .as_ref()
-            .map_or_else(|| "自动选择兼容 runtime".to_owned(), display_path);
+            .map_or_else(|| tr("app.instance.java_auto"), display_path);
         let memory_label = version
             .max_memory_mb
-            .map_or_else(|| "自动".to_owned(), |memory| format!("{memory} MiB"));
+            .map_or_else(|| tr("app.instance.auto"), |memory| format!("{memory} MiB"));
         let resolution_label = version.window_width.zip(version.window_height).map_or_else(
-            || "自动".to_owned(),
+            || tr("app.instance.auto"),
             |(width, height)| format!("{width} × {height}"),
         );
         card(cx)
@@ -428,7 +444,7 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("游戏目录"),
+                                    .child(tr("app.instance.game_dir")),
                             )
                             .child(mono(display_path(instance.game_dir()), cx)),
                     )
@@ -459,7 +475,7 @@ impl LauncherApp {
                         Button::new("instance-java-select")
                             .outline()
                             .icon(IconName::Package)
-                            .label("选择 Java")
+                            .label(tr("app.instance.select_java"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_java_dialog(java_target.clone(), window, cx)
                             })),
@@ -468,7 +484,7 @@ impl LauncherApp {
                         this.child(
                             Button::new("instance-java-auto")
                                 .ghost()
-                                .label("改回自动")
+                                .label(tr("app.instance.java_reset"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.apply_instance_java(auto_target.clone(), None, window, cx);
                                 })),
@@ -489,10 +505,15 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("启动设置"),
+                                    .child(tr("app.instance.launch_settings")),
                             )
                             .child(mono(
-                                format!("内存 {memory_label} · 窗口 {resolution_label}"),
+                                rust_i18n::t!(
+                                    "app.instance.launch_summary",
+                                    memory = memory_label,
+                                    resolution = resolution_label
+                                )
+                                .to_string(),
                                 cx,
                             )),
                     )
@@ -500,7 +521,7 @@ impl LauncherApp {
                         Button::new("instance-launch-settings")
                             .outline()
                             .icon(IconName::Wrench)
-                            .label("调整")
+                            .label(tr("app.instance.adjust"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_launch_settings_dialog(launch_target.clone(), window, cx)
                             })),
@@ -528,12 +549,21 @@ impl LauncherApp {
             .w_full()
             .gap_3()
             .child(section_title(
-                "资源包",
-                &format!("共 {} 个，已启用 {} 个", counts.0, counts.1),
+                super::super::content_kind_label(ContentKind::ResourcePack),
+                rust_i18n::t!(
+                    "app.instance.content_counts",
+                    total = counts.0,
+                    enabled = counts.1
+                )
+                .to_string(),
                 cx,
             ))
             .when_some(warning, |this, warning| {
-                this.child(warning_banner("内容元数据", &warning, cx))
+                this.child(warning_banner(
+                    tr("app.instance.content_metadata"),
+                    warning,
+                    cx,
+                ))
             })
             .child(
                 div()
@@ -563,7 +593,7 @@ impl LauncherApp {
         let description = detail
             .map(|detail| detail.metadata.description.clone())
             .filter(|description| !description.is_empty())
-            .unwrap_or_else(|| "未提供描述".to_owned());
+            .unwrap_or_else(|| tr("app.instance.no_description"));
         let format = resource_pack_format_label(detail.map(|detail| &detail.metadata));
         let incompatible = detail
             .is_some_and(|detail| detail.compatibility == ResourcePackCompatibility::Incompatible);
@@ -654,7 +684,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().danger)
-                                .child("可能与当前游戏版本不兼容"),
+                                .child(tr("app.instance.incompatible")),
                         )
                     }),
             )
@@ -664,7 +694,12 @@ impl LauncherApp {
                     .items_center()
                     .gap_1()
                     .when(!enabled, |this| {
-                        this.child(Tag::new().outline().child("未启用").small())
+                        this.child(
+                            Tag::new()
+                                .outline()
+                                .child(tr("app.instance.not_enabled"))
+                                .small(),
+                        )
                     })
                     .child(div().flex_1())
                     .when(enabled, |this| {
@@ -673,8 +708,8 @@ impl LauncherApp {
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::ChevronUp)
-                                .tooltip("提高优先级")
-                                .accessibility_label("提高优先级")
+                                .tooltip(tr("app.instance.raise_priority"))
+                                .accessibility_label(tr("app.instance.raise_priority"))
                                 .disabled(pending || !can_raise)
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.change_resource_pack_priority(
@@ -690,8 +725,8 @@ impl LauncherApp {
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::ChevronDown)
-                                .tooltip("降低优先级")
-                                .accessibility_label("降低优先级")
+                                .tooltip(tr("app.instance.lower_priority"))
+                                .accessibility_label(tr("app.instance.lower_priority"))
                                 .disabled(pending || !can_lower)
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.change_resource_pack_priority(
@@ -712,8 +747,16 @@ impl LauncherApp {
                             } else {
                                 IconName::Power
                             })
-                            .tooltip(if enabled { "禁用" } else { "启用" })
-                            .accessibility_label(if enabled { "禁用" } else { "启用" })
+                            .tooltip(if enabled {
+                                tr("app.instance.disable")
+                            } else {
+                                tr("app.instance.enable")
+                            })
+                            .accessibility_label(if enabled {
+                                tr("app.instance.disable")
+                            } else {
+                                tr("app.instance.enable")
+                            })
                             .disabled(pending)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.toggle_content_item(
@@ -730,8 +773,8 @@ impl LauncherApp {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Trash)
-                            .tooltip("删除")
-                            .accessibility_label("删除")
+                            .tooltip(tr("app.common.delete"))
+                            .accessibility_label(tr("app.common.delete"))
                             .disabled(pending)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_delete_content(
@@ -773,9 +816,17 @@ impl LauncherApp {
         v_flex()
             .w_full()
             .gap_3()
-            .child(section_title("光影包", &format!("共 {} 个", counts.0), cx))
+            .child(section_title(
+                super::super::content_kind_label(ContentKind::ShaderPack),
+                rust_i18n::t!("app.instance.content_total", total = counts.0).to_string(),
+                cx,
+            ))
             .when_some(warning, |this, warning| {
-                this.child(warning_banner("内容元数据", &warning, cx))
+                this.child(warning_banner(
+                    tr("app.instance.content_metadata"),
+                    warning,
+                    cx,
+                ))
             })
             .when(loader.is_none(), |this| {
                 this.child(self.render_shader_loader_missing(cx))
@@ -799,7 +850,13 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("{} 已启用 · 下次启动生效", loader.label())),
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.instance.shader_loader_enabled",
+                                        loader = loader.label()
+                                    )
+                                    .to_string(),
+                                ),
                         ),
                 )
             })
@@ -840,7 +897,7 @@ impl LauncherApp {
         let description = detail
             .and_then(|detail| detail.description.clone())
             .filter(|description| !description.is_empty())
-            .unwrap_or_else(|| "未提供描述".to_owned());
+            .unwrap_or_else(|| tr("app.instance.no_description"));
         let path = item.relative_path.as_str().to_owned();
         let select_path = item.file_name().to_owned();
         let delete_relative = item.relative_path.clone();
@@ -903,7 +960,7 @@ impl LauncherApp {
                                     .child(title),
                             )
                             .when(is_active, |this| {
-                                this.child(Tag::primary().child("使用中").small())
+                                this.child(Tag::primary().child(tr("app.instance.in_use")).small())
                             }),
                     )
                     .child(
@@ -918,7 +975,7 @@ impl LauncherApp {
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(if item.is_directory {
-                                "文件夹".to_owned()
+                                tr("app.instance.folder")
                             } else {
                                 format_size(item.size.unwrap_or(0))
                             }),
@@ -935,7 +992,7 @@ impl LauncherApp {
                             .outline()
                             .xsmall()
                             .icon(IconName::PowerOff)
-                            .label("关闭光影")
+                            .label(tr("app.instance.disable_shaders"))
                             .disabled(pending || !loader_available)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if let Some(loader) = loader {
@@ -947,7 +1004,7 @@ impl LauncherApp {
                             .outline()
                             .xsmall()
                             .icon(IconName::Sparkles)
-                            .label("设为当前")
+                            .label(tr("app.instance.set_current"))
                             .disabled(pending || !loader_available)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if let Some(loader) = loader {
@@ -965,8 +1022,8 @@ impl LauncherApp {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Trash)
-                            .tooltip("删除")
-                            .accessibility_label("删除")
+                            .tooltip(tr("app.common.delete"))
+                            .accessibility_label(tr("app.common.delete"))
                             .disabled(pending)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_delete_content(
@@ -999,20 +1056,25 @@ impl LauncherApp {
                             .small()
                             .text_color(cx.theme().warning),
                     )
-                    .child(div().text_sm().font_medium().child("未检测到光影加载器")),
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_medium()
+                            .child(tr("app.instance.shader_loader_missing")),
+                    ),
             )
             .child(
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("需要 Iris、Oculus 或 OptiFine 才能生效。"),
+                    .child(tr("app.instance.shader_loader_missing_help")),
             )
             .child(
                 Button::new("shader-browse-loader-mods")
                     .outline()
                     .small()
                     .icon(IconName::Globe)
-                    .label("查找加载器")
+                    .label(tr("app.instance.find_loader"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.open_shader_loader_search(window, cx)
                     })),
@@ -1032,7 +1094,7 @@ impl LauncherApp {
         let display_name = item.display_name().to_owned();
         let path = item.relative_path.as_str().to_owned();
         let meta = if item.is_directory {
-            "文件夹".to_owned()
+            tr("app.instance.folder")
         } else {
             format_size(item.size.unwrap_or(0))
         };
@@ -1064,10 +1126,17 @@ impl LauncherApp {
                                     .child(display_name),
                             )
                             .when(item.is_directory, |this| {
-                                this.child(Tag::new().outline().child("文件夹").small())
+                                this.child(
+                                    Tag::new()
+                                        .outline()
+                                        .child(tr("app.instance.folder"))
+                                        .small(),
+                                )
                             })
                             .when(can_toggle && !enabled, |this| {
-                                this.child(Tag::secondary().child("已禁用").small())
+                                this.child(
+                                    Tag::secondary().child(tr("app.instance.disabled")).small(),
+                                )
                             }),
                     )
                     .child(
@@ -1090,8 +1159,16 @@ impl LauncherApp {
                                 } else {
                                     IconName::Power
                                 })
-                                .tooltip(if enabled { "禁用" } else { "启用" })
-                                .accessibility_label(if enabled { "禁用" } else { "启用" })
+                                .tooltip(if enabled {
+                                    tr("app.instance.disable")
+                                } else {
+                                    tr("app.instance.enable")
+                                })
+                                .accessibility_label(if enabled {
+                                    tr("app.instance.disable")
+                                } else {
+                                    tr("app.instance.enable")
+                                })
                                 .disabled(pending)
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.toggle_content_item(
@@ -1109,8 +1186,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::Trash)
-                            .tooltip("删除")
-                            .accessibility_label("删除")
+                            .tooltip(tr("app.common.delete"))
+                            .accessibility_label(tr("app.common.delete"))
                             .disabled(pending)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.confirm_delete_content(
@@ -1152,17 +1229,22 @@ fn resource_pack_sort_key(item: &LocalContent, order: &[String]) -> (u8, usize, 
 
 fn resource_pack_format_label(metadata: Option<&ResourcePackMetadata>) -> String {
     let Some(metadata) = metadata else {
-        return "格式未知".to_owned();
+        return tr("app.instance.format_unknown");
     };
     if let Some(format) = metadata.pack_format {
-        return format!("格式 {format}");
+        return rust_i18n::t!("app.instance.format", format = format).to_string();
     }
     match metadata.supported_formats.as_slice() {
         [range] if range.min_inclusive == range.max_inclusive => {
-            format!("格式 {}", range.min_inclusive)
+            rust_i18n::t!("app.instance.format", format = range.min_inclusive).to_string()
         }
-        [range, ..] => format!("格式 {}–{}", range.min_inclusive, range.max_inclusive),
-        [] => "格式未知".to_owned(),
+        [range, ..] => rust_i18n::t!(
+            "app.instance.format_range",
+            min = range.min_inclusive,
+            max = range.max_inclusive
+        )
+        .to_string(),
+        [] => tr("app.instance.format_unknown"),
     }
 }
 
@@ -1174,7 +1256,13 @@ fn content_icon(kind: ContentKind) -> IconName {
     }
 }
 
-fn content_stat(label: &str, total: usize, enabled: usize, cx: &App) -> impl IntoElement {
+fn content_stat(
+    label: impl Into<SharedString>,
+    total: usize,
+    enabled: usize,
+    cx: &App,
+) -> impl IntoElement {
+    let label = label.into();
     v_flex()
         .w(rems(7.))
         .flex_shrink_0()
@@ -1183,7 +1271,7 @@ fn content_stat(label: &str, total: usize, enabled: usize, cx: &App) -> impl Int
             div()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(label.to_owned()),
+                .child(label.clone()),
         )
         .child(div().text_lg().font_semibold().child(if enabled == total {
             total.to_string()
@@ -1192,16 +1280,12 @@ fn content_stat(label: &str, total: usize, enabled: usize, cx: &App) -> impl Int
         }))
 }
 
-fn empty_description(kind: ContentKind) -> &'static str {
-    match kind {
-        ContentKind::Mod => "支持 .jar、.zip 和 .litemod 文件；同名文件会自动改名，不会覆盖。",
-        ContentKind::ResourcePack => {
-            "支持导入 .zip 资源包；已存在的资源包文件夹也会显示，可启用、禁用并调整覆盖优先级。"
-        }
-        ContentKind::ShaderPack => {
-            "支持导入 .zip 光影包；已存在的文件夹也会显示，检测到 Iris、Oculus 或 OptiFine 后可设为当前光影。"
-        }
-    }
+fn empty_description(kind: ContentKind) -> String {
+    tr(match kind {
+        ContentKind::Mod => "app.instance.empty_mods",
+        ContentKind::ResourcePack => "app.instance.empty_resource_packs",
+        ContentKind::ShaderPack => "app.instance.empty_shader_packs",
+    })
 }
 
 #[cfg(test)]
@@ -1254,7 +1338,8 @@ mod tests {
             description: String::new(),
             icon_png: None,
         };
-        assert!(resource_pack_format_label(Some(&metadata)) == "格式 15");
+        rust_i18n::set_locale("en");
+        assert!(resource_pack_format_label(Some(&metadata)) == "Format 15");
         let range_metadata = ResourcePackMetadata {
             pack_format: None,
             supported_formats: vec![PackFormatRange::new(
@@ -1264,6 +1349,6 @@ mod tests {
             description: String::new(),
             icon_png: None,
         };
-        assert!(resource_pack_format_label(Some(&range_metadata)) == "格式 97.1–97.3");
+        assert!(resource_pack_format_label(Some(&range_metadata)) == "Format 97.1–97.3");
     }
 }

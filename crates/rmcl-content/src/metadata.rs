@@ -173,9 +173,14 @@ pub fn scan_installed_mods(instance: &InstanceLayout) -> InstalledModIndex {
                     });
                 }
             }
-            Err(error) => index
-                .warnings
-                .push(format!("无法读取 {}：{error}", item.display_name())),
+            Err(error) => index.warnings.push(
+                rust_i18n::t!(
+                    "app.content.warning_read_mod",
+                    name = item.display_name(),
+                    error = error
+                )
+                .to_string(),
+            ),
         }
     }
     index.warnings.extend(duplicate_mod_warnings(&index.mods));
@@ -200,7 +205,7 @@ fn duplicate_mod_warnings(mods: &[InstalledMod]) -> Vec<String> {
                 .map(|entry| entry.file_name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("检测到重复 Mod ID `{id}`：{files}")
+            rust_i18n::t!("app.content.warning_duplicate_mod", id = id, files = files).to_string()
         })
         .collect()
 }
@@ -697,6 +702,7 @@ side = "BOTH"
     fn scans_installed_mods_and_reports_duplicate_ids() {
         use rmcl_instance::{IsolationMode, MinecraftLayout, VersionId};
 
+        rust_i18n::set_locale("zh-CN");
         let temporary = TempDir::new().unwrap();
         let instance = MinecraftLayout::new(temporary.path())
             .instance(VersionId::new("test").unwrap(), IsolationMode::Isolated);
@@ -717,6 +723,7 @@ side = "BOTH"
                 .any(|warning| warning.contains("重复 Mod ID"))
         );
         assert!(index.has_mod("example"));
+        rust_i18n::set_locale("en");
     }
 
     #[test]

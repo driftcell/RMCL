@@ -52,19 +52,33 @@ pub enum ContentWarning {
 impl ContentWarning {
     pub fn message(&self) -> String {
         match self {
-            Self::Symlink { path } => format!("已跳过符号链接 {}", path.display()),
-            Self::InvalidName { path, reason } => {
-                format!("已跳过无效名称 {}：{reason}", path.display())
+            Self::Symlink { path } => {
+                rust_i18n::t!("app.content.warning_symlink", path = path.display()).to_string()
             }
-            Self::Unreadable { path, message } => {
-                format!("无法读取 {}：{message}", path.display())
-            }
-            Self::Options { path, message } => {
-                format!("{} 无法解析：{message}", path.display())
-            }
-            Self::Scan { kind, message } => {
-                format!("扫描 {} 失败：{message}", kind.label())
-            }
+            Self::InvalidName { path, reason } => rust_i18n::t!(
+                "app.content.warning_invalid_name",
+                path = path.display(),
+                reason = reason
+            )
+            .to_string(),
+            Self::Unreadable { path, message } => rust_i18n::t!(
+                "app.content.warning_unreadable",
+                path = path.display(),
+                message = message
+            )
+            .to_string(),
+            Self::Options { path, message } => rust_i18n::t!(
+                "app.content.warning_options",
+                path = path.display(),
+                message = message
+            )
+            .to_string(),
+            Self::Scan { kind, message } => rust_i18n::t!(
+                "app.content.warning_scan",
+                kind = kind.label(),
+                message = message
+            )
+            .to_string(),
         }
     }
 }

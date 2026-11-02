@@ -23,6 +23,8 @@ use rmcl_agent::{
     events::{AgentEvent, AgentTurnControl, ConfirmationDecision, ConfirmationRequest},
 };
 
+use crate::i18n::tr;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentStepState {
     Running,
@@ -273,7 +275,7 @@ impl super::LauncherApp {
                 AgentKeyState::Unknown | AgentKeyState::Missing | AgentKeyState::Error(_)
             )
         {
-            self.agent.settings.error = Some("请先在设置中保存所选服务商的 API Key。".to_owned());
+            self.agent.settings.error = Some(tr("app.agent.key_required"));
             cx.notify();
             return;
         }
@@ -288,13 +290,13 @@ impl super::LauncherApp {
                 .selected_version()
                 .map(|version| version.display_name().to_owned()),
             account_type: match self.selected_account().map(|account| account.kind()) {
-                Some(rmcl_auth::AccountKind::Microsoft) => "正版".to_owned(),
-                Some(rmcl_auth::AccountKind::Offline) => "离线".to_owned(),
-                Some(rmcl_auth::AccountKind::Authlib) => "外置登录".to_owned(),
-                None => "未登录".to_owned(),
+                Some(rmcl_auth::AccountKind::Microsoft) => tr("app.agent.account_microsoft"),
+                Some(rmcl_auth::AccountKind::Offline) => tr("app.agent.account_offline"),
+                Some(rmcl_auth::AccountKind::Authlib) => tr("app.agent.account_authlib"),
+                None => tr("app.agent.account_none"),
             },
             rmcl_version: env!("CARGO_PKG_VERSION").to_owned(),
-            locale: "简体中文".to_owned(),
+            locale: tr("app.agent.locale_name"),
         };
         self.agent.push_user(input.clone(), cx);
         self.agent
@@ -318,7 +320,8 @@ impl super::LauncherApp {
             let Ok(Ok(turn)) = result else {
                 let message = match result {
                     Ok(Err(error)) => error.to_string(),
-                    Err(error) => format!("后台任务失败：{error}"),
+                    Err(error) => rust_i18n::t!("app.common.background_task_failed", error = error)
+                        .to_string(),
                     Ok(Ok(_)) => unreachable!(),
                 };
                 let _ = this.update_in(cx, |view, _, cx| {
@@ -394,9 +397,10 @@ impl super::LauncherApp {
                     && !error.is_cancelled()
                     && !view.agent.run.is_idle()
                 {
-                    view.agent.conversation.messages.push(AgentMessage::Notice(
-                        "AI 后台任务意外结束，请重试。".to_owned(),
-                    ));
+                    view.agent
+                        .conversation
+                        .messages
+                        .push(AgentMessage::Notice(tr("app.agent.task_ended")));
                     view.agent
                         .conversation
                         .scroller
@@ -443,7 +447,9 @@ impl super::LauncherApp {
                     Ok(Ok(true)) => AgentKeyState::Saved,
                     Ok(Ok(false)) => AgentKeyState::Missing,
                     Ok(Err(error)) => AgentKeyState::Error(error.to_string()),
-                    Err(error) => AgentKeyState::Error(format!("后台钥匙串任务失败：{error}")),
+                    Err(error) => AgentKeyState::Error(
+                        rust_i18n::t!("app.agent.keychain_task_failed", error = error).to_string(),
+                    ),
                 };
                 cx.notify();
             });
@@ -520,7 +526,7 @@ impl super::LauncherApp {
             .trim()
             .to_owned();
         if key.is_empty() {
-            self.agent.settings.error = Some("API Key 不能为空。".to_owned());
+            self.agent.settings.error = Some(tr("app.agent.key_empty"));
             cx.notify();
             return;
         }
@@ -553,8 +559,10 @@ impl super::LauncherApp {
                         view.agent.settings.key = AgentKeyState::Error(error.to_string());
                     }
                     Err(error) => {
-                        view.agent.settings.key =
-                            AgentKeyState::Error(format!("后台钥匙串任务失败：{error}"));
+                        view.agent.settings.key = AgentKeyState::Error(
+                            rust_i18n::t!("app.agent.keychain_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -585,7 +593,9 @@ impl super::LauncherApp {
                 view.agent.settings.key = match result {
                     Ok(Ok(())) => AgentKeyState::Missing,
                     Ok(Err(error)) => AgentKeyState::Error(error.to_string()),
-                    Err(error) => AgentKeyState::Error(format!("后台钥匙串任务失败：{error}")),
+                    Err(error) => AgentKeyState::Error(
+                        rust_i18n::t!("app.agent.keychain_task_failed", error = error).to_string(),
+                    ),
                 };
                 cx.notify();
             });
@@ -604,10 +614,11 @@ impl AgentState {
         let provider_error = AgentProvider::from_id(&config.agent_provider)
             .is_none()
             .then(|| {
-                format!(
-                    "不支持的 AI 服务商 `{}`，请在设置中重新选择。",
-                    config.agent_provider
+                rust_i18n::t!(
+                    "app.agent.provider_unsupported",
+                    provider = config.agent_provider
                 )
+                .to_string()
             });
         let provider_index = AgentProvider::ALL
             .iter()
@@ -638,7 +649,7 @@ impl AgentState {
         });
         let proxy_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("可选，例如 socks5://127.0.0.1:7890")
+                .placeholder(tr("app.agent.proxy_placeholder"))
                 .default_value(config.agent_proxy.clone().unwrap_or_default())
         });
         let key_input = cx.new(|cx| {
@@ -657,7 +668,7 @@ impl AgentState {
             TextareaState::new(window, cx)
                 .auto_grow(1, 8)
                 .submit_on_enter(true)
-                .placeholder("告诉 Agent 你想做什么，例如：帮我安装一个 26.3 的 Fabric 实例")
+                .placeholder(tr("app.agent.input_placeholder"))
         });
         let conversation = AgentConversation {
             messages: Vec::new(),
@@ -682,6 +693,27 @@ impl AgentState {
             },
             generation: 0,
         }
+    }
+
+    pub fn refresh_provider_labels(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<super::LauncherApp>,
+    ) {
+        let selected = self
+            .settings
+            .provider_select
+            .read(cx)
+            .selected_index(cx)
+            .unwrap_or_else(|| IndexPath::default().row(0));
+        let items = AgentProvider::ALL
+            .iter()
+            .map(|provider| provider.label())
+            .collect::<Vec<_>>();
+        self.settings.provider_select.update(cx, |state, cx| {
+            state.set_items(SearchableVec::new(items), window, cx);
+            state.set_selected_index(Some(selected), window, cx);
+        });
     }
 
     pub fn provider(&self, cx: &Context<super::LauncherApp>) -> AgentProvider {
@@ -926,7 +958,7 @@ impl AgentState {
                 self.finish_turn(cx);
                 self.conversation
                     .messages
-                    .push(AgentMessage::Notice("已停止当前回合。".to_owned()));
+                    .push(AgentMessage::Notice(tr("app.agent.stopped")));
                 self.conversation
                     .scroller
                     .update(cx, |state, cx| state.append(1, cx));

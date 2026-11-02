@@ -1,8 +1,8 @@
 # 启动器配置
 
-状态：schema 9 已实现；schema 1/2/3/4/5/6/7/8 可读取并在内存中升级
+状态：schema 10 已实现；schema 1/2/3/4/5/6/7/8/9 可读取并在内存中升级
 
-日期：2026-10-29
+日期：2026-11-02
 
 ## 边界
 
@@ -34,10 +34,10 @@ RMCL 不迁移或合并其他目录中的仓库。
 
 `--config <PATH>` 可以指定其他文件，用于隔离 smoke 和测试。Java store 默认仍是 `~/.rmcl/java`；日志目录是配置文件所在目录下的 `logs/`，皮肤头像和完整纹理缓存位于同目录的 `cache/skins/`，本地皮肤库位于 `skins/library/`，服务器图标缓存位于 `cache/servers/`，Mod 元数据缓存位于 `cache/mod-metadata/`，更新包和 helper 日志位于 `cache/updates/`。
 
-## Schema 9
+## Schema 10
 
 ```toml
-schema_version = 9
+schema_version = 10
 minecraft_root = "/Users/example/Library/Application Support/minecraft"
 java_store = "/Users/example/.rmcl/java"
 selected_version = "1.21.1"
@@ -48,6 +48,7 @@ auto_install_java = true
 auto_check_updates = true
 download_source = "auto"
 launcher_visibility = "keep_visible"
+language = "system"
 agent_provider = "kilo"
 agent_model = ""
 agent_base_url = ""
@@ -96,6 +97,7 @@ accent = "emerald"
 - `auto_check_updates`：启动后是否自动检查 GitHub Release；默认开启。手动检查不受该字段影响。
 - `download_source`：`auto`、`official` 或 `mirror`。`auto` 探测国内镜像，失败或超时使用官方源；`official` 完全不使用镜像；`mirror` 优先国内镜像并逐请求回退官方源。修改后立即生效，无需重启。见 [下载源与国内镜像](DOWNLOAD_SOURCES.md)。
 - `launcher_visibility`：`keep_visible` 或 `hide_while_running`。后者在游戏进程进入运行阶段时隐藏启动器（macOS 隐藏应用，其他平台最小化窗口），任务终态恢复。
+- `language`：界面语言。`system` 跟随操作系统 UI 语言；`zh_cn` 固定简体中文；`en` 固定英文。当前只发布简体中文和英文两套界面文案；系统语言不是中文时回退到英文。修改后立即生效，不需要重启。
 - `agent_provider`：内置 AI 助手使用的服务商 ID，当前支持 `kilo`、`openai`、`anthropic`、`gemini`、`deepseek`、`openrouter`、`qwen`、`kimi`、`zhipu` 和 `custom`。`kilo` 使用无需 Key 的免费通道，其余服务商需要 API Key。未知 ID 会显示错误并阻止发送，不会静默改用其他服务商。
 - `agent_model`：模型 ID；空字符串表示使用所选服务商的默认模型，并持续跟随后续版本的预设更新。模型必须支持工具调用。
 - `agent_base_url`：可选的 OpenAI-compatible 或原生服务商 Base URL；空字符串表示使用服务商默认值。`custom` 模式必须填写。URL 不得内嵌用户名或密码。
@@ -104,7 +106,7 @@ accent = "emerald"
 - `appearance.theme`：`system`、`light` 或 `dark`。
 - `appearance.accent`：`emerald`、`ocean`、`violet`、`amber` 或 `rose`。
 
-缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–9；0 或更高版本会被拒绝。读取 schema 1/2/3/4/5/6/7/8 时补齐 `selected_account_kind`、`selected_account_id`、`microsoft_accounts`、`authlib_accounts`、空 `servers`、`auto_check_updates`、`download_source` 和 AI 设置，内存中的版本升级为 9，下一次用户修改设置时写回。旧配置中的 GUI MCP 字段按普通未知字段忽略，不会启动服务或保留到下一次写入。
+缺省字段使用默认值；未知字段在读取时被忽略。`schema_version` 必须为 1–10；0 或高于 10 的版本会被拒绝。读取 schema 1/2/3/4/5/6/7/8/9 时补齐 `selected_account_kind`、`selected_account_id`、`microsoft_accounts`、`authlib_accounts`、空 `servers`、`auto_check_updates`、`download_source`、`language` 和 AI 设置，内存中的版本升级为 10，下一次用户修改设置时写回。旧配置中的 GUI MCP 字段按普通未知字段忽略，不会启动服务或保留到下一次写入。
 
 令牌不在 `config.toml` 中，而是通过 `rmcl-platform` 保存到系统凭据存储：
 
@@ -182,6 +184,13 @@ Schema 8 → 9：
 - 其余字段原样保留。
 - 内存中的版本升级为 9；只有用户主动修改设置时才写回文件。
 
+Schema 9 → 10：
+
+- 新增 `language`，缺省为 `"system"`。
+- 系统语言为中文时使用简体中文；其他系统语言回退到英文。
+- 其余字段原样保留。
+- 内存中的版本升级为 10；只有用户主动修改设置时才写回文件。
+
 后续升级 schema 时必须：
 
 - 明确旧版本到新版本的字段映射和默认值。
@@ -202,6 +211,7 @@ Schema 8 → 9：
 - Schema 4 文件升级后补上默认 `auto` 下载源。
 - Schema 6 文件升级后补上默认的 AI 服务商和空的模型/Base URL/代理字段。
 - Schema 8 文件升级后补上稳定选中账户 ID 和空外置账户列表。
+- Schema 9 文件升级后补上默认 `system` 语言。
 - 损坏 TOML 和更高 schema 不被重写。
 - 覆盖保存后内容可重新读取。
 

@@ -21,6 +21,7 @@ use rmcl_store::StoredServer;
 use super::super::{LauncherApp, Page, ServerTab};
 use super::common::{card, empty_state, error_banner, page_header, server_tile};
 use super::layout;
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_servers(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -58,13 +59,15 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("启动目标"),
+                                    .child(tr("app.servers.launch_target")),
                             )
                             .child(
                                 div().w(rems(13.5)).child(
                                     Select::new(&self.version_select)
-                                        .placeholder("选择实例")
-                                        .accessibility_label("启动目标实例")
+                                        .placeholder(tr("app.home.select_instance"))
+                                        .accessibility_label(tr(
+                                            "app.servers.launch_target_instance",
+                                        ))
                                         .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
                                         .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
                                         .cleanable(false)
@@ -83,7 +86,7 @@ impl LauncherApp {
         Button::new("servers-add")
             .primary()
             .icon(IconName::Plus)
-            .label("添加服务器")
+            .label(tr("app.servers.add"))
             .on_click(cx.listener(|this, _, window, cx| this.open_server_dialog(None, window, cx)))
     }
 
@@ -105,7 +108,7 @@ impl LauncherApp {
 
         let mut rows = Vec::new();
         for server in &servers {
-            rows.push(self.render_server_row(server, can_join, join_tooltip, cx));
+            rows.push(self.render_server_row(server, can_join, &join_tooltip, cx));
         }
 
         v_flex().flex_1().min_h_0().gap_5().child(
@@ -131,7 +134,9 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("共 {total} 个服务器")),
+                                .child(
+                                    rust_i18n::t!("app.servers.total", count = total).to_string(),
+                                ),
                         )
                         .child(div().flex_1())
                         .child(self.add_server_button(cx)),
@@ -140,19 +145,19 @@ impl LauncherApp {
                     this.child(empty_state(
                         IconName::Network,
                         if total == 0 {
-                            "还没有服务器"
+                            tr("app.servers.empty_title")
                         } else {
-                            "没有匹配的服务器"
+                            tr("app.servers.no_match_title")
                         },
                         if total == 0 {
-                            "添加 Java 版服务器后可以查看 MOTD、在线人数和延迟。"
+                            tr("app.servers.empty_description")
                         } else {
-                            "尝试清除搜索条件。"
+                            tr("app.common.try_clear_search")
                         },
                         Button::new("servers-empty-add")
                             .primary()
                             .icon(IconName::Plus)
-                            .label("添加服务器")
+                            .label(tr("app.servers.add"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_server_dialog(None, window, cx)
                             })),
@@ -172,7 +177,11 @@ impl LauncherApp {
                     .flex_1()
                     .min_h_0()
                     .gap_5()
-                    .child(error_banner("无法加载精选服务器", error, cx))
+                    .child(error_banner(
+                        tr("app.servers.featured_load_failed"),
+                        error,
+                        cx,
+                    ))
                     .into_any_element();
             }
         };
@@ -194,7 +203,7 @@ impl LauncherApp {
 
         let mut rows = Vec::new();
         for server in &servers {
-            rows.push(self.render_featured_server_row(server, can_join, join_tooltip, cx));
+            rows.push(self.render_featured_server_row(server, can_join, &join_tooltip, cx));
         }
 
         v_flex()
@@ -219,14 +228,21 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!("显示 {} / {total} 个服务器", servers.len())),
+                            .child(
+                                rust_i18n::t!(
+                                    "app.servers.shown",
+                                    shown = servers.len(),
+                                    total = total
+                                )
+                                .to_string(),
+                            ),
                     ),
             )
             .when(servers.is_empty(), |this| {
                 this.child(empty_state(
                     IconName::Globe,
-                    "没有匹配的精选服务器",
-                    "尝试清除搜索条件。",
+                    tr("app.servers.featured_no_match"),
+                    tr("app.common.try_clear_search"),
                     div(),
                     cx,
                 ))
@@ -248,9 +264,9 @@ impl LauncherApp {
         let icon_path = view.and_then(|view| view.icon_path.as_deref());
         let favorited = self.featured_server_is_favorite(&server.address);
         let favorite_tooltip = if favorited {
-            "已收藏；点击取消收藏"
+            tr("app.servers.unfavorite_tooltip")
         } else {
-            "收藏服务器"
+            tr("app.servers.favorite_tooltip")
         };
         let favorite_button = Button::new(format!("featured-favorite-{}", server.id))
             .ghost()
@@ -266,7 +282,7 @@ impl LauncherApp {
                 cx.theme().muted_foreground
             })
             .toggled(favorited)
-            .tooltip(favorite_tooltip)
+            .tooltip(favorite_tooltip.clone())
             .accessibility_label(favorite_tooltip)
             .on_click(cx.listener({
                 let server = server.clone();
@@ -280,30 +296,38 @@ impl LauncherApp {
                 .link()
                 .small()
                 .icon(IconName::ExternalLink)
-                .tooltip("打开官网")
-                .accessibility_label("打开官网")
+                .tooltip(tr("app.servers.open_website"))
+                .accessibility_label(tr("app.servers.open_website"))
                 .on_click(move |_, _, cx| cx.open_url(&url))
         });
         let actionable = can_join && !server.requires_mods;
         let action_label = if server.requires_mods {
-            "需要整合包"
+            tr("app.servers.requires_modpack")
         } else {
-            "进入"
+            tr("app.servers.join")
         };
         let action_tooltip = if server.requires_mods {
-            "需要准备对应的 Mod 或整合包"
+            tr("app.servers.requires_modpack_tooltip")
         } else {
-            join_tooltip
+            join_tooltip.to_owned()
         };
 
         let mut tags = Vec::new();
         if server.requires_mods {
-            tags.push(Tag::warning().small().child("需要 Mod/整合包"));
+            tags.push(
+                Tag::warning()
+                    .small()
+                    .child(tr("app.servers.requires_mods_tag")),
+            );
         }
         for tag in &server.tags {
             tags.push(Tag::secondary().small().child(tag.clone()));
         }
-        let version_note = server.version_note.as_deref().unwrap_or("版本未知");
+        let version_note = server
+            .version_note
+            .as_deref()
+            .map(str::to_owned)
+            .unwrap_or_else(|| tr("app.servers.version_unknown"));
 
         card(cx)
             .gap_3()
@@ -344,7 +368,13 @@ impl LauncherApp {
                                         "{} · {} · {}",
                                         server.address,
                                         version_note,
-                                        server.version.as_deref().unwrap_or("按整合包选择版本")
+                                        server
+                                            .version
+                                            .as_deref()
+                                            .map(str::to_owned)
+                                            .unwrap_or_else(|| {
+                                                tr("app.servers.select_modpack_version")
+                                            })
                                     )),
                             )
                             .child(
@@ -460,7 +490,7 @@ impl LauncherApp {
                                 Button::new(format!("server-join-{id}"))
                                     .primary()
                                     .icon(IconName::Play)
-                                    .label("进入")
+                                    .label(tr("app.servers.join"))
                                     .disabled(!can_join)
                                     .tooltip(join_tooltip)
                                     .on_click(cx.listener({
@@ -474,8 +504,8 @@ impl LauncherApp {
                                 Button::new(format!("server-edit-{id}"))
                                     .ghost()
                                     .icon(IconName::Pencil)
-                                    .tooltip("编辑服务器")
-                                    .accessibility_label("编辑服务器")
+                                    .tooltip(tr("app.servers.edit"))
+                                    .accessibility_label(tr("app.servers.edit"))
                                     .on_click(cx.listener({
                                         let id = id.clone();
                                         move |this, _, window, cx| {
@@ -487,8 +517,8 @@ impl LauncherApp {
                                 Button::new(format!("server-delete-{id}"))
                                     .ghost()
                                     .icon(IconName::Trash)
-                                    .tooltip("删除服务器")
-                                    .accessibility_label("删除服务器")
+                                    .tooltip(tr("app.servers.delete"))
+                                    .accessibility_label(tr("app.servers.delete"))
                                     .on_click(cx.listener({
                                         let id = id.clone();
                                         move |this, _, window, cx| {
@@ -505,8 +535,10 @@ impl LauncherApp {
 pub(super) fn server_players(status: Option<&ServerStatus>, cx: &App) -> Option<AnyElement> {
     let status = status?;
     let players = match (status.online_players, status.max_players) {
-        (Some(online), Some(max)) => format!("{online}/{max} 人"),
-        (Some(online), None) => format!("{online} 人"),
+        (Some(online), Some(max)) => {
+            rust_i18n::t!("app.servers.players_of", online = online, max = max).to_string()
+        }
+        (Some(online), None) => rust_i18n::t!("app.servers.players", online = online).to_string(),
         _ => return None,
     };
     Some(
@@ -547,7 +579,7 @@ pub(super) fn server_status_line(
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("查询中"),
+                    .child(tr("app.servers.querying")),
             )
             .into_any_element();
     }
@@ -565,7 +597,7 @@ pub(super) fn server_status_line(
                 div()
                     .text_xs()
                     .text_color(cx.theme().danger)
-                    .child("无法连接"),
+                    .child(tr("app.servers.unreachable")),
             )
             .into_any_element();
     };

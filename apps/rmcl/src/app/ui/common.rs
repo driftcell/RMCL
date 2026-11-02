@@ -63,24 +63,30 @@ pub fn card(cx: &App) -> Div {
         .gap_4()
 }
 
-pub fn section_title(title: &str, subtitle: &str, cx: &App) -> impl IntoElement {
+pub fn section_title(
+    title: impl Into<SharedString>,
+    subtitle: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement {
+    let title = title.into();
+    let subtitle = subtitle.into();
     v_flex()
         .gap_1()
-        .child(div().text_base().font_semibold().child(title.to_owned()))
+        .child(div().text_base().font_semibold().child(title.clone()))
         .when(!subtitle.is_empty(), |this| {
             this.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(subtitle.to_owned()),
+                    .child(subtitle.clone()),
             )
         })
 }
 
 pub fn empty_state(
     icon: IconName,
-    title: &str,
-    description: &str,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
     action: impl IntoElement,
     cx: &App,
 ) -> AnyElement {
@@ -94,17 +100,24 @@ pub fn empty_state(
 }
 
 /// An empty state whose primary action already lives in the surrounding toolbar.
-pub fn empty_state_message(icon: IconName, title: &str, description: &str, cx: &App) -> AnyElement {
+pub fn empty_state_message(
+    icon: IconName,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
+    cx: &App,
+) -> AnyElement {
     empty_state_layout(icon, title, description, None, cx)
 }
 
 fn empty_state_layout(
     icon: IconName,
-    title: &str,
-    description: &str,
+    title: impl Into<SharedString>,
+    description: impl Into<SharedString>,
     action: Option<AnyElement>,
     cx: &App,
 ) -> AnyElement {
+    let title = title.into();
+    let description = description.into();
     v_flex()
         .w_full()
         .items_center()
@@ -125,14 +138,14 @@ fn empty_state_layout(
                         .text_color(cx.theme().primary),
                 ),
         )
-        .child(div().text_lg().font_semibold().child(title.to_owned()))
+        .child(div().text_lg().font_semibold().child(title.clone()))
         .child(
             div()
                 .max_w_96()
                 .text_center()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
-                .child(description.to_owned()),
+                .child(description.clone()),
         )
         .when_some(action, |this, action| this.child(action))
         .into_any_element()
@@ -202,8 +215,8 @@ pub fn mono(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
         .child(text.into())
 }
 
-pub fn field_label(label: &str) -> impl IntoElement {
-    div().text_sm().font_medium().child(label.to_owned())
+pub fn field_label(label: impl Into<SharedString>) -> impl IntoElement {
+    div().text_sm().font_medium().child(label.into())
 }
 
 /// Secondary prose that explains a control. Keep `mono` for paths and data.
@@ -214,11 +227,19 @@ pub fn help(text: impl Into<SharedString>, cx: &App) -> impl IntoElement {
         .child(text.into())
 }
 
-pub fn error_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
+pub fn error_banner(
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement {
     banner(IconName::CircleAlert, cx.theme().danger, title, message, cx)
 }
 
-pub fn warning_banner(title: &str, message: &str, cx: &App) -> impl IntoElement {
+pub fn warning_banner(
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement {
     banner(
         IconName::TriangleAlert,
         cx.theme().warning,
@@ -228,7 +249,15 @@ pub fn warning_banner(title: &str, message: &str, cx: &App) -> impl IntoElement 
     )
 }
 
-fn banner(icon: IconName, color: Hsla, title: &str, message: &str, cx: &App) -> impl IntoElement {
+fn banner(
+    icon: IconName,
+    color: Hsla,
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    cx: &App,
+) -> impl IntoElement {
+    let title = title.into();
+    let message = message.into();
     h_flex()
         .w_full()
         .gap_3()
@@ -248,13 +277,13 @@ fn banner(icon: IconName, color: Hsla, title: &str, message: &str, cx: &App) -> 
                         .text_sm()
                         .font_medium()
                         .text_color(color)
-                        .child(title.to_owned()),
+                        .child(title.clone()),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child(message.to_owned()),
+                        .child(message.clone()),
                 ),
         )
 }

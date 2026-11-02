@@ -21,6 +21,7 @@ use super::common::{
     card, display_path, field_label, format_size, help, mono, page_header, section_title,
 };
 use super::layout;
+use crate::i18n::tr;
 use rmcl_store::DownloadSourcePreference;
 
 impl LauncherApp {
@@ -57,17 +58,23 @@ impl LauncherApp {
                                 .p_3()
                                 .text_sm()
                                 .text_color(cx.theme().danger)
-                                .child(format!("配置保存失败：{error}")),
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.settings.config_save_failed",
+                                        error = error
+                                    )
+                                    .to_string(),
+                                ),
                         )
                     })
                     .child(
                         card(cx)
-                            .child(section_title("游戏", "", cx))
+                            .child(section_title(tr("app.settings.game_section"), "", cx))
                             .child(
                                 v_flex()
                                     .w_full()
                                     .gap_2()
-                                    .child(field_label("Minecraft 目录"))
+                                    .child(field_label(tr("app.settings.minecraft_dir")))
                                     .child(
                                         h_flex()
                                             .w_full()
@@ -95,7 +102,7 @@ impl LauncherApp {
                                                 Button::new("settings-browse-root")
                                                     .outline()
                                                     .icon(IconName::FolderOpen)
-                                                    .label("选择目录")
+                                                    .label(tr("app.settings.choose_directory"))
                                                     .disabled(!self.log_state.can_start())
                                                     .on_click(cx.listener(
                                                         |this, _, window, cx| {
@@ -104,15 +111,15 @@ impl LauncherApp {
                                                     )),
                                             ),
                                     )
-                                    .child(help("更改后立即重新扫描版本，不移动现有文件。", cx)),
+                                    .child(help(tr("app.settings.minecraft_dir_help"), cx)),
                             )
                             .child(
                                 v_flex()
                                     .w_full()
                                     .gap_2()
-                                    .child(field_label("Java 目录"))
+                                    .child(field_label(tr("app.settings.java_dir")))
                                     .child(mono(display_path(&self.config.java_store), cx))
-                                    .child(help("重启 RMCL 后生效。", cx)),
+                                    .child(help(tr("app.settings.restart_required"), cx)),
                             )
                             .child(
                                 h_flex()
@@ -123,9 +130,9 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("自动获取 Java"))
+                                            .child(field_label(tr("app.settings.auto_java")))
                                             .child(help(
-                                                "缺少兼容 runtime 时自动下载；重启后生效。",
+                                                tr("app.settings.auto_java_help"),
                                                 cx,
                                             )),
                                     )
@@ -143,7 +150,11 @@ impl LauncherApp {
                     )
                     .child(
                         card(cx)
-                            .child(section_title("下载", "选择 Minecraft 文件的下载来源。", cx))
+                            .child(section_title(
+                                tr("app.settings.download_section"),
+                                tr("app.settings.download_section_subtitle"),
+                                cx,
+                            ))
                             .child(
                             h_flex()
                                 .w_full()
@@ -153,12 +164,12 @@ impl LauncherApp {
                                         .flex_1()
                                         .min_w_0()
                                         .gap_1()
-                                        .child(field_label("下载源"))
+                                        .child(field_label(tr("app.settings.download_source")))
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child("自动会先探测国内镜像，失败时使用官方源。"),
+                                                .child(tr("app.settings.download_source_help")),
                                         )
                                         .child(
                                             div()
@@ -174,13 +185,13 @@ impl LauncherApp {
                                                 .gap_1()
                                                 .text_xs()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child("国内镜像由")
+                                                .child(tr("app.settings.mirror_provided_by"))
                                                 .child(
                                                     Link::new("bmclapi-attribution")
                                                         .href("https://bmclapidoc.bangbang93.com/")
                                                         .child("BMCLAPI"),
                                                 )
-                                                .child("提供。"),
+                                                .child(tr("app.settings.mirror_provided_by_suffix")),
                                         ),
                                 )
                                 .child(
@@ -190,7 +201,7 @@ impl LauncherApp {
                                         .child(
                                             div().w(rems(11.25)).child(
                                                 Select::new(&self.download_source_select)
-                                                    .accessibility_label("下载源")
+                                                    .accessibility_label(tr("app.settings.download_source"))
                                                     .menu_width(layout::rem_px(
                                                         cx,
                                                         layout::SELECT_MENU_WIDTH,
@@ -208,8 +219,8 @@ impl LauncherApp {
                                                 .ghost()
                                                 .xsmall()
                                                 .icon(IconName::RefreshCw)
-                                                .tooltip("重新探测国内镜像")
-                                                .accessibility_label("重新探测国内镜像")
+                                                .tooltip(tr("app.settings.probe_mirror"))
+                                                .accessibility_label(tr("app.settings.probe_mirror"))
                                                 .disabled(
                                                     self.config.download_source
                                                         == DownloadSourcePreference::Official,
@@ -224,8 +235,8 @@ impl LauncherApp {
                     .child(
                         card(cx)
                             .child(section_title(
-                                "启动行为",
-                                "游戏运行时最小化启动器，退出或崩溃后自动恢复。",
+                                tr("app.settings.launch_behavior"),
+                                tr("app.settings.launch_behavior_subtitle"),
                                 cx,
                             ))
                             .child(
@@ -237,13 +248,13 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("启动器可见性"))
-                                            .child(help("游戏退出后自动恢复。", cx)),
+                                            .child(field_label(tr("app.settings.launcher_visibility")))
+                                            .child(help(tr("app.settings.launcher_visibility_help"), cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
                                             Select::new(&self.visibility_select)
-                                                .accessibility_label("启动器可见性")
+                                                .accessibility_label(tr("app.settings.launcher_visibility"))
                                                 .menu_width(layout::rem_px(
                                                     cx,
                                                     layout::SELECT_MENU_WIDTH,
@@ -261,8 +272,8 @@ impl LauncherApp {
                     .child(
                         card(cx)
                             .child(section_title(
-                                "AI 助手",
-                                "可使用 Kilo 免费模型，无需 API Key；也可填写自己的 API Key。Key 只保存在系统钥匙串。",
+                                tr("app.settings.ai_section"),
+                                tr("app.settings.ai_section_subtitle"),
                                 cx,
                             ))
                             .child(
@@ -274,13 +285,13 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("服务商"))
-                                            .child(help("模型 ID 可编辑；默认值会随 RMCL 版本更新。", cx)),
+                                            .child(field_label(tr("app.settings.provider")))
+                                            .child(help(tr("app.settings.provider_help"), cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(13.5)).child(
                                             Select::new(&self.agent.settings.provider_select)
-                                                .accessibility_label("AI 服务商")
+                                                .accessibility_label(tr("app.settings.ai_provider"))
                                                 .menu_width(layout::rem_px(cx, layout::MENU_WIDTH))
                                                 .menu_max_h(layout::rem_px(cx, layout::MENU_MAX_HEIGHT))
                                                 .cleanable(false)
@@ -297,7 +308,7 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("模型 ID"))
+                                            .child(field_label(tr("app.settings.model_id")))
                                             .child(Input::new(&self.agent.settings.model_input).w_full()),
                                     )
                                     .child(
@@ -306,9 +317,9 @@ impl LauncherApp {
                                             .min_w_0()
                                             .gap_1()
                                             .child(field_label(if agent_keyless {
-                                                "免费通道"
+                                                tr("app.settings.free_tier")
                                             } else {
-                                                "API Key"
+                                                "API Key".to_owned()
                                             }))
                                             .child(if agent_keyless {
                                                 h_flex()
@@ -317,10 +328,10 @@ impl LauncherApp {
                                                     .child(
                                                         Tag::success()
                                                             .small()
-                                                            .child("无需 Key"),
+                                                            .child(tr("app.settings.no_key")),
                                                     )
                                                     .child(help(
-                                                        "免费模型可能记录对话，请勿发送敏感信息。",
+                                                        tr("app.settings.free_tier_warning"),
                                                         cx,
                                                     ))
                                                     .into_any_element()
@@ -328,14 +339,14 @@ impl LauncherApp {
                                                 match &self.agent.settings.key {
                                                     AgentKeyState::Saved => h_flex()
                                                         .gap_2()
-                                                        .child(help("已保存在系统钥匙串。", cx))
+                                                        .child(help(tr("app.settings.key_saved"), cx))
                                                         .child(
                                                             Button::new(
                                                                 "settings-agent-remove-key",
                                                             )
                                                             .ghost()
                                                             .small()
-                                                            .label("移除")
+                                                            .label(tr("app.common.remove"))
                                                             .on_click(cx.listener(
                                                                 |this, _, _, cx| {
                                                                     this.remove_agent_key(cx)
@@ -364,7 +375,7 @@ impl LauncherApp {
                                                             )
                                                             .outline()
                                                             .small()
-                                                            .label("保存")
+                                                            .label(tr("app.common.save"))
                                                             .disabled(matches!(
                                                                 self.agent.settings.key,
                                                                 AgentKeyState::Unknown
@@ -401,7 +412,7 @@ impl LauncherApp {
                                                             )
                                                             .outline()
                                                             .small()
-                                                            .label("保存")
+                                                            .label(tr("app.common.save"))
                                                             .disabled(matches!(
                                                                 self.agent.settings.key,
                                                                 AgentKeyState::Unknown
@@ -434,7 +445,7 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("代理（可选）"))
+                                            .child(field_label(tr("app.settings.proxy_optional")))
                                             .child(Input::new(&self.agent.settings.proxy_input).w_full()),
                                     ),
                             )
@@ -448,12 +459,12 @@ impl LauncherApp {
                                             .flex_1()
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("对话内容和工具结果（包括实例名、路径、玩家名）会发送给所选服务商。"),
+                                            .child(tr("app.settings.agent_data_notice")),
                                     )
                                     .child(
                                         Button::new("settings-agent-save")
                                             .primary()
-                                            .label("保存 AI 设置")
+                                            .label(tr("app.settings.save_ai"))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 if let Err(error) = this.save_agent_settings(cx) {
                                                     this.agent.settings.error = Some(error);
@@ -470,7 +481,11 @@ impl LauncherApp {
                     )
                     .child(
                         card(cx)
-                            .child(section_title("外观", "修改后立即生效。", cx))
+                            .child(section_title(
+                                tr("app.settings.appearance_title"),
+                                tr("app.settings.appearance_subtitle"),
+                                cx,
+                            ))
                             .child(
                                 h_flex()
                                     .w_full()
@@ -480,13 +495,13 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("主题"))
-                                            .child(help("跟随系统、浅色或深色。", cx)),
+                                            .child(field_label(tr("app.settings.theme")))
+                                            .child(help(tr("app.settings.theme_help"), cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
                                             Select::new(&self.theme_select)
-                                                .accessibility_label("主题")
+                                                .accessibility_label(tr("app.settings.theme"))
                                                 .menu_width(layout::rem_px(
                                                     cx,
                                                     layout::SELECT_MENU_WIDTH,
@@ -509,13 +524,42 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("强调色"))
-                                            .child(help("主按钮和选中状态的颜色。", cx)),
+                                            .child(field_label(tr("app.settings.accent")))
+                                            .child(help(tr("app.settings.accent_help"), cx)),
                                     )
                                     .child(
                                         div().flex_shrink_0().w(rems(11.25)).child(
                                             Select::new(&self.accent_select)
-                                                .accessibility_label("强调色")
+                                                .accessibility_label(tr("app.settings.accent"))
+                                                .menu_width(layout::rem_px(
+                                                    cx,
+                                                    layout::SELECT_MENU_WIDTH,
+                                                ))
+                                                .menu_max_h(layout::rem_px(
+                                                    cx,
+                                                    layout::SELECT_MENU_WIDTH,
+                                                ))
+                                                .cleanable(false)
+                                                .w_full(),
+                                        ),
+                                    ),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_4()
+                                    .child(
+                                        v_flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap_1()
+                                            .child(field_label(tr("app.settings.language")))
+                                            .child(help(tr("app.settings.language_help"), cx)),
+                                    )
+                                    .child(
+                                        div().flex_shrink_0().w(rems(11.25)).child(
+                                            Select::new(&self.language_select)
+                                                .accessibility_label(tr("app.settings.language"))
                                                 .menu_width(layout::rem_px(
                                                     cx,
                                                     layout::SELECT_MENU_WIDTH,
@@ -533,8 +577,8 @@ impl LauncherApp {
                     .child(
                         card(cx)
                             .child(section_title(
-                                "更新",
-                                "默认从 GitHub Release 检查；下载后校验 SHA-256 并自动重启。",
+                                tr("app.settings.updates_section"),
+                                tr("app.settings.updates_section_subtitle"),
                                 cx,
                             ))
                             .child(
@@ -546,7 +590,7 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("当前版本"))
+                                            .child(field_label(tr("app.settings.current_version")))
                                             .child(mono(
                                                 format!("RMCL {}", env!("CARGO_PKG_VERSION")),
                                                 cx,
@@ -557,8 +601,8 @@ impl LauncherApp {
                                             .flex_1()
                                             .min_w_0()
                                             .gap_1()
-                                            .child(field_label("启动时检查更新"))
-                                            .child(help("自动检查发现新版本后提示。", cx)),
+                                            .child(field_label(tr("app.settings.check_on_start")))
+                                            .child(help(tr("app.settings.check_on_start_help"), cx)),
                                     )
                                     .child(
                                         Switch::new("settings-auto-update")
@@ -588,18 +632,18 @@ impl LauncherApp {
                                                 IconName::RefreshCw
                                             })
                                             .label(if update_checking {
-                                                "正在检查"
+                                                tr("app.settings.checking")
                                             } else if update_up_to_date {
-                                                "已是最新版本"
+                                                tr("app.settings.up_to_date")
                                             } else {
-                                                "检查更新"
+                                                tr("app.settings.check_updates")
                                             })
                                             .loading(update_checking)
                                             .disabled(self.update.downloading)
                                             .tooltip(if update_up_to_date {
-                                                "重新检查更新"
+                                                tr("app.settings.recheck_updates")
                                             } else {
-                                                "检查更新"
+                                                tr("app.settings.check_updates")
                                             })
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.check_for_updates(true, window, cx)
@@ -610,7 +654,13 @@ impl LauncherApp {
                                             Button::new("settings-install-update")
                                                 .primary()
                                                 .icon(IconName::Download)
-                                                .label(format!("更新到 v{}", release.version))
+                                                .label(
+                                                    rust_i18n::t!(
+                                                        "app.settings.update_to",
+                                                        version = release.version
+                                                    )
+                                                    .to_string(),
+                                                )
                                                 .disabled(
                                                     self.update.downloading
                                                         || !super::super::updates_installable(),
@@ -626,7 +676,7 @@ impl LauncherApp {
                                                 .link()
                                                 .small()
                                                 .icon(IconName::ExternalLink)
-                                                .label("发布说明")
+                                                .label(tr("app.settings.release_notes"))
                                                 .on_click({
                                                     let url = release.page_url.to_string();
                                                     move |_, _, cx| cx.open_url(&url)
@@ -636,13 +686,18 @@ impl LauncherApp {
                             )
                             .when_some(self.update.progress, |this, progress| {
                                 let label = match progress.total {
-                                    Some(total) if total > 0 => format!(
-                                        "下载中 {:.0}% · {} / {}",
-                                        progress.downloaded as f64 / total as f64 * 100.0,
-                                        format_size(progress.downloaded),
-                                        format_size(total)
-                                    ),
-                                    _ => format!("下载中 · {}", format_size(progress.downloaded)),
+                                    Some(total) if total > 0 => rust_i18n::t!(
+                                        "app.settings.downloading_progress",
+                                        percent = progress.downloaded as f64 / total as f64 * 100.0 : {:.0},
+                                        downloaded = format_size(progress.downloaded),
+                                        total = format_size(total)
+                                    )
+                                    .to_string(),
+                                    _ => rust_i18n::t!(
+                                        "app.settings.downloading",
+                                        downloaded = format_size(progress.downloaded)
+                                    )
+                                    .to_string(),
                                 };
                                 this.child(mono(label, cx))
                             })
@@ -654,7 +709,11 @@ impl LauncherApp {
                     )
                     .child(
                         card(cx)
-                            .child(section_title("关于", "版本与许可。", cx))
+                            .child(section_title(
+                                tr("app.settings.about_section"),
+                                tr("app.settings.about_section_subtitle"),
+                                cx,
+                            ))
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -664,14 +723,14 @@ impl LauncherApp {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("原生 Rust Minecraft 启动器"),
+                                            .child(tr("app.settings.tagline")),
                                     ),
                             )
                             .child(
                                 v_flex()
                                     .w_full()
                                     .gap_1()
-                                    .child(field_label("配置文件"))
+                                    .child(field_label(tr("app.settings.config_file")))
                                     .child(mono(
                                         display_path(self.services.config_store.path()),
                                         cx,
@@ -681,12 +740,15 @@ impl LauncherApp {
                                 v_flex()
                                     .w_full()
                                     .gap_1()
-                                    .child(field_label("运行平台"))
+                                    .child(field_label(tr("app.settings.platform")))
                                     .child(mono(
-                                        format!(
-                                            "{} · Minecraft 由 Mojang Studios 提供",
-                                            super::super::platform_label(&self.services.platform)
-                                        ),
+                                        rust_i18n::t!(
+                                            "app.settings.platform_line",
+                                            platform = super::super::platform_label(
+                                                &self.services.platform
+                                            )
+                                        )
+                                        .to_string(),
                                         cx,
                                     )),
                             )
@@ -698,7 +760,7 @@ impl LauncherApp {
                                             .link()
                                             .small()
                                             .icon(IconName::ExternalLink)
-                                            .label("GPUI Kit 文档")
+                                            .label(tr("app.settings.gpui_docs"))
                                             .on_click(|_, _, cx| {
                                                 cx.open_url("https://gpui-kit.com");
                                             }),
@@ -708,7 +770,7 @@ impl LauncherApp {
                                             .ghost()
                                             .small()
                                             .icon(IconName::FolderOpen)
-                                            .label("打开游戏目录")
+                                            .label(tr("app.home.open_game_folder"))
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.open_game_folder(window, cx)
                                             })),
@@ -718,7 +780,7 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("RMCL 与 Mojang Studios 无关联。"),
+                                    .child(tr("app.settings.disclaimer")),
                             ),
                     ),
             )
@@ -726,9 +788,17 @@ impl LauncherApp {
 }
 
 fn mirror_status_color(status: &str, cx: &App) -> Hsla {
-    if status.starts_with("国内镜像可用") || status.starts_with("国内镜像优先（") {
+    if status.starts_with("国内镜像可用")
+        || status.starts_with("国内镜像优先（")
+        || status.starts_with("Domestic mirror available")
+        || status.starts_with("Preferring the domestic mirror (")
+    {
         cx.theme().success
-    } else if status.contains("不可用") || status.contains("失败") {
+    } else if status.contains("不可用")
+        || status.contains("失败")
+        || status.contains("unavailable")
+        || status.contains("failed")
+    {
         cx.theme().warning
     } else {
         cx.theme().muted_foreground

@@ -57,19 +57,20 @@ impl AgentProvider {
         }
     }
 
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Kilo => "Kilo 免费模型",
-            Self::OpenAi => "OpenAI",
-            Self::Anthropic => "Anthropic",
-            Self::Gemini => "Google Gemini",
-            Self::DeepSeek => "DeepSeek",
-            Self::OpenRouter => "OpenRouter",
-            Self::Qwen => "通义千问",
-            Self::Kimi => "Kimi",
-            Self::Zhipu => "智谱 GLM",
-            Self::Custom => "自定义 OpenAI 兼容",
-        }
+    pub fn label(self) -> String {
+        rust_i18n::t!(match self {
+            Self::Kilo => "app.agent.provider_kilo",
+            Self::OpenAi => "app.agent.provider_openai",
+            Self::Anthropic => "app.agent.provider_anthropic",
+            Self::Gemini => "app.agent.provider_gemini",
+            Self::DeepSeek => "app.agent.provider_deepseek",
+            Self::OpenRouter => "app.agent.provider_openrouter",
+            Self::Qwen => "app.agent.provider_qwen",
+            Self::Kimi => "app.agent.provider_kimi",
+            Self::Zhipu => "app.agent.provider_zhipu",
+            Self::Custom => "app.agent.provider_custom",
+        })
+        .to_string()
     }
 
     pub const fn default_base_url(self) -> Option<&'static str> {

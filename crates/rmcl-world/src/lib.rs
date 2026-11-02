@@ -1,5 +1,7 @@
 //! Minecraft world discovery, transfer, archive and locking.
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod archive;
 mod client;
 mod copy;

@@ -70,6 +70,7 @@ rmcl-platform = { path = "crates/rmcl-platform" }
 rmcl-store = { path = "crates/rmcl-store" }
 rmcl-world = { path = "crates/rmcl-world" }
 reflink-copy = "0.1"
+rust-i18n = "4.2"
 rig = { version = "0.45", default-features = false, features = ["agent", "derive", "reqwest", "rmcp", "rustls", "socks"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
@@ -79,6 +80,7 @@ schemars = "1.0"
 sha1 = "0.11"
 sha2 = "0.11"
 subtle = "2"
+sys-locale = "0.3"
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 tar = "0.4"
 tempfile = "3"

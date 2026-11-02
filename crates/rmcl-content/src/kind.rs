@@ -23,11 +23,14 @@ impl ContentKind {
         }
     }
 
+    /// Canonical English label for diagnostics and non-UI callers.
+    ///
+    /// Localized display labels live in the desktop application.
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Mod => "Mod",
-            Self::ResourcePack => "资源包",
-            Self::ShaderPack => "光影包",
+            Self::Mod => "mod",
+            Self::ResourcePack => "resource pack",
+            Self::ShaderPack => "shader pack",
         }
     }
 

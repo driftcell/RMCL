@@ -45,14 +45,15 @@ impl RemoteSort {
         Self::Updated,
     ];
 
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Relevance => "相关度",
-            Self::Downloads => "下载量",
-            Self::Follows => "关注数",
-            Self::Newest => "最新发布",
-            Self::Updated => "最近更新",
-        }
+    pub fn label(self) -> String {
+        rust_i18n::t!(match self {
+            Self::Relevance => "app.content.sort_relevance",
+            Self::Downloads => "app.content.sort_downloads",
+            Self::Follows => "app.content.sort_follows",
+            Self::Newest => "app.content.sort_newest",
+            Self::Updated => "app.content.sort_updated",
+        })
+        .to_string()
     }
 
     pub const fn modrinth_index(self) -> &'static str {

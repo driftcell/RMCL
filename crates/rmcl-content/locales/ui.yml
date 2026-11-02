@@ -1,0 +1,40 @@
+_version: 2
+
+app:
+  content:
+    warning_symlink:
+      en: "Skipped symlink %{path}"
+      zh-CN: "已跳过符号链接 %{path}"
+    warning_invalid_name:
+      en: "Skipped invalid name %{path}: %{reason}"
+      zh-CN: "已跳过无效名称 %{path}：%{reason}"
+    warning_unreadable:
+      en: "Could not read %{path}: %{message}"
+      zh-CN: "无法读取 %{path}：%{message}"
+    warning_options:
+      en: "Could not parse %{path}: %{message}"
+      zh-CN: "%{path} 无法解析：%{message}"
+    warning_scan:
+      en: "Failed to scan %{kind}: %{message}"
+      zh-CN: "扫描 %{kind} 失败：%{message}"
+    warning_read_mod:
+      en: "Could not read %{name}: %{error}"
+      zh-CN: "无法读取 %{name}：%{error}"
+    warning_duplicate_mod:
+      en: "Duplicate mod ID `%{id}`: %{files}"
+      zh-CN: "检测到重复 Mod ID `%{id}`：%{files}"
+    sort_relevance:
+      en: Relevance
+      zh-CN: 相关度
+    sort_downloads:
+      en: Downloads
+      zh-CN: 下载量
+    sort_follows:
+      en: Followers
+      zh-CN: 关注数
+    sort_newest:
+      en: Newest
+      zh-CN: 最新发布
+    sort_updated:
+      en: Recently Updated
+      zh-CN: 最近更新

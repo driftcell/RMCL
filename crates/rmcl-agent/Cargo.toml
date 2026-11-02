@@ -9,6 +9,7 @@ rmcl-app.workspace = true
 rmcl-mcp.workspace = true
 rmcl-platform.workspace = true
 rig.workspace = true
+rust-i18n.workspace = true
 rmcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true

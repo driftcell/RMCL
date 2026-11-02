@@ -1,5 +1,7 @@
 //! Local Minecraft content discovery and instance-scoped management.
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod error;
 mod kind;
 mod local;
