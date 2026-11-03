@@ -27,6 +27,7 @@ use rmcl_app::{
 
 use super::super::{ContentTab, LauncherApp, Page, short_date, version_tile};
 use super::common::{card, empty_state, error_banner, format_size, section_title, warning_banner};
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_content_browser(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -40,7 +41,7 @@ impl LauncherApp {
                     Button::new("content-browser-back-instance")
                         .ghost()
                         .icon(IconName::ArrowLeft)
-                        .label("返回实例列表")
+                        .label(tr("app.content_browser.back_instances"))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.navigate(Page::Versions, window, cx)
                         })),
@@ -48,11 +49,11 @@ impl LauncherApp {
                 .child(
                     card(cx).child(empty_state(
                         IconName::TriangleAlert,
-                        "实例不存在",
-                        "该实例可能已被删除或移动，请返回实例列表重新扫描。",
+                        tr("app.content_browser.instance_missing"),
+                        tr("app.content_browser.instance_missing_description"),
                         Button::new("content-browser-missing-back")
                             .primary()
-                            .label("返回实例列表")
+                            .label(tr("app.content_browser.back_instances"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Versions, window, cx)
                             })),
@@ -70,17 +71,29 @@ impl LauncherApp {
         let title = project
             .as_ref()
             .map(|project| project.title.clone())
-            .unwrap_or_else(|| format!("在线 {}", kind.label()));
+            .unwrap_or_else(|| {
+                rust_i18n::t!(
+                    "app.content_browser.online_kind",
+                    kind = super::super::content_kind_label(kind)
+                )
+                .to_string()
+            });
         let loader = version
             .loader
             .as_ref()
             .map(|loader| format!("{} {}", loader.kind.label(), loader.version));
         let subtitle = match loader {
-            Some(loader) => format!(
-                "Modrinth · Minecraft {} · {}",
-                version.minecraft_version, loader
-            ),
-            None => format!("Modrinth · Minecraft {}", version.minecraft_version),
+            Some(loader) => rust_i18n::t!(
+                "app.content_browser.subtitle_with_loader",
+                minecraft = version.minecraft_version,
+                loader = loader
+            )
+            .to_string(),
+            None => rust_i18n::t!(
+                "app.content_browser.subtitle",
+                minecraft = version.minecraft_version
+            )
+            .to_string(),
         };
         let refresh = project.clone();
         let refresh_versions = project.is_some();
@@ -102,8 +115,8 @@ impl LauncherApp {
                         Button::new("content-browser-back")
                             .ghost()
                             .icon(IconName::ArrowLeft)
-                            .tooltip("返回实例详情")
-                            .accessibility_label("返回实例详情")
+                            .tooltip(tr("app.content_browser.back_instance"))
+                            .accessibility_label(tr("app.content_browser.back_instance"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.back_to_instance_detail(window, cx)
                             })),
@@ -137,7 +150,7 @@ impl LauncherApp {
                             Button::new("content-browser-back-results")
                                 .ghost()
                                 .icon(IconName::ChevronLeft)
-                                .label("返回搜索结果")
+                                .label(tr("app.content_browser.back_results"))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.back_to_content_search(window, cx)
                                 })),
@@ -148,14 +161,14 @@ impl LauncherApp {
                             .ghost()
                             .icon(IconName::RefreshCw)
                             .tooltip(if refresh_versions {
-                                "刷新版本列表"
+                                tr("app.content_browser.refresh_versions")
                             } else {
-                                "重新搜索"
+                                tr("app.content_browser.search_again")
                             })
                             .accessibility_label(if refresh_versions {
-                                "刷新版本列表"
+                                tr("app.content_browser.refresh_versions")
                             } else {
-                                "重新搜索"
+                                tr("app.content_browser.search_again")
                             })
                             .disabled(
                                 self.content_browser.search_loading
@@ -205,8 +218,8 @@ impl LauncherApp {
                         kind == ContentKind::Mod && version.loader.is_none(),
                         |this| {
                             this.child(warning_banner(
-                                "当前实例没有 Mod 加载器",
-                                "Mod 会下载到实例的 mods 目录，但在安装 Forge、Fabric、Quilt 或 NeoForge 前不会在游戏中生效。",
+                                tr("app.content_browser.no_mod_loader"),
+                                tr("app.content_browser.no_mod_loader_description"),
                                 cx,
                             ))
                         },
@@ -216,8 +229,8 @@ impl LauncherApp {
                             && self.content_browser.shader_loader.is_none(),
                         |this| {
                             this.child(warning_banner(
-                                "当前实例没有光影加载器",
-                                "下载后需要 Iris、Oculus 或 OptiFine 才能生效。",
+                                tr("app.content_browser.no_shader_loader"),
+                                tr("app.content_browser.no_shader_loader_description"),
                                 cx,
                             ))
                         },
@@ -246,9 +259,14 @@ impl LauncherApp {
         let error = self.content_browser.search_error.clone();
         let visible = projects.len() as u64;
         let count = if loading && projects.is_empty() {
-            "正在搜索…".to_owned()
+            tr("app.content_browser.searching")
         } else {
-            format!("共 {total} 个结果 · 已加载 {visible}")
+            rust_i18n::t!(
+                "app.content_browser.result_count",
+                total = total,
+                visible = visible
+            )
+            .to_string()
         };
         v_flex()
             .gap_4()
@@ -273,7 +291,7 @@ impl LauncherApp {
                                     Button::new("content-browser-search")
                                         .primary()
                                         .icon(IconName::Search)
-                                        .label("搜索")
+                                        .label(tr("app.common.search"))
                                         .disabled(loading)
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.load_remote_search(true, window, cx)
@@ -298,29 +316,31 @@ impl LauncherApp {
                                         RemoteSort::ALL.get(*index).copied().unwrap_or_default();
                                     this.load_remote_search(true, window, cx);
                                 }))
-                                .children(
-                                    RemoteSort::ALL
-                                        .into_iter()
-                                        .map(|sort| Tab::new().label(sort.label())),
-                                ),
+                                .children(RemoteSort::ALL.into_iter().map(|sort| {
+                                    Tab::new().label(super::super::remote_sort_label(sort))
+                                })),
                         ),
                 ),
             )
             .when_some(error, |this, error: String| {
-                this.child(error_banner("Modrinth 搜索失败", &error, cx))
+                this.child(error_banner(
+                    tr("app.content_browser.search_failed"),
+                    error,
+                    cx,
+                ))
             })
             .child(if loading && projects.is_empty() {
-                loading_card("正在搜索 Modrinth…", cx).into_any_element()
+                loading_card(&tr("app.content_browser.searching_modrinth"), cx).into_any_element()
             } else if projects.is_empty() {
                 card(cx)
                     .child(empty_state(
                         IconName::Globe,
-                        "没有找到项目",
-                        "尝试更换关键词，或确认当前实例的游戏版本和加载器过滤条件。",
+                        tr("app.content_browser.no_projects"),
+                        tr("app.content_browser.no_projects_description"),
                         Button::new("content-browser-empty-search")
                             .primary()
                             .icon(IconName::RefreshCw)
-                            .label("重新搜索")
+                            .label(tr("app.content_browser.search_again"))
                             .disabled(loading)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.load_remote_search(true, window, cx)
@@ -340,12 +360,21 @@ impl LauncherApp {
                     })
                     .collect::<Vec<_>>();
                 let result_subtitle = if loading {
-                    format!("{} 个项目 · 正在搜索…", projects.len())
+                    rust_i18n::t!(
+                        "app.content_browser.project_count_loading",
+                        count = projects.len()
+                    )
+                    .to_string()
                 } else {
-                    format!("{} 个项目", projects.len())
+                    rust_i18n::t!("app.content_browser.project_count", count = projects.len())
+                        .to_string()
                 };
                 card(cx)
-                    .child(section_title("搜索结果", &result_subtitle, cx))
+                    .child(section_title(
+                        tr("app.content_browser.results"),
+                        result_subtitle,
+                        cx,
+                    ))
                     .children(rows)
                     .when(visible < total, |this| {
                         this.child(load_more_button(loading, cx))
@@ -368,14 +397,26 @@ impl LauncherApp {
             .kind
             .unwrap_or(ContentKind::ResourcePack);
         let subtitle = if loading {
-            format!("已加载 {} 个项目 · 正在搜索…", projects.len())
+            rust_i18n::t!(
+                "app.content_browser.loaded_projects_loading",
+                count = projects.len()
+            )
+            .to_string()
         } else {
-            format!("已加载 {} 个项目", projects.len())
+            rust_i18n::t!(
+                "app.content_browser.loaded_projects",
+                count = projects.len()
+            )
+            .to_string()
         };
         v_flex()
             .w_full()
             .gap_4()
-            .child(section_title("搜索结果", &subtitle, cx))
+            .child(section_title(
+                tr("app.content_browser.results"),
+                subtitle,
+                cx,
+            ))
             .child(
                 div()
                     .w_full()
@@ -433,7 +474,13 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("作者：{}", project.author)),
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.content_browser.by_author",
+                                        author = project.author
+                                    )
+                                    .to_string(),
+                                ),
                         )
                     })
                     .child(
@@ -456,14 +503,20 @@ impl LauncherApp {
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(Icon::new(IconName::Download).with_size(Size::XSmall))
-                            .child(format!("{} 次下载", format_count(project.downloads))),
+                            .child(
+                                rust_i18n::t!(
+                                    "app.content_browser.downloads",
+                                    count = format_count(project.downloads)
+                                )
+                                .to_string(),
+                            ),
                     )
                     .child(
                         Button::new(format!("content-browser-project-{}", project.id))
                             .outline()
                             .small()
                             .icon(IconName::List)
-                            .label("查看版本")
+                            .label(tr("app.content_browser.view_versions"))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.open_remote_project(project_for_click.clone(), window, cx)
                             })),
@@ -518,7 +571,13 @@ impl LauncherApp {
                                 this.child(
                                     Tag::new()
                                         .outline()
-                                        .child(format!("by {}", project.author))
+                                        .child(
+                                            rust_i18n::t!(
+                                                "app.content_browser.by_author_short",
+                                                author = project.author
+                                            )
+                                            .to_string(),
+                                        )
                                         .small(),
                                 )
                             }),
@@ -537,7 +596,13 @@ impl LauncherApp {
                             .child(
                                 Tag::new()
                                     .outline()
-                                    .child(format!("{} 次下载", format_count(project.downloads)))
+                                    .child(
+                                        rust_i18n::t!(
+                                            "app.content_browser.downloads",
+                                            count = format_count(project.downloads)
+                                        )
+                                        .to_string(),
+                                    )
                                     .small(),
                             )
                             .children(
@@ -557,7 +622,7 @@ impl LauncherApp {
                     .outline()
                     .small()
                     .icon(IconName::List)
-                    .label("查看版本")
+                    .label(tr("app.content_browser.view_versions"))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_remote_project(project_for_click.clone(), window, cx)
                     })),
@@ -591,7 +656,7 @@ impl LauncherApp {
                     file.filename,
                     file.size
                         .map(format_size)
-                        .unwrap_or_else(|| "大小未知".to_owned())
+                        .unwrap_or_else(|| tr("app.content_browser.size_unknown"))
                 )
             });
         let install_version = recommended.cloned();
@@ -625,7 +690,13 @@ impl LauncherApp {
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child(format!("作者：{}", project.author)),
+                                        .child(
+                                            rust_i18n::t!(
+                                                "app.content_browser.by_author",
+                                                author = project.author
+                                            )
+                                            .to_string(),
+                                        ),
                                 )
                             }),
                     )
@@ -643,9 +714,21 @@ impl LauncherApp {
                             .flex_wrap()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!("{} 次下载", format_count(project.downloads)))
+                            .child(
+                                rust_i18n::t!(
+                                    "app.content_browser.downloads",
+                                    count = format_count(project.downloads)
+                                )
+                                .to_string(),
+                            )
                             .when_some(project.updated.as_deref(), |this, updated| {
-                                this.child(format!("更新于 {}", short_date(Some(updated))))
+                                this.child(
+                                    rust_i18n::t!(
+                                        "app.content_browser.updated_at",
+                                        date = short_date(Some(updated))
+                                    )
+                                    .to_string(),
+                                )
                             }),
                     )
                     .child(
@@ -659,7 +742,7 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("适配当前实例的推荐版本"),
+                                    .child(tr("app.content_browser.recommended_for_instance")),
                             )
                             .when_some(recommended_name, |this, name| {
                                 this.child(div().text_sm().font_semibold().child(name))
@@ -678,7 +761,7 @@ impl LauncherApp {
                                     Button::new("content-browser-install-recommended")
                                         .primary()
                                         .icon(IconName::Download)
-                                        .label("安装推荐版本")
+                                        .label(tr("app.content_browser.install_recommended"))
                                         .disabled(!can_install)
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             if let Some(version) = install_version.clone() {
@@ -693,9 +776,9 @@ impl LauncherApp {
                                         .text_sm()
                                         .text_color(cx.theme().muted_foreground)
                                         .child(if self.content_browser.versions_loading {
-                                            "正在查找兼容版本…"
+                                            tr("app.content_browser.finding_compatible")
                                         } else {
-                                            "当前实例没有可安装版本"
+                                            tr("app.content_browser.no_installable")
                                         }),
                                 )
                             }),
@@ -707,7 +790,7 @@ impl LauncherApp {
                                 h_flex()
                                     .gap_1()
                                     .text_sm()
-                                    .child("在 Modrinth 查看项目")
+                                    .child(tr("app.content_browser.view_on_modrinth"))
                                     .child(Icon::new(IconName::ExternalLink).small()),
                             ),
                     ),
@@ -743,7 +826,10 @@ impl LauncherApp {
         };
         Carousel::new(format!("content-project-gallery-{}", project.id), &state)
             .w_full()
-            .accessibility_label(format!("{} 的项目截图", project.title))
+            .accessibility_label(
+                rust_i18n::t!("app.content_browser.gallery_label", project = project.title)
+                    .to_string(),
+            )
             .child(
                 CarouselContent::new(&state)
                     .w_full()
@@ -765,23 +851,26 @@ impl LauncherApp {
                 this.child(
                     CarouselPrevious::new(&state)
                         .with_size(Size::Small)
-                        .accessibility_label("上一张截图"),
+                        .accessibility_label(tr("app.content_browser.previous_slide")),
                 )
                 .child(
                     CarouselNext::new(&state)
                         .with_size(Size::Small)
-                        .accessibility_label("下一张截图"),
+                        .accessibility_label(tr("app.content_browser.next_slide")),
                 )
                 .child(
                     CarouselPagination::new()
-                        .accessibility_label("选择项目截图")
+                        .accessibility_label(tr("app.content_browser.choose_slide"))
                         .children(urls.iter().enumerate().map(|(index, url)| {
                             CarouselPaginationItem::new(
                                 format!("content-project-gallery-page-{url}"),
                                 index,
                                 &state,
                             )
-                            .accessibility_label(format!("查看第 {} 张截图", index + 1))
+                            .accessibility_label(
+                                rust_i18n::t!("app.content_browser.view_slide", index = index + 1)
+                                    .to_string(),
+                            )
                             .w_16()
                             .h_10()
                             .p_0()
@@ -838,17 +927,26 @@ impl LauncherApp {
                                         this.child(
                                             Tag::new()
                                                 .outline()
-                                                .child(format!("by {}", project.author))
+                                                .child(
+                                                    rust_i18n::t!(
+                                                        "app.content_browser.by_author_short",
+                                                        author = project.author
+                                                    )
+                                                    .to_string(),
+                                                )
                                                 .small(),
                                         )
                                     })
                                     .child(
                                         Tag::new()
                                             .outline()
-                                            .child(format!(
-                                                "{} 次下载",
-                                                format_count(project.downloads)
-                                            ))
+                                            .child(
+                                                rust_i18n::t!(
+                                                    "app.content_browser.downloads",
+                                                    count = format_count(project.downloads)
+                                                )
+                                                .to_string(),
+                                            )
                                             .small(),
                                     ),
                             )
@@ -874,10 +972,13 @@ impl LauncherApp {
                                         this.child(
                                             Tag::new()
                                                 .outline()
-                                                .child(format!(
-                                                    "更新于 {}",
-                                                    short_date(Some(updated))
-                                                ))
+                                                .child(
+                                                    rust_i18n::t!(
+                                                        "app.content_browser.updated_at",
+                                                        date = short_date(Some(updated))
+                                                    )
+                                                    .to_string(),
+                                                )
                                                 .small(),
                                         )
                                     }),
@@ -886,20 +987,24 @@ impl LauncherApp {
                     .into_any_element()
             })
             .when_some(error, |this, error: String| {
-                this.child(error_banner("Modrinth 版本加载失败", &error, cx))
+                this.child(error_banner(
+                    tr("app.content_browser.versions_load_failed"),
+                    error,
+                    cx,
+                ))
             })
             .child(if loading && versions.is_empty() {
-                loading_card("正在加载版本列表…", cx).into_any_element()
+                loading_card(&tr("app.content_browser.loading_versions"), cx).into_any_element()
             } else if versions.is_empty() {
                 card(cx)
                     .child(empty_state(
                         IconName::Package,
-                        "没有匹配版本",
-                        "该项目的版本可能不支持当前实例的 Minecraft 版本或加载器。",
+                        tr("app.content_browser.no_matching_versions"),
+                        tr("app.content_browser.no_matching_versions_description"),
                         Button::new("content-browser-versions-back")
                             .primary()
                             .icon(IconName::ChevronLeft)
-                            .label("返回搜索结果")
+                            .label(tr("app.content_browser.back_results"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.back_to_content_search(window, cx)
                             })),
@@ -916,8 +1021,9 @@ impl LauncherApp {
                     .collect::<Vec<_>>();
                 card(cx)
                     .child(section_title(
-                        "可用版本",
-                        &format!("{} 个版本", versions.len()),
+                        tr("app.content_browser.available_versions"),
+                        rust_i18n::t!("app.content_browser.version_count", count = versions.len())
+                            .to_string(),
                         cx,
                     ))
                     .children(rows)
@@ -944,10 +1050,10 @@ impl LauncherApp {
                     file.filename,
                     file.size
                         .map(format_size)
-                        .unwrap_or_else(|| "大小未知".to_owned())
+                        .unwrap_or_else(|| tr("app.content_browser.size_unknown"))
                 )
             })
-            .unwrap_or_else(|| "没有可用文件".to_owned());
+            .unwrap_or_else(|| tr("app.content_browser.no_files"));
         let dependencies = version.required_dependencies().count();
         let version_for_click = version.clone();
         h_flex()
@@ -976,7 +1082,11 @@ impl LauncherApp {
                             ))
                             .child(version_type_tag(&version.version_type))
                             .when(recommended, |this| {
-                                this.child(Tag::success().child("推荐").small())
+                                this.child(
+                                    Tag::success()
+                                        .child(tr("app.content_browser.recommended"))
+                                        .small(),
+                                )
                             }),
                     )
                     .child(
@@ -988,7 +1098,7 @@ impl LauncherApp {
                                 version.version_number,
                                 short_date(version.published.as_deref()),
                                 if version.game_versions.is_empty() {
-                                    "游戏版本未知".to_owned()
+                                    tr("app.content_browser.game_version_unknown")
                                 } else {
                                     version.game_versions.join(", ")
                                 }
@@ -1007,7 +1117,13 @@ impl LauncherApp {
                     .when(dependencies > 0, |this| {
                         this.child(
                             Tag::warning()
-                                .child(format!("需要 {dependencies} 个前置"))
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.content_browser.requires_dependencies",
+                                        count = dependencies
+                                    )
+                                    .to_string(),
+                                )
                                 .small(),
                         )
                     }),
@@ -1017,7 +1133,7 @@ impl LauncherApp {
                     .primary()
                     .small()
                     .icon(IconName::Download)
-                    .label("安装")
+                    .label(tr("app.common.install"))
                     .disabled(!can_install)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.install_remote_version(version_for_click.clone(), window, cx)
@@ -1031,9 +1147,9 @@ fn load_more_button(loading: bool, cx: &mut Context<LauncherApp>) -> Button {
         .outline()
         .w_full()
         .label(if loading {
-            "正在加载…"
+            tr("app.content_browser.loading_more")
         } else {
-            "加载更多"
+            tr("app.content_browser.load_more")
         })
         .disabled(loading)
         .on_click(cx.listener(|this, _, window, cx| this.load_remote_search(false, window, cx)))
@@ -1132,12 +1248,12 @@ fn is_loader(value: &str) -> bool {
 
 fn version_type_tag(version_type: &str) -> Tag {
     let label = match version_type {
-        "release" => "正式版",
-        "beta" => "Beta",
-        "alpha" => "Alpha",
-        other => other,
+        "release" => tr("app.version_filter.release"),
+        "beta" => "Beta".to_owned(),
+        "alpha" => "Alpha".to_owned(),
+        other => other.to_owned(),
     };
-    Tag::new().outline().child(label.to_owned()).small()
+    Tag::new().outline().child(label).small()
 }
 
 fn format_count(value: u64) -> String {

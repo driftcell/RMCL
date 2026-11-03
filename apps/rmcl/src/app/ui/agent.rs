@@ -30,6 +30,7 @@ use super::super::{
     },
 };
 use super::common::{card, error_banner, page_header, section_title};
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_agent(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -53,21 +54,25 @@ impl LauncherApp {
         let scroll_generation_cell = self.agent.conversation.scroll_generation.clone();
         let scroll_tail = self.agent.conversation.scroll_tail.clone();
         let scroll_scroller = self.agent.conversation.scroller.clone();
-        let send_label = if running { "停止" } else { "发送" };
+        let send_label = if running {
+            tr("app.common.stop")
+        } else {
+            tr("app.agent.send")
+        };
         let send_icon = if running {
             IconName::Square
         } else {
             IconName::Send
         };
         let compose_hint = if running {
-            "Agent 正在处理，完成后再发送 · Shift+Enter 换行"
+            tr("app.agent.compose_busy")
         } else {
-            "Enter 发送 · Shift+Enter 换行"
+            tr("app.agent.compose_idle")
         };
         let examples = Rc::new(vec![
-            "帮我安装一个 26.3 的 Fabric 实例",
-            "给当前实例安装 Sodium",
-            "列出已安装的实例和 Java 状态",
+            tr("app.agent.example_install"),
+            tr("app.agent.example_sodium"),
+            tr("app.agent.example_list"),
         ]);
         let input = self.agent.conversation.input.clone();
         let example_input = self.agent.conversation.input.clone();
@@ -84,14 +89,18 @@ impl LauncherApp {
                         .ghost()
                         .small()
                         .icon(IconName::Trash)
-                        .label("清空")
+                        .label(tr("app.agent.clear"))
                         .disabled(self.agent.run.is_running())
                         .on_click(cx.listener(|this, _, _, cx| this.clear_agent_conversation(cx))),
                 ),
                 cx,
             ))
             .when_some(self.agent.settings.error.clone(), |this, error| {
-                this.child(error_banner("AI 设置不可用", &error, cx))
+                this.child(error_banner(
+                    tr("app.agent.settings_unavailable"),
+                    error,
+                    cx,
+                ))
             })
             .child(
                 v_flex()
@@ -141,9 +150,7 @@ impl LauncherApp {
                             .min_h_0()
                             .w_full()
                             .overflow_hidden()
-                            .when(
-                            self.agent.conversation.messages.is_empty(),
-                            |this| {
+                            .when(self.agent.conversation.messages.is_empty(), |this| {
                                 this.child(
                                     v_flex()
                                         .size_full()
@@ -168,7 +175,7 @@ impl LauncherApp {
                                             div()
                                                 .text_lg()
                                                 .font_semibold()
-                                                .child("用自然语言管理 RMCL"),
+                                                .child(tr("app.agent.empty_title")),
                                         )
                                         .child(
                                             div()
@@ -176,52 +183,47 @@ impl LauncherApp {
                                                 .text_center()
                                                 .text_sm()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child(
-                                                    "Agent 可以查询版本、创建实例、搜索并安装内容，也可以启动游戏。破坏性操作会先询问你。",
-                                                ),
+                                                .child(tr("app.agent.empty_description")),
                                         )
                                         .when(keyless, |this| {
                                             this.child(
                                                 div()
                                                     .text_xs()
                                                     .text_color(cx.theme().muted_foreground)
-                                                    .child("Kilo 免费模型无需 API Key，可能记录对话；请勿发送敏感信息"),
+                                                    .child(tr("app.agent.free_tier_notice")),
                                             )
                                         })
-                                        .child(
-                                            h_flex()
-                                                .gap_2()
-                                                .flex_wrap()
-                                                .children(examples.iter().map(|example| {
-                                                    let example = (*example).to_owned();
-                                                    let example_input = example_input.clone();
-                                                    Button::new(format!("agent-example-{example}"))
-                                                        .outline()
-                                                        .small()
-                                                        .label(example.clone())
-                                                        .on_click(cx.listener({
-                                                            let example = example.clone();
-                                                            move |this, _, window, cx| {
-                                                                example_input.update(
-                                                                    cx,
-                                                                    |state, cx| {
-                                                                        state.set_value(
-                                                                            example.clone(),
-                                                                            window,
-                                                                            cx,
-                                                                        )
-                                                                    },
-                                                                );
-                                                                this.send_agent_message(window, cx);
-                                                            }
-                                                        }))
-                                                })),
-                                        )
+                                        .child(h_flex().gap_2().flex_wrap().children(
+                                            examples.iter().map(|example| {
+                                                let example = (*example).to_owned();
+                                                let example_input = example_input.clone();
+                                                Button::new(format!("agent-example-{example}"))
+                                                    .outline()
+                                                    .small()
+                                                    .label(example.clone())
+                                                    .on_click(cx.listener({
+                                                        let example = example.clone();
+                                                        move |this, _, window, cx| {
+                                                            example_input.update(
+                                                                cx,
+                                                                |state, cx| {
+                                                                    state.set_value(
+                                                                        example.clone(),
+                                                                        window,
+                                                                        cx,
+                                                                    )
+                                                                },
+                                                            );
+                                                            this.send_agent_message(window, cx);
+                                                        }
+                                                    }))
+                                            }),
+                                        ))
                                         .when(key_missing, |this| {
                                             this.child(
                                                 Button::new("agent-go-settings")
                                                     .primary()
-                                                    .label("去设置 API Key")
+                                                    .label(tr("app.agent.go_settings"))
                                                     .on_click(cx.listener(
                                                         |this, _, window, cx| {
                                                             this.navigate(
@@ -234,55 +236,59 @@ impl LauncherApp {
                                             )
                                         }),
                                 )
-                            },
-                        )
-                        .when(!self.agent.conversation.messages.is_empty(), |this| {
-                            let tail_bounds = scroll_tail.clone();
-                            this.child(
-                                MessageScroller::new(
-                                    "agent-messages",
-                                    self.agent.conversation.scroller.clone(),
-                                    move |index, _, cx| {
-                                        let Some(message) = messages.get(index) else {
-                                            // The transcript keeps one extra
-                                            // row after the last message. It
-                                            // is measured by the virtual list,
-                                            // so the wheel can always reach the
-                                            // bottom of the final text.
-                                            let tail_bounds = tail_bounds.clone();
-                                            return div()
-                                                .debug_selector(|| "agent-scroll-tail".to_owned())
-                                                .h_8()
-                                                .w_full()
-                                                .on_children_prepainted(move |bounds, _, _| {
-                                                    if let Some(bounds) = bounds.first() {
-                                                        tail_bounds.set(Some((
-                                                            scroll_generation,
-                                                            bounds.bottom(),
-                                                        )));
-                                                    }
-                                                })
-                                                .child(div().size_full())
-                                                .into_any_element();
-                                        };
-                                        let row = render_agent_message(index, message, &view, cx);
-                                        if index + 1 == messages.len() {
-                                            div()
-                                                .debug_selector(|| "agent-last-message".to_owned())
-                                                .w_full()
-                                                .child(row)
-                                                .into_any_element()
-                                        } else {
-                                            row
-                                        }
-                                    },
+                            })
+                            .when(!self.agent.conversation.messages.is_empty(), |this| {
+                                let tail_bounds = scroll_tail.clone();
+                                this.child(
+                                    MessageScroller::new(
+                                        "agent-messages",
+                                        self.agent.conversation.scroller.clone(),
+                                        move |index, _, cx| {
+                                            let Some(message) = messages.get(index) else {
+                                                // The transcript keeps one extra
+                                                // row after the last message. It
+                                                // is measured by the virtual list,
+                                                // so the wheel can always reach the
+                                                // bottom of the final text.
+                                                let tail_bounds = tail_bounds.clone();
+                                                return div()
+                                                    .debug_selector(|| {
+                                                        "agent-scroll-tail".to_owned()
+                                                    })
+                                                    .h_8()
+                                                    .w_full()
+                                                    .on_children_prepainted(move |bounds, _, _| {
+                                                        if let Some(bounds) = bounds.first() {
+                                                            tail_bounds.set(Some((
+                                                                scroll_generation,
+                                                                bounds.bottom(),
+                                                            )));
+                                                        }
+                                                    })
+                                                    .child(div().size_full())
+                                                    .into_any_element();
+                                            };
+                                            let row =
+                                                render_agent_message(index, message, &view, cx);
+                                            if index + 1 == messages.len() {
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "agent-last-message".to_owned()
+                                                    })
+                                                    .w_full()
+                                                    .child(row)
+                                                    .into_any_element()
+                                            } else {
+                                                row
+                                            }
+                                        },
+                                    )
+                                    .with_jump_button_label(tr("app.agent.jump_to_bottom"))
+                                    .w_full()
+                                    .h_full()
+                                    .min_h_0(),
                                 )
-                                .with_jump_button_label("回到底部")
-                                .w_full()
-                                .h_full()
-                                .min_h_0(),
-                            )
-                        }),
+                            }),
                     )
                     .child(activity)
                     .child(confirmation),
@@ -301,7 +307,7 @@ impl LauncherApp {
                                     Textarea::new(&input)
                                         .w_full()
                                         .min_h_10()
-                                        .aria_label("给 AI 助手发送消息"),
+                                        .aria_label(tr("app.agent.input_label")),
                                 ),
                             )
                             .child(
@@ -321,16 +327,12 @@ impl LauncherApp {
                             ),
                     )
                     .child(
-                        h_flex()
-                            .w_full()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(compose_hint),
-                            ),
+                        h_flex().w_full().items_center().gap_2().child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(compose_hint),
+                        ),
                     ),
             )
             .into_any_element()
@@ -338,15 +340,20 @@ impl LauncherApp {
 
     fn render_agent_activity(&self, cx: &App) -> AnyElement {
         const NO_STEPS: &[AgentStep] = &[];
-        let (message, detail, steps): (&str, Option<&str>, &[AgentStep]) = match &self.agent.run {
+        let (message, detail, steps): (String, Option<String>, &[AgentStep]) = match &self.agent.run
+        {
             AgentRunState::Idle => return div().into_any_element(),
-            AgentRunState::Starting { .. } => ("正在连接模型", None, NO_STEPS),
-            AgentRunState::Thinking { .. } => ("正在思考", None, NO_STEPS),
+            AgentRunState::Starting { .. } => (tr("app.agent.connecting"), None, NO_STEPS),
+            AgentRunState::Thinking { .. } => (tr("app.agent.thinking"), None, NO_STEPS),
             AgentRunState::Working { activity, .. } => {
                 let (message, detail) = activity_message(activity);
                 (message, detail, activity.steps())
             }
-            AgentRunState::Confirming { activity, .. } => ("等待你的确认", None, activity.steps()),
+            AgentRunState::Confirming { activity, .. } => (
+                tr("app.agent.awaiting_confirmation"),
+                None,
+                activity.steps(),
+            ),
         };
         let dark = cx.theme().mode.is_dark();
         let mut content = v_flex()
@@ -369,13 +376,13 @@ impl LauncherApp {
                             .min_w_0()
                             .gap_0p5()
                             .child(
-                                ShimmerText::new(message.to_owned())
+                                ShimmerText::new(message)
                                     .id("agent-activity-status")
                                     .text_sm()
                                     .font_medium()
                                     .text_color(cx.theme().foreground),
                             )
-                            .when_some(detail.map(str::to_owned), |this, detail| {
+                            .when_some(detail, |this, detail| {
                                 this.child(
                                     div()
                                         .text_xs()
@@ -419,7 +426,7 @@ impl LauncherApp {
                     .child(
                         Button::new("agent-confirm-cancel")
                             .outline()
-                            .label("取消")
+                            .label(tr("app.common.cancel"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.agent.resolve_confirmation(
                                     rmcl_agent::events::ConfirmationDecision::Reject,
@@ -501,10 +508,18 @@ fn render_agent_reply(
             .small()
             .w_full()
             .icon(icon)
-            .label(format!(
-                "{summary} · {}",
-                if open { "收起" } else { "展开" }
-            ))
+            .label(
+                rust_i18n::t!(
+                    "app.agent.history_summary",
+                    summary = summary,
+                    action = if open {
+                        tr("app.agent.collapse")
+                    } else {
+                        tr("app.agent.expand")
+                    }
+                )
+                .to_string(),
+            )
             .on_click(move |_, _, cx| {
                 let _ = view.update(cx, |this, cx| {
                     let mut toggled = false;
@@ -557,26 +572,35 @@ fn reply_summary(reply: &AgentReply) -> String {
     let duration = reply.elapsed.map(|elapsed| {
         let seconds = elapsed.as_secs();
         if seconds >= 60 {
-            format!("{} 分 {} 秒", seconds / 60, seconds % 60)
+            rust_i18n::t!(
+                "app.agent.duration_minutes",
+                minutes = seconds / 60,
+                seconds = seconds % 60
+            )
+            .to_string()
         } else {
-            format!("{seconds} 秒")
+            rust_i18n::t!("app.agent.duration_seconds", seconds = seconds).to_string()
         }
     });
     match (reply.steps.len(), duration) {
-        (count, Some(duration)) => format!("已完成 {count} 个步骤 · {duration}"),
-        (count, None) => format!("已完成 {count} 个步骤"),
+        (count, Some(duration)) => rust_i18n::t!(
+            "app.agent.completed_steps_with_duration",
+            count = count,
+            duration = duration
+        )
+        .to_string(),
+        (count, None) => rust_i18n::t!("app.agent.completed_steps", count = count).to_string(),
     }
 }
 
-fn activity_message(activity: &AgentActivity) -> (&str, Option<&str>) {
+fn activity_message(activity: &AgentActivity) -> (String, Option<String>) {
     match activity {
-        AgentActivity::Typing => ("正在思考", None),
-        AgentActivity::Status(status) => (status.message.as_str(), status.detail.as_deref()),
-        AgentActivity::Tools { status, .. } => {
-            status.as_ref().map_or(("正在处理", None), |status| {
-                (status.message.as_str(), status.detail.as_deref())
-            })
-        }
+        AgentActivity::Typing => (tr("app.agent.thinking"), None),
+        AgentActivity::Status(status) => (status.message.clone(), status.detail.clone()),
+        AgentActivity::Tools { status, .. } => status.as_ref().map_or_else(
+            || (tr("app.agent.working"), None),
+            |status| (status.message.clone(), status.detail.clone()),
+        ),
     }
 }
 

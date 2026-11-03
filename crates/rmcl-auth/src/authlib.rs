@@ -187,7 +187,7 @@ impl AuthlibServer {
         self.metadata
             .server_name()
             .or_else(|| self.api_root.host_str())
-            .unwrap_or("外部认证服务器")
+            .unwrap_or("External Authentication Server")
     }
 }
 

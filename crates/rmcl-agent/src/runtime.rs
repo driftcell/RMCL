@@ -44,9 +44,9 @@ impl Default for AgentTurnContext {
     fn default() -> Self {
         Self {
             selected_instance_name: None,
-            account_type: "未登录".to_owned(),
+            account_type: rust_i18n::t!("app.agent.account_none").to_string(),
             rmcl_version: env!("CARGO_PKG_VERSION").to_owned(),
-            locale: "简体中文".to_owned(),
+            locale: rust_i18n::t!("app.agent.locale_name").to_string(),
         }
     }
 }
@@ -246,10 +246,10 @@ fn friendly_error(provider: AgentProvider, error: &str) -> String {
     let lower = error.to_ascii_lowercase();
     if lower.contains("429") || lower.contains("rate limit") || lower.contains("too many requests")
     {
-        return "Kilo 免费通道当前请求过多，请稍后再试，或在设置中配置自己的 API Key。".to_owned();
+        return rust_i18n::t!("app.agent.kilo_rate_limited").to_string();
     }
     if lower.contains("401") || lower.contains("invalid_token") {
-        return "Kilo 免费通道暂时不可用，请稍后重试，或在设置中改用其他服务商。".to_owned();
+        return rust_i18n::t!("app.agent.kilo_unavailable").to_string();
     }
     error.to_owned()
 }
@@ -285,7 +285,7 @@ impl AgentHook for PermissionHook {
             return DispatchAction::proceed();
         };
         if self.cancellation.is_cancelled() {
-            return DispatchAction::stop("用户停止了任务");
+            return DispatchAction::stop(rust_i18n::t!("app.agent.user_stopped").to_string());
         }
         if name == "agent_report_status" {
             return DispatchAction::proceed();
@@ -314,9 +314,9 @@ impl AgentHook for PermissionHook {
         if requires_confirmation {
             let request = ConfirmationRequest {
                 tool: name.to_owned(),
-                title: format!("允许执行「{label}」？"),
+                title: rust_i18n::t!("app.agent.confirm_title", label = label).to_string(),
                 body: summary,
-                confirm_label: confirm_label(name).to_owned(),
+                confirm_label: confirm_label(name),
             };
             match self.confirmations.ask(&self.events, request).await {
                 ConfirmationDecision::Approve => {}
@@ -329,9 +329,15 @@ impl AgentHook for PermissionHook {
                         error: None,
                         task_id: None,
                     });
-                    return DispatchAction::skip("用户拒绝了此操作");
+                    return DispatchAction::skip(
+                        rust_i18n::t!("app.agent.user_rejected").to_string(),
+                    );
                 }
-                ConfirmationDecision::Stop => return DispatchAction::stop("用户停止了任务"),
+                ConfirmationDecision::Stop => {
+                    return DispatchAction::stop(
+                        rust_i18n::t!("app.agent.user_stopped").to_string(),
+                    );
+                }
             }
         }
         DispatchAction::proceed()
@@ -376,15 +382,24 @@ impl AgentHook for PermissionHook {
 }
 
 fn system_prompt(context: &AgentTurnContext) -> String {
-    const TEMPLATE: &str = include_str!("../prompts/system.md");
-    TEMPLATE
+    const TEMPLATE_ZH: &str = include_str!("../prompts/system.md");
+    const TEMPLATE_EN: &str = include_str!("../prompts/system.en.md");
+    let template = if rust_i18n::locale().starts_with("zh") {
+        TEMPLATE_ZH
+    } else {
+        TEMPLATE_EN
+    };
+    template
         .replace("{date}", &current_date())
         .replace("{os}", std::env::consts::OS)
         .replace("{arch}", std::env::consts::ARCH)
         .replace("{rmcl_version}", &context.rmcl_version)
         .replace(
             "{selected_instance_name}",
-            context.selected_instance_name.as_deref().unwrap_or("无"),
+            context
+                .selected_instance_name
+                .as_deref()
+                .unwrap_or(rust_i18n::t!("app.agent.none").as_ref()),
         )
         .replace("{account_type}", &context.account_type)
         .replace("{locale}", &context.locale)
@@ -418,51 +433,53 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (year, m as u32, d as u32)
 }
 
-fn tool_label(name: &str) -> &'static str {
-    match name {
-        "instances_list" => "查看实例",
-        "instances_get" => "查看实例详情",
-        "instances_create" => "创建实例",
-        "instances_update" => "修改实例",
-        "instances_repair" => "修复实例",
-        "instances_launch" => "启动游戏",
-        "instances_delete" => "删除实例",
-        "versions_list" => "查询游戏版本",
-        "loaders_list" => "查询加载器版本",
-        "content_list" => "查看本地内容",
-        "content_search" => "搜索 Modrinth",
-        "content_versions" => "查看可用版本",
-        "content_install" => "安装内容",
-        "content_update" => "更新内容",
-        "content_set_enabled" => "启用或禁用内容",
-        "content_delete" => "删除内容",
-        "java_list" => "查看 Java",
-        "java_ensure" => "准备 Java",
-        "accounts_list" => "查看账户",
-        "servers_list" => "查看服务器",
-        "servers_ping" => "查询服务器状态",
-        "skins_list" => "查看皮肤库",
-        "skins_profile" => "查看正版皮肤",
-        "tasks_list" => "查看任务",
-        "tasks_get" => "查看任务状态",
-        "tasks_wait" => "等待任务完成",
-        "tasks_logs" => "读取任务日志",
-        "tasks_cancel" => "取消任务",
-        "agent_report_status" => "更新状态",
-        _ => "调用工具",
-    }
+fn tool_label(name: &str) -> String {
+    rust_i18n::t!(match name {
+        "instances_list" => "app.agent.tool_instances_list",
+        "instances_get" => "app.agent.tool_instances_get",
+        "instances_create" => "app.agent.tool_instances_create",
+        "instances_update" => "app.agent.tool_instances_update",
+        "instances_repair" => "app.agent.tool_instances_repair",
+        "instances_launch" => "app.agent.tool_instances_launch",
+        "instances_delete" => "app.agent.tool_instances_delete",
+        "versions_list" => "app.agent.tool_versions_list",
+        "loaders_list" => "app.agent.tool_loaders_list",
+        "content_list" => "app.agent.tool_content_list",
+        "content_search" => "app.agent.tool_content_search",
+        "content_versions" => "app.agent.tool_content_versions",
+        "content_install" => "app.agent.tool_content_install",
+        "content_update" => "app.agent.tool_content_update",
+        "content_set_enabled" => "app.agent.tool_content_set_enabled",
+        "content_delete" => "app.agent.tool_content_delete",
+        "java_list" => "app.agent.tool_java_list",
+        "java_ensure" => "app.agent.tool_java_ensure",
+        "accounts_list" => "app.agent.tool_accounts_list",
+        "servers_list" => "app.agent.tool_servers_list",
+        "servers_ping" => "app.agent.tool_servers_ping",
+        "skins_list" => "app.agent.tool_skins_list",
+        "skins_profile" => "app.agent.tool_skins_profile",
+        "tasks_list" => "app.agent.tool_tasks_list",
+        "tasks_get" => "app.agent.tool_tasks_get",
+        "tasks_wait" => "app.agent.tool_tasks_wait",
+        "tasks_logs" => "app.agent.tool_tasks_logs",
+        "tasks_cancel" => "app.agent.tool_tasks_cancel",
+        "agent_report_status" => "app.agent.tool_report_status",
+        _ => "app.agent.tool_call",
+    })
+    .to_string()
 }
 
-fn confirm_label(name: &str) -> &'static str {
-    match name {
+fn confirm_label(name: &str) -> String {
+    rust_i18n::t!(match name {
         "instances_delete" | "content_delete" | "accounts_delete" | "servers_delete"
-        | "skins_delete" => "删除",
-        "instances_launch" => "启动",
-        "content_install" => "安装",
-        "content_update" | "skins_apply" | "skins_reset" => "继续",
-        "tasks_cancel" => "取消任务",
-        _ => "继续",
-    }
+        | "skins_delete" => "app.agent.confirm_delete",
+        "instances_launch" => "app.agent.confirm_launch",
+        "content_install" => "app.agent.confirm_install",
+        "content_update" | "skins_apply" | "skins_reset" => "app.agent.confirm_continue",
+        "tasks_cancel" => "app.agent.confirm_cancel_task",
+        _ => "app.agent.confirm_continue",
+    })
+    .to_string()
 }
 
 /// Builds the short, user-facing description shown next to a tool step.
@@ -497,7 +514,13 @@ fn summarize_tool(name: &str, args: &str) -> String {
             let state = value
                 .get("enabled")
                 .and_then(serde_json::Value::as_bool)
-                .map(|enabled| if enabled { "启用" } else { "禁用" }.to_owned());
+                .map(|enabled| {
+                    if enabled {
+                        rust_i18n::t!("app.agent.enabled").to_string()
+                    } else {
+                        rust_i18n::t!("app.agent.disabled").to_string()
+                    }
+                });
             join_parts([state, owned("relative_path"), owned("instance_id")])
         }
         "versions_list" => text("query")
@@ -553,6 +576,7 @@ mod tests {
 
     #[test]
     fn system_prompt_contains_language_and_context() {
+        rust_i18n::set_locale("zh-CN");
         let prompt = system_prompt(&AgentTurnContext {
             selected_instance_name: Some("fabric-1.21".to_owned()),
             account_type: "正版".to_owned(),
@@ -563,10 +587,12 @@ mod tests {
         assert!(prompt.contains("fabric-1.21"));
         assert!(prompt.contains("正版"));
         assert!(prompt.contains("0.9.0"));
+        rust_i18n::set_locale("en");
     }
 
     #[test]
     fn tool_summaries_prefer_stable_names() {
+        rust_i18n::set_locale("zh-CN");
         assert_eq!(
             summarize_tool(
                 "instances_create",
@@ -637,6 +663,7 @@ mod tests {
             "Steve"
         );
         assert!(tool_label("tasks_wait").contains("等待"));
+        rust_i18n::set_locale("en");
     }
 
     #[test]
@@ -677,9 +704,11 @@ mod tests {
 
     #[test]
     fn free_tier_errors_are_actionable() {
+        rust_i18n::set_locale("zh-CN");
         let error = "CompletionError: HttpError: 429 Too Many Requests";
         assert!(friendly_error(AgentProvider::Kilo, error).contains("免费通道"));
         assert_eq!(friendly_error(AgentProvider::OpenAi, error), error);
+        rust_i18n::set_locale("en");
     }
 
     fn service(temporary: &tempfile::TempDir) -> Arc<AgentService> {

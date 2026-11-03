@@ -1,7 +1,10 @@
 mod app;
+mod i18n;
 mod services;
 mod state;
 mod theme;
+
+rust_i18n::i18n!("locales", fallback = "en");
 
 use std::sync::Arc;
 
@@ -49,6 +52,10 @@ fn main() {
     application()
         .with_assets(gpui_kit::assets::AllAssets)
         .run(move |cx| {
+            use gpui_kit::component as gpui_component;
+
+            rust_i18n::extend!(gpui_component);
+            i18n::apply(bootstrap.config.language);
             init(cx);
             #[cfg(target_os = "macos")]
             app::shortcuts::init(cx);

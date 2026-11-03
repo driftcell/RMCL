@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 use crate::StoreError;
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 9;
+pub const CONFIG_SCHEMA_VERSION: u32 = 10;
 
 /// Launcher-owned settings. This file never replaces or rewrites HMCL configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +32,9 @@ pub struct LauncherConfig {
     pub auto_check_updates: bool,
     pub download_source: DownloadSourcePreference,
     pub launcher_visibility: LauncherVisibility,
+    /// Interface language. `system` follows the operating system locale and
+    /// falls back to English when the system language is not supported.
+    pub language: LanguagePreference,
     pub agent_provider: String,
     pub agent_model: String,
     pub agent_base_url: Option<String>,
@@ -57,6 +60,7 @@ impl Default for LauncherConfig {
             auto_check_updates: true,
             download_source: DownloadSourcePreference::default(),
             launcher_visibility: LauncherVisibility::default(),
+            language: LanguagePreference::default(),
             agent_provider: "kilo".to_owned(),
             agent_model: String::new(),
             agent_base_url: None,
@@ -153,6 +157,18 @@ pub enum LauncherVisibility {
     HideWhileRunning,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguagePreference {
+    /// Follow the operating system UI language, falling back to English.
+    #[default]
+    System,
+    #[serde(rename = "zh_cn")]
+    Chinese,
+    #[serde(rename = "en")]
+    English,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceConfig {
@@ -244,9 +260,10 @@ impl ConfigStore {
         let mut config = config;
         // Schema 1 predates Microsoft account metadata, schema 3 adds server
         // bookmarks, schema 4 adds update checks, schema 5 adds the download
-        // source, schema 6 adds disabled-by-default loopback MCP settings, and
-        // schema 9 adds stable account IDs plus third-party Yggdrasil accounts.
-        // Every new field has a safe default.
+        // source, schema 6 adds disabled-by-default loopback MCP settings,
+        // schema 9 adds stable account IDs plus third-party Yggdrasil accounts,
+        // and schema 10 adds the interface language. Every new field has a safe
+        // default.
         if config.schema_version < CONFIG_SCHEMA_VERSION {
             config.schema_version = CONFIG_SCHEMA_VERSION;
         }
@@ -447,6 +464,7 @@ mod tests {
             auto_check_updates: false,
             download_source: DownloadSourcePreference::Mirror,
             launcher_visibility: LauncherVisibility::HideWhileRunning,
+            language: LanguagePreference::English,
             agent_provider: "anthropic".to_owned(),
             agent_model: "claude-sonnet-5-5".to_owned(),
             agent_base_url: Some("https://gateway.example/anthropic".to_owned()),
@@ -618,6 +636,42 @@ uuid = "5627dd98-e6be-3c21-b8a8-e92344183641"
             config.selected_account_id.as_deref(),
             Some("offline:5627dd98-e6be-3c21-b8a8-e92344183641")
         );
+    }
+
+    #[test]
+    fn language_preferences_use_short_stable_codes() {
+        for (language, code) in [
+            (LanguagePreference::Chinese, "zh_cn"),
+            (LanguagePreference::English, "en"),
+            (LanguagePreference::System, "system"),
+        ] {
+            let config = LauncherConfig {
+                language,
+                ..LauncherConfig::default()
+            };
+            let text = toml::to_string(&config).unwrap();
+            assert!(text.contains(&format!("language = \"{code}\"")));
+        }
+    }
+
+    #[test]
+    fn schema_nine_is_upgraded_with_system_language() {
+        let temporary = TempDir::new().unwrap();
+        let path = temporary.path().join("config.toml");
+        let store = ConfigStore::new(&path);
+        fs::write(
+            &path,
+            br#"schema_version = 9
+minecraft_root = "/tmp/minecraft"
+java_store = "/tmp/java"
+"#,
+        )
+        .unwrap();
+
+        let config = store.load().unwrap();
+
+        assert_eq!(config.schema_version, CONFIG_SCHEMA_VERSION);
+        assert_eq!(config.language, LanguagePreference::System);
     }
 
     #[test]

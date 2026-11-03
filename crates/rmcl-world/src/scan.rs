@@ -78,7 +78,7 @@ pub fn scan_worlds(saves_dir: impl AsRef<Path>) -> Result<WorldScan, WorldError>
         if file_type.is_symlink() {
             scan.warnings.push(WorldWarning {
                 path,
-                message: "已跳过符号链接世界".to_owned(),
+                message: rust_i18n::t!("app.worlds.skipped_symlink").to_string(),
             });
             continue;
         }
@@ -168,11 +168,15 @@ pub fn relative_time(timestamp_ms: Option<i64>) -> Option<String> {
         .as_millis() as i64;
     let seconds = (now - timestamp_ms).max(0) / 1000;
     Some(match seconds {
-        0..=59 => "刚刚".to_owned(),
-        60..=3_599 => format!("{} 分钟前", seconds / 60),
-        3_600..=86_399 => format!("{} 小时前", seconds / 3_600),
-        86_400..=2_591_999 => format!("{} 天前", seconds / 86_400),
-        _ => format!("{} 个月前", seconds / 2_592_000),
+        0..=59 => rust_i18n::t!("app.worlds.time_just_now").to_string(),
+        60..=3_599 => rust_i18n::t!("app.worlds.time_minutes", count = seconds / 60).to_string(),
+        3_600..=86_399 => {
+            rust_i18n::t!("app.worlds.time_hours", count = seconds / 3_600).to_string()
+        }
+        86_400..=2_591_999 => {
+            rust_i18n::t!("app.worlds.time_days", count = seconds / 86_400).to_string()
+        }
+        _ => rust_i18n::t!("app.worlds.time_months", count = seconds / 2_592_000).to_string(),
     })
 }
 
@@ -190,8 +194,10 @@ mod tests {
 
     #[test]
     fn relative_time_handles_old_and_missing_values() {
+        rust_i18n::set_locale("zh-CN");
         assert!(relative_time(None).is_none());
         assert!(relative_time(Some(0)).is_none());
         assert_eq!(relative_time(Some(i64::MAX / 2)), Some("刚刚".to_owned()));
+        rust_i18n::set_locale("en");
     }
 }

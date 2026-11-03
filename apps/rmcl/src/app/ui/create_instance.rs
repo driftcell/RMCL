@@ -19,6 +19,7 @@ use rmcl_app::LoaderKind;
 use super::super::{LauncherApp, Page, short_date, version_type_label};
 use super::common::{card, error_banner, field_label, section_title};
 use super::layout;
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_create_instance(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -40,7 +41,7 @@ impl LauncherApp {
             self.catalog.error.clone()
         };
         let base_hint = if copy_mode {
-            "基础版本来自现有实例，不能修改。".to_owned()
+            tr("app.create_instance.base_fixed")
         } else if let Some(version) = self
             .catalog
             .manifest
@@ -53,11 +54,11 @@ impl LauncherApp {
                 short_date(version.release_time.as_deref())
             )
         } else if catalog_loading && !catalog_ready {
-            "正在获取 Mojang 官方版本列表…".to_owned()
+            tr("app.create_instance.catalog_loading")
         } else if catalog_ready {
-            "从 Mojang 官方版本列表中选择，可输入版本 ID 搜索。".to_owned()
+            tr("app.create_instance.catalog_hint")
         } else {
-            "版本列表加载失败时，可手动填写版本 ID，例如 1.21.1。".to_owned()
+            tr("app.create_instance.catalog_failed_hint")
         };
         let loader_index: usize = match self.create_loader {
             None => 0,
@@ -87,19 +88,19 @@ impl LauncherApp {
         let loading = self.create_loader_loading;
         let loader_error = self.create_loader_error.clone();
         let page_title = if copy_mode {
-            "添加 Mod 加载器"
+            tr("app.create_instance.add_loader_title")
         } else {
             Page::CreateInstance.title()
         };
         let page_subtitle = if copy_mode {
-            "为现有实例创建新的加载器实例，并复制当前内容。"
+            tr("app.create_instance.add_loader_subtitle")
         } else {
             Page::CreateInstance.subtitle()
         };
         let base_section_subtitle = if copy_mode {
-            "基础版本来自现有实例。"
+            tr("app.create_instance.base_from_existing")
         } else {
-            "基础版本会自动安装或复用。"
+            tr("app.create_instance.base_auto")
         };
 
         v_flex()
@@ -116,8 +117,8 @@ impl LauncherApp {
                         Button::new("create-instance-back")
                             .ghost()
                             .icon(IconName::ArrowLeft)
-                            .tooltip("返回实例列表")
-                            .accessibility_label("返回实例列表")
+                            .tooltip(tr("app.create_instance.back"))
+                            .accessibility_label(tr("app.create_instance.back"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Versions, window, cx)
                             })),
@@ -135,7 +136,10 @@ impl LauncherApp {
                     ),
             )
             .when(copy_mode, |this| {
-                let name = copy_source_name.as_deref().unwrap_or("当前实例");
+                let name = copy_source_name
+                    .as_deref()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| tr("app.create_instance.current_instance"));
                 this.child(
                     div()
                         .w_full()
@@ -145,9 +149,10 @@ impl LauncherApp {
                         .bg(cx.theme().primary.opacity(0.06))
                         .p_3()
                         .child(
-                            div().text_sm().child(format!(
-                                "正在为「{name}」添加 Mod 加载器。将创建新实例并复制当前实例的内容；原实例不会被修改。"
-                            )),
+                            div().text_sm().child(
+                                rust_i18n::t!("app.create_instance.copy_banner", name = name)
+                                    .to_string(),
+                            ),
                         ),
                 )
             })
@@ -161,14 +166,14 @@ impl LauncherApp {
                     .child(
                         card(cx)
                             .child(section_title(
-                                "基础版本与加载器",
+                                tr("app.create_instance.base_and_loader"),
                                 base_section_subtitle,
                                 cx,
                             ))
                             .child(
                                 v_flex()
                                     .gap_1()
-                                    .child(field_label("Minecraft 版本"))
+                                    .child(field_label(tr("app.create_instance.minecraft_version")))
                                     .when(copy_mode, |this| {
                                         this.child(
                                             h_flex()
@@ -194,8 +199,12 @@ impl LauncherApp {
                                                             &self.create_version_select,
                                                         )
                                                         .w_full()
-                                                        .placeholder("选择 Minecraft 版本")
-                                                        .search_placeholder("搜索版本 ID")
+                                                        .placeholder(
+                                                            tr("app.create_instance.select_version"),
+                                                        )
+                                                        .search_placeholder(
+                                                            tr("app.create_instance.search_version"),
+                                                        )
                                                         .menu_max_h(layout::rem_px(cx, rems(20.))),
                                                     )
                                                 })
@@ -205,7 +214,9 @@ impl LauncherApp {
                                                             &self.create_version_select,
                                                         )
                                                         .w_full()
-                                                        .placeholder("正在获取版本列表…")
+                                                        .placeholder(
+                                                            tr("app.create_instance.loading_versions"),
+                                                        )
                                                         .disabled(true),
                                                     )
                                                 })
@@ -217,8 +228,8 @@ impl LauncherApp {
                                         )
                                         .when_some(catalog_error, |this, error| {
                                             this.child(error_banner(
-                                                "无法获取版本列表",
-                                                &error,
+                                                tr("app.create_instance.catalog_load_failed"),
+                                                error,
                                                 cx,
                                             ))
                                             .child(
@@ -226,7 +237,7 @@ impl LauncherApp {
                                                     .outline()
                                                     .small()
                                                     .icon(IconName::RefreshCw)
-                                                    .label("重新获取")
+                                                    .label(tr("app.create_instance.retry_catalog"))
                                                     .on_click(cx.listener(
                                                         |this, _, window, cx| {
                                                             this.load_catalog(true, window, cx)
@@ -245,7 +256,7 @@ impl LauncherApp {
                             .child(
                                 v_flex()
                                     .gap_2()
-                                    .child(field_label("加载器"))
+                                    .child(field_label(tr("app.create_instance.loader")))
                                     .child(
                                         TabBar::new("create-instance-loader")
                                             .segmented()
@@ -287,7 +298,7 @@ impl LauncherApp {
                                             Button::new("create-instance-fetch-loaders")
                                                 .outline()
                                                 .icon(IconName::RefreshCw)
-                                                .label("获取加载器版本")
+                                                .label(tr("app.create_instance.fetch_loader_versions"))
                                                 .disabled(
                                                     loading
                                                         || self
@@ -316,14 +327,20 @@ impl LauncherApp {
                                                             .text_color(
                                                                 cx.theme().muted_foreground,
                                                             )
-                                                            .child("正在获取加载器版本…"),
+                                                            .child(
+                                                                tr("app.create_instance.loading_loader_versions"),
+                                                            ),
                                                     ),
                                             )
                                         }),
                                 )
                             })
                             .when_some(loader_error, |this, error: String| {
-                                this.child(error_banner("加载器版本获取失败", &error, cx))
+                                this.child(error_banner(
+                                    tr("app.create_instance.loader_load_failed"),
+                                    error,
+                                    cx,
+                                ))
                             })
                             .when(self.create_loader.is_some(), |this| {
                                 this.child(if loading && loader_versions.is_empty() {
@@ -335,14 +352,16 @@ impl LauncherApp {
                                             div()
                                                 .text_sm()
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child("正在获取加载器版本…"),
+                                                .child(
+                                                    tr("app.create_instance.loading_loader_versions"),
+                                                ),
                                         )
                                         .into_any_element()
                                 } else if loader_versions.is_empty() {
                                     div()
                                         .text_xs()
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("选择 Minecraft 版本后会自动获取加载器版本；失败时可重试。")
+                                        .child(tr("app.create_instance.loader_versions_hint"))
                                         .into_any_element()
                                 } else {
                                     v_flex()
@@ -370,7 +389,11 @@ impl LauncherApp {
                                                 .w_full()
                                                 .small()
                                                 .label(if version.stable {
-                                                    format!("{} · 稳定版", value.version)
+                                                    rust_i18n::t!(
+                                                        "app.create_instance.stable_version",
+                                                        version = value.version
+                                                    )
+                                                    .to_string()
                                                 } else {
                                                     value.version.clone()
                                                 })
@@ -390,14 +413,14 @@ impl LauncherApp {
                     .child(
                         card(cx)
                             .child(section_title(
-                                "实例信息",
-                                "名称和 ID 都可以留空；ID 会按基础版本和加载器自动生成。",
+                                tr("app.create_instance.instance_info"),
+                                tr("app.create_instance.instance_info_hint"),
                                 cx,
                             ))
                             .child(
                                 v_flex()
                                     .gap_1()
-                                    .child(field_label("显示名称"))
+                                    .child(field_label(tr("app.create_instance.display_name")))
                                     .child(
                                         Input::new(&self.create_name_input)
                                             .w_full()
@@ -407,7 +430,7 @@ impl LauncherApp {
                             .child(
                                 v_flex()
                                     .gap_1()
-                                    .child(field_label("实例 ID"))
+                                    .child(field_label(tr("app.create_instance.instance_id")))
                                     .child(
                                         Input::new(&self.create_id_input)
                                             .w_full()
@@ -419,12 +442,20 @@ impl LauncherApp {
                                             .text_color(cx.theme().muted_foreground)
                                             .child(if entered_id.is_empty() {
                                                 if generated_id.is_empty() {
-                                                    "填写基础版本后自动生成。".to_owned()
+                                                    tr("app.create_instance.id_auto_hint")
                                                 } else {
-                                                    format!("自动生成的 ID：{generated_id}")
+                                                    rust_i18n::t!(
+                                                        "app.create_instance.generated_id",
+                                                        id = generated_id
+                                                    )
+                                                    .to_string()
                                                 }
                                             } else {
-                                                format!("将使用自定义 ID：{entered_id}")
+                                                rust_i18n::t!(
+                                                    "app.create_instance.custom_id",
+                                                    id = entered_id
+                                                )
+                                                .to_string()
                                             }),
                                     ),
                             )
@@ -437,9 +468,9 @@ impl LauncherApp {
                                             .large()
                                             .icon(IconName::PackagePlus)
                                             .label(if copy_mode {
-                                                "创建加载器实例"
+                                                tr("app.create_instance.create_loader_instance")
                                             } else {
-                                                "创建实例"
+                                                tr("app.create_instance.create_instance")
                                             })
                                             .disabled(!can_create)
                                             .on_click(cx.listener(|this, _, window, cx| {
@@ -451,9 +482,9 @@ impl LauncherApp {
                                             .text_xs()
                                             .text_color(cx.theme().muted_foreground)
                                             .child(if copy_mode {
-                                                "会创建新实例并复制当前实例内容；原实例不会被修改。"
+                                                tr("app.create_instance.copy_notice")
                                             } else {
-                                                "Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。"
+                                                tr("app.create_instance.loader_notice")
                                             }),
                                     ),
                             ),

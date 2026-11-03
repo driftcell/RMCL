@@ -1,0 +1,70 @@
+_version: 2
+
+app:
+  account:
+    credential_refresh_save_failed:
+      en: "Could not save the refreshed sign-in credential; you may need to sign in again on the next launch: %{error}"
+      zh-CN: "无法保存刷新后的登录凭据，下次启动可能需要重新登录: %{error}"
+    authlib_credential_refresh_save_failed:
+      en: "Could not save the refreshed external-login credential; you may need to sign in again on the next launch: %{error}"
+      zh-CN: "无法保存刷新后的外置登录凭据，下次启动可能需要重新登录: %{error}"
+  skin:
+    untitled:
+      en: Untitled Skin
+      zh-CN: 未命名皮肤
+  loader:
+    preparing_processors:
+      en: Preparing processors
+      zh-CN: 准备处理器
+  content:
+    resource_pack_metadata_failed:
+      en: "Could not read metadata for resource pack %{name}: %{error}"
+      zh-CN: "无法读取资源包 %{name} 的元数据：%{error}"
+    shader_pack_metadata_failed:
+      en: "Could not read metadata for shader pack %{name}: %{error}"
+      zh-CN: "无法读取光影包 %{name} 的元数据：%{error}"
+    priority_read_failed:
+      en: "Could not read resource pack priority: %{error}"
+      zh-CN: "无法读取资源包优先级：%{error}"
+    shader_selection_read_failed:
+      en: "Could not read the shader selection: %{error}"
+      zh-CN: "无法读取光影选择：%{error}"
+    main_file_too_large:
+      en: "%{name} exceeds 16 MiB; the main file metadata preflight was skipped."
+      zh-CN: "%{name} 超过 16 MiB，已跳过主文件元数据预检。"
+    main_file_no_sha1:
+      en: The file has no SHA-1; the main file metadata preflight was skipped.
+      zh-CN: 文件没有 SHA-1，已跳过主文件元数据预检。
+    metadata_cache_failed_with_warning:
+      en: "%{warning}; failed to cache metadata: %{error}"
+      zh-CN: "%{warning}; 缓存元数据失败：%{error}"
+    metadata_cache_failed:
+      en: "Failed to cache main file metadata: %{error}"
+      zh-CN: "缓存主文件元数据失败：%{error}"
+    main_metadata_read_failed:
+      en: "Could not read main file mod metadata: %{error}"
+      zh-CN: "无法读取主文件 Mod 元数据：%{error}"
+    main_metadata_task_failed:
+      en: "Main file mod metadata task failed: %{error}"
+      zh-CN: "读取主文件 Mod 元数据失败：%{error}"
+    dependency_disabled:
+      en: "Dependency %{name} is installed but disabled; enable it before launching the game."
+      zh-CN: "前置 %{name} 已安装但已禁用，请启用后再启动游戏。"
+    dependency_other_version:
+      en: "Another version of %{name}%{installed} is installed; this install will add the required %{required}."
+      zh-CN: "已安装 %{name} 的另一版本%{installed}，本次会安装所需的 %{required}。"
+    main_mod_disabled:
+      en: "The main mod %{name} is installed but disabled; this install adds a new file instead of enabling the existing one."
+      zh-CN: "主 Mod %{name} 已安装但已禁用；本次安装会新增文件而不是启用现有文件。"
+    incompatible_count:
+      en: "Detected %{count} installed incompatible mods."
+      zh-CN: "检测到 %{count} 个已安装的不兼容 Mod。"
+    no_shader_loader:
+      en: No Iris, Oculus, or OptiFine was detected for this instance; shader files can be installed but will not take effect.
+      zh-CN: 当前实例未检测到 Iris、Oculus 或 OptiFine；光影文件可以安装，但不会生效。
+    no_mod_loader:
+      en: This instance has no mod loader; installed mods will not take effect.
+      zh-CN: 当前实例没有 Mod 加载器，安装后 Mod 不会生效。
+    not_a_release:
+      en: "This is a %{version_type} version, not a release; prefer a version marked Recommended."
+      zh-CN: "这是一个 %{version_type} 版本，不是正式版；建议优先选择标记为“推荐”的正式版。"

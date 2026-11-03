@@ -20,6 +20,7 @@ use rmcl_app::VersionSummary;
 use super::super::{LauncherApp, Page, VersionFilter, short_date, version_tile};
 use super::common::{card, empty_state, page_header, type_tag};
 use super::layout;
+use crate::i18n::tr;
 
 impl LauncherApp {
     pub fn render_downloads(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -37,8 +38,8 @@ impl LauncherApp {
                         Button::new("downloads-refresh")
                             .ghost()
                             .icon(IconName::RefreshCw)
-                            .tooltip("刷新 Mojang 版本列表")
-                            .accessibility_label("刷新 Mojang 版本列表")
+                            .tooltip(tr("app.downloads.refresh"))
+                            .accessibility_label(tr("app.downloads.refresh"))
                             .disabled(refreshing)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.load_catalog(true, window, cx)
@@ -48,7 +49,7 @@ impl LauncherApp {
                         Button::new("downloads-installed")
                             .outline()
                             .icon(IconName::Boxes)
-                            .label("管理已安装版本")
+                            .label(tr("app.downloads.manage_installed"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Versions, window, cx)
                             })),
@@ -93,13 +94,12 @@ impl LauncherApp {
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
                                     .child(match &self.catalog.manifest {
-                                        Some(manifest) => {
-                                            format!(
-                                                "Mojang 官方 · {} 个版本",
-                                                manifest.versions.len()
-                                            )
-                                        }
-                                        None => "Mojang 官方".to_owned(),
+                                        Some(manifest) => rust_i18n::t!(
+                                            "app.downloads.official_count",
+                                            count = manifest.versions.len()
+                                        )
+                                        .to_string(),
+                                        None => tr("app.downloads.official"),
                                     }),
                             ),
                     )
@@ -126,7 +126,7 @@ impl LauncherApp {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("正在获取 Mojang 版本列表…"),
+                                .child(tr("app.downloads.loading")),
                         ),
                 )
                 .into_any_element();
@@ -137,12 +137,12 @@ impl LauncherApp {
             return card(cx)
                 .child(empty_state(
                     IconName::CircleAlert,
-                    "无法加载版本列表",
+                    tr("app.downloads.load_failed"),
                     error,
                     Button::new("downloads-retry")
                         .primary()
                         .icon(IconName::RefreshCw)
-                        .label("重试")
+                        .label(tr("app.common.retry"))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.load_catalog(true, window, cx)),
                         ),
@@ -154,12 +154,12 @@ impl LauncherApp {
             return card(cx)
                 .child(empty_state(
                     IconName::Download,
-                    "版本列表尚未加载",
-                    "刷新后从 Mojang 官方源获取可安装的 Vanilla 版本。",
+                    tr("app.downloads.not_loaded"),
+                    tr("app.downloads.not_loaded_description"),
                     Button::new("downloads-load")
                         .primary()
                         .icon(IconName::RefreshCw)
-                        .label("加载版本列表")
+                        .label(tr("app.downloads.load_list"))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.load_catalog(false, window, cx)),
                         ),
@@ -173,11 +173,11 @@ impl LauncherApp {
             return card(cx)
                 .child(empty_state(
                     IconName::Search,
-                    "没有匹配的版本",
-                    "试试更换搜索词或筛选条件。",
+                    tr("app.downloads.no_match"),
+                    tr("app.downloads.no_match_description"),
                     Button::new("downloads-clear")
                         .outline()
-                        .label("查看正式版")
+                        .label(tr("app.downloads.show_releases"))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.downloads_filter = VersionFilter::Release;
                             this.downloads_query
@@ -225,10 +225,22 @@ impl LauncherApp {
                     .bg(cx.theme().list_head)
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(div().flex_1().child("版本"))
-                    .child(div().w(layout::DOWNLOAD_DATE_COLUMN).child("发布时间"))
-                    .child(div().w(layout::DOWNLOAD_STATUS_COLUMN).child("状态"))
-                    .child(div().w(layout::DOWNLOAD_ACTION_COLUMN).child("操作")),
+                    .child(div().flex_1().child(tr("app.downloads.column_version")))
+                    .child(
+                        div()
+                            .w(layout::DOWNLOAD_DATE_COLUMN)
+                            .child(tr("app.downloads.column_released")),
+                    )
+                    .child(
+                        div()
+                            .w(layout::DOWNLOAD_STATUS_COLUMN)
+                            .child(tr("app.downloads.column_status")),
+                    )
+                    .child(
+                        div()
+                            .w(layout::DOWNLOAD_ACTION_COLUMN)
+                            .child(tr("app.downloads.column_action")),
+                    ),
             )
             .child(list.flex_1().min_h_0())
             .into_any_element()
@@ -262,7 +274,11 @@ impl LauncherApp {
                     .child(div().text_sm().font_semibold().truncate().child(id.clone()))
                     .child(type_tag(version.version_type.as_deref()))
                     .when(latest, |this| {
-                        this.child(Tag::primary().child("最新正式版").small())
+                        this.child(
+                            Tag::primary()
+                                .child(tr("app.downloads.latest_release"))
+                                .small(),
+                        )
                     }),
             )
             .child(
@@ -292,7 +308,11 @@ impl LauncherApp {
                         .outline()
                         .small()
                         .icon(IconName::Download)
-                        .label(if installed { "重新安装" } else { "安装" })
+                        .label(if installed {
+                            tr("app.downloads.reinstall")
+                        } else {
+                            tr("app.common.install")
+                        })
                         .disabled(!can_start)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             if let Some(version) = this

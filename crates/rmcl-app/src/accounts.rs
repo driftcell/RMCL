@@ -96,9 +96,10 @@ impl MicrosoftAccountService {
             .await
         {
             Ok(()) => None,
-            Err(error) => Some(format!(
-                "无法保存刷新后的登录凭据，下次启动可能需要重新登录: {error}"
-            )),
+            Err(error) => Some(
+                rust_i18n::t!("app.account.credential_refresh_save_failed", error = error)
+                    .to_string(),
+            ),
         };
         Ok(ResolvedMicrosoftAccount {
             profile: authenticated.account.clone(),

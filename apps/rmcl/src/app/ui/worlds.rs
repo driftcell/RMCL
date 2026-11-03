@@ -34,6 +34,7 @@ use super::common::{
     warning_banner,
 };
 use super::layout;
+use crate::i18n::tr;
 use crate::services::open_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,11 +44,11 @@ enum TransferMode {
 }
 
 impl TransferMode {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Copy => "复制",
-            Self::Move => "移动",
-        }
+    fn label(self) -> String {
+        tr(match self {
+            Self::Copy => "app.worlds.copy",
+            Self::Move => "app.worlds.move",
+        })
     }
 }
 
@@ -72,7 +73,7 @@ impl LauncherApp {
                     Button::new("worlds-go-instances")
                         .primary()
                         .icon(IconName::Boxes)
-                        .label("选择实例")
+                        .label(tr("app.home.select_instance"))
                         .on_click(
                             cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Home, window, cx)
@@ -83,12 +84,12 @@ impl LauncherApp {
                 .child(
                     card(cx).child(empty_state(
                         IconName::Map,
-                        "先选择一个实例",
-                        "先选择一个实例，再管理它的地图。",
+                        tr("app.worlds.select_instance_title"),
+                        tr("app.worlds.select_instance_description"),
                         Button::new("worlds-pick-instance")
                             .primary()
                             .icon(IconName::Boxes)
-                            .label("前往主页")
+                            .label(tr("app.worlds.go_home"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Home, window, cx)
                             })),
@@ -123,8 +124,8 @@ impl LauncherApp {
                         Button::new("worlds-open-folder")
                             .ghost()
                             .icon(IconName::FolderOpen)
-                            .tooltip("打开存档目录")
-                            .accessibility_label("打开存档目录")
+                            .tooltip(tr("app.worlds.open_folder"))
+                            .accessibility_label(tr("app.worlds.open_folder"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_worlds_folder(window, cx)
                             })),
@@ -133,7 +134,7 @@ impl LauncherApp {
                         Button::new("worlds-restore")
                             .ghost()
                             .icon(IconName::Archive)
-                            .label("恢复备份")
+                            .label(tr("app.worlds.restore_backup"))
                             .disabled(pending)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.pick_world_restore(window, cx)
@@ -143,8 +144,8 @@ impl LauncherApp {
                         Button::new("worlds-refresh")
                             .ghost()
                             .icon(IconName::RefreshCw)
-                            .tooltip("重新扫描地图")
-                            .accessibility_label("重新扫描地图")
+                            .tooltip(tr("app.worlds.rescan"))
+                            .accessibility_label(tr("app.worlds.rescan"))
                             .disabled(pending)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.load_worlds(window, cx)),
@@ -154,7 +155,7 @@ impl LauncherApp {
                         Button::new("worlds-import")
                             .primary()
                             .icon(IconName::Plus)
-                            .label("导入地图")
+                            .label(tr("app.worlds.import"))
                             .disabled(pending)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.pick_world_import(window, cx)
@@ -177,17 +178,23 @@ impl LauncherApp {
                     .gap_4()
                     .overflow_y_scrollbar()
                     .when_some(self.worlds_error.clone(), |this, error: String| {
-                        this.child(error_banner("地图扫描失败", &error, cx))
+                        this.child(error_banner(tr("app.worlds.scan_failed"), error, cx))
                     })
                     .when_some(
                         inspection.and_then(|inspection| inspection.client_jar_error.clone()),
                         |this, error: String| {
-                            this.child(warning_banner("无法读取目标游戏的数据版本", &error, cx))
+                            this.child(warning_banner(
+                                tr("app.worlds.target_data_version_failed"),
+                                error,
+                                cx,
+                            ))
                         },
                     )
                     .when_some(warning, |this, warning| {
-                        let title = format!("扫描警告（{warning_count}）");
-                        this.child(warning_banner(&title, &warning.message, cx))
+                        let title =
+                            rust_i18n::t!("app.worlds.scan_warnings", count = warning_count)
+                                .to_string();
+                        this.child(warning_banner(title, &warning.message, cx))
                     })
                     .when_some(self.world_progress.clone(), |this, progress| {
                         this.child(self.render_world_progress(&progress, cx))
@@ -212,11 +219,14 @@ impl LauncherApp {
                                 div()
                                     .text_xs()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(format!(
-                                        "{} 个地图 · {}",
-                                        worlds.len(),
-                                        format_size(total_size)
-                                    )),
+                                    .child(
+                                        rust_i18n::t!(
+                                            "app.worlds.world_count",
+                                            count = worlds.len(),
+                                            size = format_size(total_size)
+                                        )
+                                        .to_string(),
+                                    ),
                             ),
                     )
                     .child(if loading {
@@ -236,7 +246,7 @@ impl LauncherApp {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("正在扫描地图…"),
+                                            .child(tr("app.worlds.scanning")),
                                     ),
                             )
                             .into_any_element()
@@ -247,21 +257,21 @@ impl LauncherApp {
                                 if inspection
                                     .is_some_and(|inspection| !inspection.worlds.is_empty())
                                 {
-                                    "没有匹配的地图"
+                                    tr("app.worlds.no_match_title")
                                 } else {
-                                    "还没有地图"
+                                    tr("app.worlds.empty_title")
                                 },
                                 if inspection
                                     .is_some_and(|inspection| !inspection.worlds.is_empty())
                                 {
-                                    "试试更换搜索词。"
+                                    tr("app.worlds.no_match_description")
                                 } else {
-                                    "把旧实例的地图复制过来，或导入一个 ZIP。"
+                                    tr("app.worlds.empty_description")
                                 },
                                 Button::new("worlds-empty-import")
                                     .primary()
                                     .icon(IconName::Plus)
-                                    .label("导入地图")
+                                    .label(tr("app.worlds.import"))
                                     .disabled(pending)
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.pick_world_import(window, cx)
@@ -302,7 +312,7 @@ impl LauncherApp {
         let instance_path = display_path(version.game_dir.clone());
         let target_label = target_version
             .map(|version| format!("DataVersion {version}"))
-            .unwrap_or_else(|| "DataVersion 未知".to_owned());
+            .unwrap_or_else(|| tr("app.worlds.data_version_unknown"));
         card(cx)
             .child(
                 h_flex()
@@ -325,20 +335,33 @@ impl LauncherApp {
                                             .child(version.display_name().to_owned()),
                                     )
                                     .when(!version.is_isolated(), |this| {
-                                        this.child(Tag::new().outline().child("共享").small())
+                                        this.child(
+                                            Tag::new()
+                                                .outline()
+                                                .child(tr("app.common.shared"))
+                                                .small(),
+                                        )
                                     }),
                             )
                             .child(mono(instance_path, cx)),
                     )
-                    .child(world_stat("地图", world_count.to_string(), cx))
-                    .child(world_stat("占用", format_size(total_size), cx))
-                    .child(world_stat("目标", target_label, cx))
+                    .child(world_stat(
+                        tr("app.worlds.stat_worlds"),
+                        world_count.to_string(),
+                        cx,
+                    ))
+                    .child(world_stat(
+                        tr("app.worlds.stat_size"),
+                        format_size(total_size),
+                        cx,
+                    ))
+                    .child(world_stat(tr("app.worlds.stat_target"), target_label, cx))
                     .child(
                         Button::new("worlds-switch-instance")
                             .ghost()
                             .icon(IconName::Boxes)
-                            .tooltip("在主页切换实例")
-                            .accessibility_label("在主页切换实例")
+                            .tooltip(tr("app.worlds.switch_on_home"))
+                            .accessibility_label(tr("app.worlds.switch_on_home"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.navigate(Page::Home, window, cx)
                             })),
@@ -364,14 +387,14 @@ impl LauncherApp {
                                 .flex_1()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("正在处理地图…"),
+                                .child(tr("app.worlds.processing")),
                         )
                         .when(self.world_cancel.is_some(), |this| {
                             this.child(
                                 Button::new("worlds-cancel")
                                     .ghost()
                                     .xsmall()
-                                    .label("取消")
+                                    .label(tr("app.common.cancel"))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.cancel_world_action(window, cx)
                                     })),
@@ -408,13 +431,16 @@ impl LauncherApp {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .truncate()
-                    .child(format!(
-                        "{} / {} 个文件 · {} / {}",
-                        progress.completed_files,
-                        progress.total_files,
-                        format_size(progress.copied_bytes),
-                        format_size(progress.total_bytes)
-                    )),
+                    .child(
+                        rust_i18n::t!(
+                            "app.worlds.progress",
+                            completed_files = progress.completed_files,
+                            total_files = progress.total_files,
+                            completed_bytes = format_size(progress.copied_bytes),
+                            total_bytes = format_size(progress.total_bytes)
+                        )
+                        .to_string(),
+                    ),
             )
             .child(
                 ProgressBar::new("world-progress")
@@ -425,7 +451,7 @@ impl LauncherApp {
                 Button::new("world-progress-cancel")
                     .ghost()
                     .xsmall()
-                    .label("取消")
+                    .label(tr("app.common.cancel"))
                     .on_click(
                         cx.listener(|this, _, window, cx| this.cancel_world_action(window, cx)),
                     ),
@@ -457,24 +483,33 @@ impl LauncherApp {
         let can_enter =
             !world.locked && compatibility != WorldCompatibility::Downgrade && quick_play;
         let enter_tip = if world.locked {
-            "地图正在使用中"
+            tr("app.worlds.enter_locked")
         } else if compatibility == WorldCompatibility::Downgrade {
-            "需要更新的游戏版本"
+            tr("app.worlds.enter_needs_newer")
         } else if !quick_play {
-            "当前版本不支持快速进入"
+            tr("app.worlds.enter_quick_play_unsupported")
         } else {
-            "启动实例并进入地图"
+            tr("app.worlds.enter_hint")
         };
-        let meta = format!(
-            "Minecraft {} · {} · {} · {}",
-            world.game_version.as_deref().unwrap_or("版本未知"),
-            world
-                .data_version
-                .map(|version| format!("DataVersion {version}"))
-                .unwrap_or_else(|| "DataVersion 未知".to_owned()),
-            relative_time(world.last_played).unwrap_or_else(|| "未记录".to_owned()),
-            format_size(world.size_bytes)
-        );
+        let world_version_label = world
+            .game_version
+            .as_deref()
+            .map(str::to_owned)
+            .unwrap_or_else(|| tr("app.worlds.version_unknown"));
+        let data_version_label = world
+            .data_version
+            .map(|version| format!("DataVersion {version}"))
+            .unwrap_or_else(|| tr("app.worlds.data_version_unknown"));
+        let last_played = relative_time(world.last_played)
+            .unwrap_or_else(|| tr("app.worlds.last_played_unknown"));
+        let meta = rust_i18n::t!(
+            "app.worlds.meta",
+            version = world_version_label,
+            data_version = data_version_label,
+            last_played = last_played,
+            size = format_size(world.size_bytes)
+        )
+        .to_string();
 
         v_flex()
             .w_full()
@@ -539,21 +574,30 @@ impl LauncherApp {
                             .gap_1()
                             .flex_wrap()
                             .when(world.locked, |this| {
-                                this.child(Tag::warning().child("使用中").small())
+                                this.child(Tag::warning().child(tr("app.worlds.in_use")).small())
                             })
                             .when(world.was_modded, |this| {
                                 this.child(if target_has_loader {
-                                    Tag::new().outline().child("模组").small()
+                                    Tag::new().outline().child(tr("app.worlds.mods")).small()
                                 } else {
-                                    Tag::warning().child("需要模组").small()
+                                    Tag::warning().child(tr("app.worlds.mods_required")).small()
                                 })
                             })
                             .when(
                                 world.enabled_datapacks.iter().any(|pack| pack != "vanilla"),
-                                |this| this.child(Tag::new().outline().child("数据包").small()),
+                                |this| {
+                                    this.child(
+                                        Tag::new()
+                                            .outline()
+                                            .child(tr("app.worlds.data_packs"))
+                                            .small(),
+                                    )
+                                },
                             )
                             .when(!world.enabled_features.is_empty(), |this| {
-                                this.child(Tag::warning().child("实验性").small())
+                                this.child(
+                                    Tag::warning().child(tr("app.worlds.experimental")).small(),
+                                )
                             }),
                     ),
             )
@@ -567,9 +611,9 @@ impl LauncherApp {
                             .outline()
                             .small()
                             .icon(IconName::Play)
-                            .label("进入")
+                            .label(tr("app.worlds.enter"))
                             .disabled(pending || !can_enter)
-                            .tooltip(enter_tip)
+                            .tooltip(enter_tip.clone())
                             .accessibility_label(enter_tip)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.start_world_launch(world_id.as_str().to_owned(), window, cx)
@@ -580,8 +624,8 @@ impl LauncherApp {
                             .ghost()
                             .small()
                             .icon(IconName::Copy)
-                            .label("复制")
-                            .tooltip("复制到其他实例，源地图保留")
+                            .label(tr("app.worlds.copy"))
+                            .tooltip(tr("app.worlds.copy_tooltip"))
                             .disabled(pending || world.locked)
                             .on_click(cx.listener({
                                 let world = world.clone();
@@ -599,8 +643,8 @@ impl LauncherApp {
                         Button::new(format!("world-move-{folder_name}"))
                             .ghost()
                             .small()
-                            .label("移动")
-                            .tooltip("移动到其他实例，源地图删除")
+                            .label(tr("app.worlds.move"))
+                            .tooltip(tr("app.worlds.move_tooltip"))
                             .disabled(pending || world.locked)
                             .on_click(cx.listener({
                                 let world = world.clone();
@@ -620,8 +664,8 @@ impl LauncherApp {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Download)
-                            .tooltip("导出 ZIP")
-                            .accessibility_label("导出 ZIP")
+                            .tooltip(tr("app.worlds.export_zip"))
+                            .accessibility_label(tr("app.worlds.export_zip"))
                             .disabled(pending || world.locked)
                             .on_click(cx.listener({
                                 let world = world.clone();
@@ -635,8 +679,8 @@ impl LauncherApp {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Archive)
-                            .tooltip("备份")
-                            .accessibility_label("备份")
+                            .tooltip(tr("app.worlds.backup"))
+                            .accessibility_label(tr("app.worlds.backup"))
                             .disabled(pending || world.locked)
                             .on_click(cx.listener({
                                 let world = world.clone();
@@ -650,8 +694,8 @@ impl LauncherApp {
                             .ghost()
                             .xsmall()
                             .icon(IconName::Trash)
-                            .tooltip("删除")
-                            .accessibility_label("删除")
+                            .tooltip(tr("app.common.delete"))
+                            .accessibility_label(tr("app.common.delete"))
                             .disabled(pending || world.locked)
                             .on_click(cx.listener({
                                 let world = world.clone();
@@ -703,28 +747,28 @@ impl LauncherApp {
         let has_conflict = targets.iter().any(|target| target.same_name);
         window.open_dialog(cx, move |dialog, _, cx| {
             dialog
-                .title(format!("{mode_label}地图"))
+                .title(rust_i18n::t!("app.worlds.transfer_title", mode = mode_label).to_string())
                 .width(layout::rem_px(cx, layout::DIALOG_LARGE))
                 .child(
                     v_flex()
                         .gap_3()
                         .child(help(
                             if mode == TransferMode::Move {
-                                "移动后当前实例不再保留这张地图；升级前自动备份。"
+                                tr("app.worlds.transfer_move_hint")
                             } else {
-                                "目标实例会得到一份独立地图；升级前自动备份。"
+                                tr("app.worlds.transfer_copy_hint")
                             },
                             cx,
                         ))
                         .when(has_conflict, |this| {
-                            this.child(help("覆盖同名地图前会先备份。", cx))
+                            this.child(help(tr("app.worlds.overwrite_hint"), cx))
                         })
                         .when(targets.is_empty(), |this| {
                             this.child(
                                 div()
                                     .text_sm()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("没有其他实例。先创建一个实例。"),
+                                    .child(tr("app.worlds.no_other_instances")),
                             )
                         })
                         .children(targets.iter().map(|target| {
@@ -739,10 +783,14 @@ impl LauncherApp {
                             let target_button = Button::new(format!("world-target-{target_id}"))
                                 .primary()
                                 .small()
-                                .label(if same_name { "覆盖" } else { mode.label() })
+                                .label(if same_name {
+                                    tr("app.worlds.overwrite")
+                                } else {
+                                    mode.label()
+                                })
                                 .disabled(unsafe_move);
                             let target_button = if unsafe_move {
-                                target_button.tooltip("目标版本更低，不能移动")
+                                target_button.tooltip(tr("app.worlds.target_older_tooltip"))
                             } else {
                                 target_button
                             };
@@ -779,20 +827,33 @@ impl LauncherApp {
                                 )
                                 .child(compatibility_tag(compatibility))
                                 .when(target.loader_mismatch, |this| {
-                                    this.child(Tag::warning().child("加载器不同").small())
+                                    this.child(
+                                        Tag::warning()
+                                            .child(tr("app.worlds.loader_mismatch"))
+                                            .small(),
+                                    )
                                 })
                                 .when(target.missing_mods, |this| {
-                                    this.child(Tag::warning().child("缺少模组").small())
+                                    this.child(
+                                        Tag::warning().child(tr("app.worlds.missing_mods")).small(),
+                                    )
                                 })
                                 .when(same_name, |this| {
                                     this.child(
                                         Button::new(format!("world-target-rename-{target_id}"))
                                             .outline()
                                             .small()
-                                            .label(format!("{}为副本", mode.label()))
+                                            .label(
+                                                rust_i18n::t!(
+                                                    "app.worlds.copy_as",
+                                                    mode = mode.label()
+                                                )
+                                                .to_string(),
+                                            )
                                             .disabled(unsafe_move)
                                             .when(unsafe_move, |button| {
-                                                button.tooltip("目标版本更低，不能移动")
+                                                button
+                                                    .tooltip(tr("app.worlds.target_older_tooltip"))
                                             })
                                             .on_click({
                                                 let view = view.clone();
@@ -850,8 +911,10 @@ impl LauncherApp {
                         })),
                 )
                 .footer(
-                    DialogFooter::new()
-                        .child(DialogClose::new().trigger(|button| button.label("取消").outline())),
+                    DialogFooter::new().child(
+                        DialogClose::new()
+                            .trigger(|button| button.label(tr("app.common.cancel")).outline()),
+                    ),
                 )
         });
     }
@@ -946,29 +1009,43 @@ impl LauncherApp {
                 match result {
                     Ok(Ok(outcome)) => {
                         window.push_notification(
-                            Notification::success(format!(
-                                "已{}到 {}（{}）。",
-                                mode.label(),
-                                target_name,
-                                outcome.world.name
-                            ))
-                            .title("地图已处理"),
+                            Notification::success(
+                                rust_i18n::t!(
+                                    "app.worlds.transferred",
+                                    action = match mode {
+                                        TransferMode::Copy => tr("app.worlds.copied_action"),
+                                        TransferMode::Move => tr("app.worlds.moved_action"),
+                                    },
+                                    target = target_name,
+                                    world = outcome.world.name
+                                )
+                                .to_string(),
+                            )
+                            .title(tr("app.worlds.transferred_title")),
                             cx,
                         );
                         view.load_worlds(window, cx);
                     }
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string())
-                                .title(format!("{}地图失败", mode.label())),
+                            Notification::error(error.to_string()).title(
+                                rust_i18n::t!("app.worlds.transfer_failed", mode = mode.label())
+                                    .to_string(),
+                            ),
                             cx,
                         );
                         view.load_worlds(window, cx);
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title(format!("{}地图失败", mode.label())),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(
+                                rust_i18n::t!("app.worlds.transfer_failed", mode = mode.label())
+                                    .to_string(),
+                            ),
                             cx,
                         );
                     }
@@ -1002,14 +1079,16 @@ impl LauncherApp {
             .unwrap_or_else(|| version.minecraft_version.clone());
         if entry.locked {
             window.push_notification(
-                Notification::warning("该地图正在使用中。").title("无法进入地图"),
+                Notification::warning(tr("app.worlds.enter_locked_notice"))
+                    .title(tr("app.worlds.cannot_enter")),
                 cx,
             );
             return;
         }
         if compatibility == WorldCompatibility::Downgrade {
             window.push_notification(
-                Notification::warning("目标游戏版本低于地图数据版本。").title("无法进入地图"),
+                Notification::warning(tr("app.worlds.enter_downgrade_notice"))
+                    .title(tr("app.worlds.cannot_enter")),
                 cx,
             );
             return;
@@ -1018,14 +1097,16 @@ impl LauncherApp {
             Ok(true) => {}
             Ok(false) => {
                 window.push_notification(
-                    Notification::warning("当前游戏版本不支持快速进入地图。").title("无法快速进入"),
+                    Notification::warning(tr("app.worlds.quick_play_unsupported"))
+                        .title(tr("app.worlds.cannot_quick_play")),
                     cx,
                 );
                 return;
             }
             Err(error) => {
                 window.push_notification(
-                    Notification::warning(error.to_string()).title("无法快速进入"),
+                    Notification::warning(error.to_string())
+                        .title(tr("app.worlds.cannot_quick_play")),
                     cx,
                 );
                 return;
@@ -1093,7 +1174,10 @@ impl LauncherApp {
                     }
                     Ok(Err(error)) => view.worlds_error = Some(error.to_string()),
                     Err(error) => {
-                        view.worlds_error = Some(format!("后台任务失败: {error}"));
+                        view.worlds_error = Some(
+                            rust_i18n::t!("app.common.background_task_failed", error = error)
+                                .to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -1132,7 +1216,10 @@ impl LauncherApp {
     fn cancel_world_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(cancellation) = self.world_cancel.take() {
             cancellation.cancel();
-            window.push_notification(Notification::info("正在取消地图操作。").title("地图"), cx);
+            window.push_notification(
+                Notification::info(tr("app.worlds.cancelling")).title(tr("app.page.worlds.title")),
+                cx,
+            );
         }
         cx.notify();
     }
@@ -1147,7 +1234,10 @@ impl LauncherApp {
         let _ = std::fs::create_dir_all(&directory);
         if let Err(error) = open_path(&directory) {
             window.push_notification(
-                Notification::error(format!("无法打开存档目录: {error}")).title("打开失败"),
+                Notification::error(
+                    rust_i18n::t!("app.worlds.open_folder_failed", error = error).to_string(),
+                )
+                .title(tr("app.common.open_failed")),
                 cx,
             );
         }
@@ -1162,7 +1252,7 @@ impl LauncherApp {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("选择地图 ZIP".into()),
+            prompt: Some(tr("app.worlds.choose_zip").into()),
         });
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
@@ -1178,8 +1268,11 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开文件选择器: {error}"))
-                                .title("选择失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.file_picker_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.common.selection_failed")),
                             cx,
                         );
                     });
@@ -1198,7 +1291,7 @@ impl LauncherApp {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("选择备份 ZIP".into()),
+            prompt: Some(tr("app.worlds.choose_backup_zip").into()),
         });
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
@@ -1214,8 +1307,11 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开文件选择器: {error}"))
-                                .title("选择失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.file_picker_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.common.selection_failed")),
                             cx,
                         );
                     });
@@ -1251,9 +1347,9 @@ impl LauncherApp {
         }));
         let services = self.services.clone();
         let title = if restore {
-            "恢复备份失败"
+            tr("app.worlds.restore_failed")
         } else {
-            "导入地图失败"
+            tr("app.worlds.import_failed")
         };
         self._world_task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = services
@@ -1288,13 +1384,15 @@ impl LauncherApp {
                 match result {
                     Ok(Ok(world)) => {
                         window.push_notification(
-                            Notification::success(format!("已导入「{}」。", world.name)).title(
-                                if restore {
-                                    "备份已恢复"
-                                } else {
-                                    "地图已导入"
-                                },
-                            ),
+                            Notification::success(
+                                rust_i18n::t!("app.worlds.imported", world = world.name)
+                                    .to_string(),
+                            )
+                            .title(if restore {
+                                tr("app.worlds.backup_restored")
+                            } else {
+                                tr("app.worlds.imported_title")
+                            }),
                             cx,
                         );
                         view.load_worlds(window, cx);
@@ -1308,7 +1406,11 @@ impl LauncherApp {
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}")).title(title),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(title),
                             cx,
                         );
                     }
@@ -1337,8 +1439,11 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开保存对话框: {error}"))
-                                .title("选择失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.worlds.save_dialog_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.common.selection_failed")),
                             cx,
                         );
                     });
@@ -1397,21 +1502,31 @@ impl LauncherApp {
                 match result {
                     Ok(Ok(_)) => {
                         window.push_notification(
-                            Notification::success(format!("已导出到 {destination_label}。"))
-                                .title("地图已导出"),
+                            Notification::success(
+                                rust_i18n::t!(
+                                    "app.worlds.exported",
+                                    destination = destination_label
+                                )
+                                .to_string(),
+                            )
+                            .title(tr("app.worlds.exported_title")),
                             cx,
                         );
                     }
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("导出地图失败"),
+                            Notification::error(error.to_string())
+                                .title(tr("app.worlds.export_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("导出地图失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.worlds.export_failed")),
                             cx,
                         );
                     }
@@ -1461,25 +1576,32 @@ impl LauncherApp {
                 match result {
                     Ok(Ok(backup)) => {
                         window.push_notification(
-                            Notification::success(format!(
-                                "「{}」已备份到 {}。",
-                                world_name,
-                                display_path(&backup.path)
-                            ))
-                            .title("备份完成"),
+                            Notification::success(
+                                rust_i18n::t!(
+                                    "app.worlds.backed_up",
+                                    world = world_name,
+                                    destination = display_path(&backup.path)
+                                )
+                                .to_string(),
+                            )
+                            .title(tr("app.worlds.backup_complete")),
                             cx,
                         );
                     }
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("备份地图失败"),
+                            Notification::error(error.to_string())
+                                .title(tr("app.worlds.backup_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("备份地图失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.worlds.backup_failed")),
                             cx,
                         );
                     }
@@ -1497,9 +1619,9 @@ impl LauncherApp {
         window.open_alert_dialog(cx, move |alert, _, _| {
             alert
                 .confirm()
-                .title(format!("删除地图「{name}」？"))
-                .description("只删除该世界目录，无法撤销。")
-                .ok_text("删除")
+                .title(rust_i18n::t!("app.worlds.delete_title", name = name).to_string())
+                .description(tr("app.worlds.delete_description"))
+                .ok_text(tr("app.common.delete"))
                 .ok_variant(ButtonVariant::Danger)
                 .on_ok({
                     let view = view.clone();
@@ -1542,21 +1664,26 @@ impl LauncherApp {
                 match result {
                     Ok(Ok(())) => {
                         window.push_notification(
-                            Notification::success("地图已删除。").title("地图"),
+                            Notification::success(tr("app.worlds.deleted"))
+                                .title(tr("app.page.worlds.title")),
                             cx,
                         );
                         view.load_worlds(window, cx);
                     }
                     Ok(Err(error)) => {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("删除地图失败"),
+                            Notification::error(error.to_string())
+                                .title(tr("app.worlds.delete_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         window.push_notification(
-                            Notification::error(format!("后台任务失败: {error}"))
-                                .title("删除地图失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.background_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.worlds.delete_failed")),
                             cx,
                         );
                     }
@@ -1569,15 +1696,17 @@ impl LauncherApp {
 }
 
 fn compatibility_tag(compatibility: WorldCompatibility) -> Tag {
+    let label = super::super::world_compatibility_label(compatibility);
     match compatibility {
-        WorldCompatibility::Same => Tag::success().child(compatibility.label()).small(),
-        WorldCompatibility::Upgrade => Tag::warning().child(compatibility.label()).small(),
-        WorldCompatibility::Downgrade => Tag::danger().child(compatibility.label()).small(),
-        WorldCompatibility::Unknown => Tag::new().outline().child(compatibility.label()).small(),
+        WorldCompatibility::Same => Tag::success().child(label).small(),
+        WorldCompatibility::Upgrade => Tag::warning().child(label).small(),
+        WorldCompatibility::Downgrade => Tag::danger().child(label).small(),
+        WorldCompatibility::Unknown => Tag::new().outline().child(label).small(),
     }
 }
 
-fn world_stat(label: &str, value: String, cx: &App) -> impl IntoElement {
+fn world_stat(label: impl Into<SharedString>, value: String, cx: &App) -> impl IntoElement {
+    let label = label.into();
     v_flex()
         .w(rems(7.))
         .flex_shrink_0()
@@ -1586,7 +1715,7 @@ fn world_stat(label: &str, value: String, cx: &App) -> impl IntoElement {
             div()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(label.to_owned()),
+                .child(label.clone()),
         )
         .child(div().text_sm().font_semibold().truncate().child(value))
 }

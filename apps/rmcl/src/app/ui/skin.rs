@@ -9,6 +9,7 @@ use super::common::{
     card, empty_state, error_banner, field_label, page_header, section_title, warning_banner,
 };
 use super::layout;
+use crate::i18n::tr;
 use gpui_kit::{
     assets::IconName,
     base::{Selectable, StyledExt},
@@ -124,7 +125,7 @@ impl LauncherApp {
         let selected_is_offline = matches!(self.selected_account(), Some(Account::Offline(_)));
         let refresh_view = cx.entity().downgrade();
         let refresh_button = Button::new("skin-refresh")
-            .label("刷新资料")
+            .label(tr("app.skin.refresh_profile"))
             .outline()
             .small()
             .disabled(account.is_none())
@@ -142,7 +143,7 @@ impl LauncherApp {
             .gap_6()
             .child(page_header(Page::Skin, refresh_button, cx))
             .when_some(self.config_warning.clone(), |this, warning| {
-                this.child(error_banner("配置读取失败", &warning, cx))
+                this.child(error_banner(tr("app.home.config_read_failed"), warning, cx))
             })
             .child(self.render_skin_content(account, selected_is_authlib, selected_is_offline, cx))
     }
@@ -191,12 +192,16 @@ impl LauncherApp {
                                     cx,
                                 ))
                                 .when_some(profile_error, |this, error| {
-                                    this.child(error_banner("无法同步皮肤", error, cx))
+                                    this.child(error_banner(tr("app.skin.sync_failed"), error, cx))
                                 })
                                 .when_some(
                                     texture_error,
                                     |this, error| {
-                                        this.child(error_banner("皮肤预览不可用", error, cx))
+                                        this.child(error_banner(
+                                            tr("app.skin.preview_unavailable"),
+                                            error,
+                                            cx,
+                                        ))
                                     },
                                 )
                             })
@@ -253,20 +258,20 @@ impl LauncherApp {
     ) -> impl IntoElement {
         let open_accounts = cx.entity().downgrade();
         let message = if selected_is_authlib {
-            "外置登录账户的皮肤由认证服务器和 authlib-injector 管理。这里仍可浏览和预览皮肤，但不能上传到官方服务。"
+            tr("app.skin.notice_authlib")
         } else if selected_is_offline {
-            "离线账户没有官方皮肤。这里仍可浏览和预览在线皮肤；登录 Microsoft 账户后才能一键更换。"
+            tr("app.skin.notice_offline")
         } else {
-            "未选择账户。在线皮肤可以浏览和预览；登录 Microsoft 账户后才能一键更换。"
+            tr("app.skin.notice_no_account")
         };
         v_flex()
             .gap_2()
             .flex_shrink_0()
-            .child(warning_banner("当前账户不能更换官方皮肤", message, cx))
+            .child(warning_banner(tr("app.skin.cannot_change"), message, cx))
             .child(
                 h_flex().child(
                     Button::new("skin-manage-accounts")
-                        .label("管理账户…")
+                        .label(tr("app.skin.manage_accounts"))
                         .outline()
                         .small()
                         .on_click(move |_, window, cx| {
@@ -292,16 +297,16 @@ impl LauncherApp {
         let active_skin = profile.active_skin();
         let model = active_skin
             .map(|skin| variant_label(skin.variant()))
-            .unwrap_or("默认模型");
+            .unwrap_or_else(|| tr("app.skin.default_model"));
         let skin_name = active_skin
             .and_then(|skin| skin.alias())
             .filter(|alias| !alias.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| {
                 if active_skin.is_some() {
-                    "官方皮肤".to_owned()
+                    tr("app.skin.official_skin")
                 } else {
-                    "默认皮肤".to_owned()
+                    tr("app.skin.default_skin")
                 }
             });
         let cape = profile
@@ -360,7 +365,7 @@ impl LauncherApp {
                     div()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
-                        .child(format!("披风：{cape}")),
+                        .child(rust_i18n::t!("app.skin.cape", cape = cape).to_string()),
                 )
             })
     }
@@ -436,7 +441,7 @@ impl LauncherApp {
                     )
                     .child(
                         Button::new("skin-catalog-search")
-                            .label("搜索")
+                            .label(tr("app.common.search"))
                             .icon(IconName::Search)
                             .primary()
                             .disabled(loading)
@@ -466,9 +471,9 @@ impl LauncherApp {
                                 this.reload_skin_catalog(window, cx);
                             }))
                             .children(
-                                SkinCatalogSort::ALL
-                                    .into_iter()
-                                    .map(|sort| Tab::new().label(sort.label())),
+                                SkinCatalogSort::ALL.into_iter().map(|sort| {
+                                    Tab::new().label(super::super::skin_sort_label(sort))
+                                }),
                             ),
                     )
                     .child(
@@ -479,16 +484,18 @@ impl LauncherApp {
                             .child(if page == 0 {
                                 "LittleSkin".to_owned()
                             } else {
-                                format!("LittleSkin · 第 {page} 页")
+                                rust_i18n::t!("app.skin.catalog_page", page = page).to_string()
                             }),
                     ),
             )
             .when_some(
                 error.clone().filter(|_| !items.is_empty()),
-                |this, error| this.child(error_banner("在线皮肤加载失败", &error, cx)),
+                |this, error| {
+                    this.child(error_banner(tr("app.skin.catalog_load_failed"), error, cx))
+                },
             )
             .when_some(selection_error, |this, error| {
-                this.child(warning_banner("无法预览这张皮肤", &error, cx))
+                this.child(warning_banner(tr("app.skin.cannot_preview"), error, cx))
             })
             .child(if loading && items.is_empty() {
                 v_flex()
@@ -506,16 +513,16 @@ impl LauncherApp {
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child("正在从 LittleSkin 读取皮肤…"),
+                            .child(tr("app.skin.catalog_loading")),
                     )
                     .into_any_element()
             } else if page == 0 && items.is_empty() && !has_error {
                 empty_state(
                     IconName::Globe,
-                    "在线皮肤还没有加载",
-                    "从 LittleSkin 读取皮肤库；离线账户也可以预览皮肤。",
+                    tr("app.skin.catalog_not_loaded"),
+                    tr("app.skin.catalog_not_loaded_description"),
                     Button::new("skin-catalog-load")
-                        .label("加载在线皮肤")
+                        .label(tr("app.skin.load_catalog"))
                         .outline()
                         .on_click(move |_, window, cx| {
                             let Some(view) = load_view.upgrade() else {
@@ -529,20 +536,21 @@ impl LauncherApp {
             } else if items.is_empty() && has_error {
                 let description = error
                     .as_deref()
-                    .map(|error| format!("{error} 已载入的候选皮肤不会受到影响。"))
-                    .unwrap_or_else(|| {
-                        "检查网络连接后重试；已载入的候选皮肤不会受到影响。".to_owned()
-                    });
+                    .map(|error| {
+                        rust_i18n::t!("app.skin.catalog_error_with_loaded", error = error)
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| tr("app.skin.catalog_error_retry"));
                 empty_state(
                     IconName::Globe,
-                    "暂时无法加载在线皮肤",
-                    &description,
+                    tr("app.skin.catalog_unavailable"),
+                    description,
                     Button::new("skin-catalog-error-retry")
                         .debug_selector(|| "skin-catalog-error-retry".to_owned())
                         .label(if page == 0 {
-                            "重新加载"
+                            tr("app.skin.reload")
                         } else {
-                            "重试本页"
+                            tr("app.skin.retry_page")
                         })
                         .outline()
                         .on_click(move |_, window, cx| {
@@ -564,11 +572,11 @@ impl LauncherApp {
             } else if items.is_empty() && has_more {
                 empty_state(
                     IconName::Search,
-                    "本页没有可用的标准皮肤",
-                    "继续加载 LittleSkin 的后续页面，可能会找到可上传的皮肤。",
+                    tr("app.skin.page_empty"),
+                    tr("app.skin.page_empty_description"),
                     Button::new("skin-catalog-more-empty")
                         .debug_selector(|| "skin-catalog-more-empty".to_owned())
-                        .label("加载下一页")
+                        .label(tr("app.skin.load_next_page"))
                         .outline()
                         .on_click(move |_, _, cx| {
                             let Some(view) = more_empty_view.upgrade() else {
@@ -585,10 +593,10 @@ impl LauncherApp {
             } else if items.is_empty() {
                 empty_state(
                     IconName::Search,
-                    "没有找到皮肤",
-                    "换一个关键词，或稍后重新加载 LittleSkin 皮肤库。",
+                    tr("app.skin.no_results"),
+                    tr("app.skin.no_results_description"),
                     Button::new("skin-catalog-retry")
-                        .label("重新加载")
+                        .label(tr("app.skin.reload"))
                         .outline()
                         .on_click(move |_, window, cx| {
                             let Some(view) = retry_view.upgrade() else {
@@ -612,9 +620,9 @@ impl LauncherApp {
                 this.child(
                     Button::new("skin-catalog-more")
                         .label(if loading {
-                            "加载中…"
+                            tr("app.content_browser.loading_more")
                         } else {
-                            "加载更多"
+                            tr("app.content_browser.load_more")
                         })
                         .outline()
                         .w_full()
@@ -640,11 +648,11 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("仅显示可上传到 Java 版的标准分辨率皮肤"),
+                            .child(tr("app.skin.standard_only")),
                     )
                     .child(skin_site_button(
                         "littleskin",
-                        "打开 LittleSkin",
+                        tr("app.skin.open_littleskin"),
                         "https://littleskin.cn/skinlib",
                     )),
             )
@@ -689,7 +697,9 @@ impl LauncherApp {
             .border_color(border)
             .bg(background)
             .cursor_pointer()
-            .accessibility_label(format!("预览皮肤 {}", item.name))
+            .accessibility_label(
+                rust_i18n::t!("app.skin.preview_skin", name = item.name).to_string(),
+            )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.select_catalog_skin(item_for_click.clone(), cx);
             }))
@@ -733,7 +743,7 @@ impl LauncherApp {
                                             div()
                                                 .text_xs()
                                                 .text_color(theme.muted_foreground)
-                                                .child("渲染中"),
+                                                .child(tr("app.skin.rendering")),
                                         ),
                                 )
                             })
@@ -836,8 +846,8 @@ impl LauncherApp {
         v_flex()
             .gap_5()
             .child(section_title(
-                "上传或链接",
-                "使用本地 PNG 或图片直链；应用到正版账户后会保存到本机皮肤库。",
+                tr("app.skin.upload_or_link"),
+                tr("app.skin.upload_or_link_description"),
                 cx,
             ))
             .child(self.render_skin_import(cx))
@@ -865,8 +875,12 @@ impl LauncherApp {
                     .map(|author| format!("LittleSkin · {author}"))
                     .unwrap_or_else(|| "LittleSkin".to_owned())
             })
-            .or_else(|| draft.source_url().map(|url| format!("来源：{url}")))
-            .unwrap_or_else(|| "本地或链接导入".to_owned());
+            .or_else(|| {
+                draft
+                    .source_url()
+                    .map(|url| rust_i18n::t!("app.skin.source", url = url).to_string())
+            })
+            .unwrap_or_else(|| tr("app.skin.local_or_link_import"));
         let site_url = catalog_item.as_ref().map(|item| item.site_url.clone());
 
         v_flex()
@@ -923,7 +937,7 @@ impl LauncherApp {
                                 .icon(IconName::ExternalLink)
                                 .ghost()
                                 .small()
-                                .tooltip("在浏览器中打开皮肤页")
+                                .tooltip(tr("app.skin.open_skin_page"))
                                 .on_click(move |_, _, cx| cx.open_url(&url)),
                         )
                     }),
@@ -932,10 +946,10 @@ impl LauncherApp {
                 h_flex()
                     .gap_2()
                     .items_center()
-                    .child(field_label("模型"))
+                    .child(field_label(tr("app.skin.model")))
                     .child(
                         Button::new("skin-model-classic")
-                            .label("经典")
+                            .label(tr("app.skin.classic"))
                             .outline()
                             .selected(self.skin_editor.variant == SkinVariant::Classic)
                             .small()
@@ -946,7 +960,7 @@ impl LauncherApp {
                     )
                     .child(
                         Button::new("skin-model-slim")
-                            .label("纤细")
+                            .label(tr("app.skin.slim"))
                             .outline()
                             .selected(self.skin_editor.variant == SkinVariant::Slim)
                             .small()
@@ -964,13 +978,13 @@ impl LauncherApp {
                     .child(
                         Button::new("skin-apply")
                             .label(if applying {
-                                "正在应用…"
+                                tr("app.skin.applying")
                             } else if cooldown.is_some() {
-                                "冷却中"
+                                tr("app.skin.cooldown")
                             } else if can_apply {
-                                "确认更换皮肤"
+                                tr("app.skin.confirm_apply")
                             } else {
-                                "需要正版账户"
+                                tr("app.skin.requires_microsoft")
                             })
                             .primary()
                             .disabled(!self.skin_apply.is_idle() || !can_apply)
@@ -980,7 +994,7 @@ impl LauncherApp {
                     )
                     .child(
                         Button::new("skin-cancel-draft")
-                            .label("取消")
+                            .label(tr("app.common.cancel"))
                             .ghost()
                             .disabled(applying)
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -992,7 +1006,13 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(format!("{} 秒后可再次更换", remaining.as_secs().max(1))),
+                                .child(
+                                    rust_i18n::t!(
+                                        "app.skin.cooldown_remaining",
+                                        seconds = remaining.as_secs().max(1)
+                                    )
+                                    .to_string(),
+                                ),
                         )
                     })
                     .when(!can_apply, |this| {
@@ -1000,7 +1020,7 @@ impl LauncherApp {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child("登录 Microsoft 账户后可更换官方皮肤"),
+                                .child(tr("app.skin.login_to_change")),
                         )
                     }),
             )
@@ -1023,7 +1043,7 @@ impl LauncherApp {
                     .gap_2()
                     .child(
                         Button::new("skin-pick-file")
-                            .label("上传 PNG…")
+                            .label(tr("app.skin.upload_png"))
                             .outline()
                             .disabled(link_loading)
                             .on_click(move |_, window, cx| {
@@ -1037,13 +1057,13 @@ impl LauncherApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("64×64 或旧版 64×32，最大 24 KiB"),
+                            .child(tr("app.skin.png_requirements")),
                     ),
             )
             .child(
                 v_flex()
                     .gap_2()
-                    .child(field_label("图片链接"))
+                    .child(field_label(tr("app.skin.image_url")))
                     .child(
                         h_flex()
                             .gap_2()
@@ -1051,9 +1071,9 @@ impl LauncherApp {
                             .child(
                                 Button::new("skin-read-link")
                                     .label(if link_loading {
-                                        "读取中…"
+                                        tr("app.skin.reading")
                                     } else {
-                                        "读取"
+                                        tr("app.skin.read")
                                     })
                                     .outline()
                                     .disabled(link_loading)
@@ -1068,13 +1088,13 @@ impl LauncherApp {
                             ),
                     )
                     .when_some(link_error, |this, error| {
-                        this.child(warning_banner("无法读取链接", &error, cx))
+                        this.child(warning_banner(tr("app.skin.link_read_failed"), error, cx))
                     })
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("请粘贴 PNG 图片直链，而不是皮肤站网页地址。"),
+                            .child(tr("app.skin.direct_png_hint")),
                     ),
             )
     }
@@ -1097,8 +1117,8 @@ impl LauncherApp {
                 h_flex()
                     .justify_between()
                     .child(section_title(
-                        "最近使用",
-                        "保存在本机的皮肤，方便再次应用。",
+                        tr("app.skin.recent"),
+                        tr("app.skin.recent_description"),
                         cx,
                     ))
                     .when(loading, |this| {
@@ -1111,7 +1131,7 @@ impl LauncherApp {
                     .when_some(error.clone(), |this, _| {
                         this.child(
                             Button::new("skin-recent-retry")
-                                .label("重试")
+                                .label(tr("app.common.retry"))
                                 .ghost()
                                 .small()
                                 .on_click(move |_, _, cx| {
@@ -1127,14 +1147,14 @@ impl LauncherApp {
                     }),
             )
             .when_some(error, |this, error| {
-                this.child(warning_banner("无法读取最近皮肤", &error, cx))
+                this.child(warning_banner(tr("app.skin.recent_load_failed"), error, cx))
             })
             .when(entries.is_empty() && !loading, |this| {
                 this.child(
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child("还没有保存过皮肤。成功应用一次后，它会出现在这里。"),
+                        .child(tr("app.skin.recent_empty")),
                 )
             })
             .child(v_flex().gap_2().children(rows))
@@ -1199,7 +1219,7 @@ impl LauncherApp {
             )
             .child(
                 Button::new(format!("skin-recent-use-{}", entry.id))
-                    .label("使用")
+                    .label(tr("app.skin.use"))
                     .outline()
                     .small()
                     .on_click(move |_, window, cx| {
@@ -1326,7 +1346,7 @@ impl LauncherApp {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("选择 PNG 皮肤".into()),
+            prompt: Some(tr("app.skin.choose_png").into()),
         });
         self._prompt_task = Some(
             cx.spawn_in(window, async move |this, cx| match prompt.await {
@@ -1339,8 +1359,11 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     let _ = this.update_in(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::error(format!("无法打开文件选择器：{error}"))
-                                .title("选择皮肤失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.common.file_picker_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.skin.choose_failed")),
                             cx,
                         );
                     });
@@ -1358,7 +1381,8 @@ impl LauncherApp {
             .is_none_or(|extension| !extension.eq_ignore_ascii_case("png"))
         {
             window.push_notification(
-                Notification::warning("请选择 PNG 文件。").title("无法导入皮肤"),
+                Notification::warning(tr("app.skin.choose_png_warning"))
+                    .title(tr("app.skin.import_failed")),
                 cx,
             );
             return;
@@ -1375,14 +1399,17 @@ impl LauncherApp {
                 Ok(Err(error)) => {
                     window.push_notification(
                         Notification::error(describe_skin_source_error(&error))
-                            .title("无法导入皮肤"),
+                            .title(tr("app.skin.import_failed")),
                         cx,
                     );
                 }
                 Err(error) => {
                     window.push_notification(
-                        Notification::error(format!("皮肤处理任务失败：{error}"))
-                            .title("无法导入皮肤"),
+                        Notification::error(
+                            rust_i18n::t!("app.skin.process_task_failed", error = error)
+                                .to_string(),
+                        )
+                        .title(tr("app.skin.import_failed")),
                         cx,
                     );
                 }
@@ -1398,7 +1425,7 @@ impl LauncherApp {
         }
         let url = self.skin_link.input.read(cx).value().trim().to_owned();
         if url.is_empty() {
-            self.skin_link.state = LinkImportState::Failed("请输入图片直链。".to_owned());
+            self.skin_link.state = LinkImportState::Failed(tr("app.skin.enter_image_url"));
             cx.notify();
             return;
         }
@@ -1424,8 +1451,9 @@ impl LauncherApp {
                             LinkImportState::Failed(describe_skin_source_error(&error));
                     }
                     Err(error) => {
-                        view.skin_link.state =
-                            LinkImportState::Failed(format!("读取任务失败：{error}"));
+                        view.skin_link.state = LinkImportState::Failed(
+                            rust_i18n::t!("app.skin.read_task_failed", error = error).to_string(),
+                        );
                     }
                 }
                 cx.notify();
@@ -1465,15 +1493,19 @@ impl LauncherApp {
                 Ok(Ok(skin)) => view.set_skin_draft(skin, cx),
                 Ok(Err(error)) => {
                     window.push_notification(
-                        Notification::error(format!("无法读取本地皮肤：{error}"))
-                            .title("无法使用皮肤"),
+                        Notification::error(
+                            rust_i18n::t!("app.skin.read_local_failed", error = error).to_string(),
+                        )
+                        .title(tr("app.skin.use_failed")),
                         cx,
                     );
                 }
                 Err(error) => {
                     window.push_notification(
-                        Notification::error(format!("本地皮肤任务失败：{error}"))
-                            .title("无法使用皮肤"),
+                        Notification::error(
+                            rust_i18n::t!("app.skin.local_task_failed", error = error).to_string(),
+                        )
+                        .title(tr("app.skin.use_failed")),
                         cx,
                     );
                 }
@@ -1489,7 +1521,8 @@ impl LauncherApp {
         }
         let Some(account) = self.selected_microsoft_account().cloned() else {
             window.push_notification(
-                Notification::warning("请先选择一个正版账户。").title("无法应用皮肤"),
+                Notification::warning(tr("app.skin.select_microsoft_notice"))
+                    .title(tr("app.skin.apply_failed")),
                 cx,
             );
             return;
@@ -1561,8 +1594,8 @@ impl LauncherApp {
                             .update(cx, |service, cx| service.clear_catalog_selection(cx));
                         view.start_skin_cooldown(Duration::from_secs(2), cx);
                         window.push_notification(
-                            Notification::success("皮肤已更换，重新进入游戏后生效。")
-                                .title("皮肤已应用"),
+                            Notification::success(tr("app.skin.applied_notice"))
+                                .title(tr("app.skin.applied")),
                             cx,
                         );
                     }
@@ -1574,15 +1607,18 @@ impl LauncherApp {
                             view.skin_apply = ApplyState::Idle;
                         }
                         window.push_notification(
-                            Notification::error(message).title("更换皮肤失败"),
+                            Notification::error(message).title(tr("app.skin.change_failed")),
                             cx,
                         );
                     }
                     Err(error) => {
                         view.skin_apply = ApplyState::Idle;
                         window.push_notification(
-                            Notification::error(format!("皮肤上传任务失败：{error}"))
-                                .title("更换皮肤失败"),
+                            Notification::error(
+                                rust_i18n::t!("app.skin.upload_task_failed", error = error)
+                                    .to_string(),
+                            )
+                            .title(tr("app.skin.change_failed")),
                             cx,
                         );
                     }
@@ -1616,20 +1652,20 @@ impl LauncherApp {
     }
 }
 
-fn variant_label(variant: SkinVariant) -> &'static str {
-    match variant {
-        SkinVariant::Classic => "经典模型",
-        SkinVariant::Slim => "纤细模型",
-    }
+fn variant_label(variant: SkinVariant) -> String {
+    tr(match variant {
+        SkinVariant::Classic => "app.skin.classic_model",
+        SkinVariant::Slim => "app.skin.slim_model",
+    })
 }
 
-fn skin_site_button(id: &'static str, label: &'static str, url: &'static str) -> Button {
+fn skin_site_button(id: &'static str, label: impl Into<SharedString>, url: &'static str) -> Button {
     Button::new(format!("skin-site-{id}"))
         .label(label)
         .link()
         .small()
         .icon(IconName::ExternalLink)
-        .tooltip("在浏览器中打开")
+        .tooltip(tr("app.skin.open_in_browser"))
         .on_click(move |_, _, cx| cx.open_url(url))
 }
 
@@ -1639,25 +1675,23 @@ fn describe_apply_error(error: &MicrosoftAccountServiceError) -> (String, Option
         | MicrosoftAccountServiceError::Auth(
             MicrosoftAuthError::ReauthenticationRequired
             | MicrosoftAuthError::MinecraftTokenRejected,
-        ) => ("登录已过期，请重新登录后再试。".to_owned(), None),
+        ) => (tr("app.skin.error_login_expired"), None),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::SkinRateLimited { retry_after }) => {
             (
-                "官方限制了频繁更换皮肤，请稍后再试。".to_owned(),
+                tr("app.skin.error_rate_limited"),
                 Some(Duration::from_secs(retry_after.unwrap_or(30))),
             )
         }
-        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::SkinRejected { message }) => {
-            (format!("官方拒绝了这张皮肤：{message}"), None)
-        }
+        MicrosoftAccountServiceError::Auth(MicrosoftAuthError::SkinRejected { message }) => (
+            rust_i18n::t!("app.skin.error_rejected", message = message).to_string(),
+            None,
+        ),
         MicrosoftAccountServiceError::Auth(MicrosoftAuthError::SkinForbidden { .. }) => {
-            ("当前账户暂时被限制更换皮肤。".to_owned(), None)
+            (tr("app.skin.error_forbidden"), None)
         }
         MicrosoftAccountServiceError::Auth(
             MicrosoftAuthError::Http { .. } | MicrosoftAuthError::HttpStatus { .. },
-        ) => (
-            "网络错误，请稍后重试。若请求可能已发出，请先刷新当前皮肤确认结果。".to_owned(),
-            None,
-        ),
+        ) => (tr("app.skin.error_network"), None),
         other => (other.to_string(), None),
     }
 }
@@ -1665,32 +1699,28 @@ fn describe_apply_error(error: &MicrosoftAccountServiceError) -> (String, Option
 fn describe_skin_source_error(error: &SkinSourceError) -> String {
     match error {
         SkinSourceError::UnsupportedScheme | SkinSourceError::CredentialsNotAllowed => {
-            "请使用 HTTPS 图片直链。".to_owned()
+            tr("app.skin.error_https")
         }
-        SkinSourceError::PrivateAddress => "该链接指向本地或私有地址，无法读取。".to_owned(),
-        SkinSourceError::NotPng => "该链接不是 PNG 图片，请使用图片直链。".to_owned(),
+        SkinSourceError::PrivateAddress => tr("app.skin.error_private_address"),
+        SkinSourceError::NotPng => tr("app.skin.error_not_png"),
         SkinSourceError::HttpStatus { status } => {
-            format!("读取图片失败（HTTP {status}）。")
+            rust_i18n::t!("app.skin.error_http_status", status = status).to_string()
         }
-        SkinSourceError::SourceTooLarge => "图片超过 1 MiB，无法读取。".to_owned(),
+        SkinSourceError::SourceTooLarge => tr("app.skin.error_source_too_large"),
         SkinSourceError::UnsupportedUploadDimensions { width, height } => {
-            format!("Java 版官方皮肤必须是 64×64 或 64×32，这张图片是 {width}×{height}。")
+            rust_i18n::t!("app.skin.error_dimensions", width = width, height = height).to_string()
         }
-        SkinSourceError::UploadTooLarge => {
-            "图片超过官方 24 KiB 上传限制，请压缩后再试。".to_owned()
-        }
-        SkinSourceError::Skin(_) => "图片不是有效的 PNG 皮肤。".to_owned(),
+        SkinSourceError::UploadTooLarge => tr("app.skin.error_upload_too_large"),
+        SkinSourceError::Skin(_) => tr("app.skin.error_invalid_png"),
         SkinSourceError::InvalidUrl(_) | SkinSourceError::MissingHost => {
-            "图片链接格式无效。".to_owned()
+            tr("app.skin.error_invalid_url")
         }
-        SkinSourceError::Http(_) | SkinSourceError::Resolve(_) => {
-            "无法连接图片地址，请检查网络或改用本地文件。".to_owned()
-        }
-        SkinSourceError::Cancelled => "读取已取消。".to_owned(),
+        SkinSourceError::Http(_) | SkinSourceError::Resolve(_) => tr("app.skin.error_connect"),
+        SkinSourceError::Cancelled => tr("app.skin.error_cancelled"),
         SkinSourceError::TooManyRedirects | SkinSourceError::MissingLocation => {
-            "图片链接重定向过多或无效。".to_owned()
+            tr("app.skin.error_redirects")
         }
-        SkinSourceError::Encode(_) => "无法处理这张 PNG 图片。".to_owned(),
-        SkinSourceError::Io { .. } => "无法读取本地文件。".to_owned(),
+        SkinSourceError::Encode(_) => tr("app.skin.error_encode"),
+        SkinSourceError::Io { .. } => tr("app.skin.error_read_file"),
     }
 }

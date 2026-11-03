@@ -1,0 +1,2918 @@
+_version: 2
+
+app:
+  common:
+    cancel:
+      en: Cancel
+      zh-CN: 取消
+    stop:
+      en: Stop
+      zh-CN: 停止
+    back:
+      en: Back
+      zh-CN: 返回
+    unknown_exit_status:
+      en: Unknown exit status
+      zh-CN: 未知退出状态
+    retry:
+      en: Retry
+      zh-CN: 重试
+    install:
+      en: Install
+      zh-CN: 安装
+    try_clear_search:
+      en: Try clearing the search filters.
+      zh-CN: 尝试清除搜索条件。
+    shared:
+      en: Shared
+      zh-CN: 共享
+    search:
+      en: Search
+      zh-CN: 搜索
+    save:
+      en: Save
+      zh-CN: 保存
+    remove:
+      en: Remove
+      zh-CN: 移除
+    delete:
+      en: Delete
+      zh-CN: 删除
+    background_task_failed:
+      en: "Background task failed: %{error}"
+      zh-CN: "后台任务失败: %{error}"
+    file_picker_failed:
+      en: "Could not open the file picker: %{error}"
+      zh-CN: "无法打开文件选择器: %{error}"
+    selection_failed:
+      en: Selection Failed
+      zh-CN: 选择失败
+    open_failed:
+      en: Open Failed
+      zh-CN: 打开失败
+    operation_busy:
+      en: A task or content operation is already running. Wait for it to finish or stop it first.
+      zh-CN: 已有任务或内容操作正在运行，请等待完成或先停止它。
+    stopping:
+      en: Stopping
+      zh-CN: 正在停止
+    close:
+      en: Close
+      zh-CN: 关闭
+    date_unknown:
+      en: Date unknown
+      zh-CN: 日期未知
+  menu:
+    settings:
+      en: Settings…
+      zh-CN: 设置…
+    services:
+      en: Services
+      zh-CN: 服务
+    hide_rmcl:
+      en: Hide RMCL
+      zh-CN: 隐藏 RMCL
+    hide_others:
+      en: Hide Others
+      zh-CN: 隐藏其他程序
+    show_all:
+      en: Show All
+      zh-CN: 全部显示
+    quit_rmcl:
+      en: Quit RMCL
+      zh-CN: 退出 RMCL
+    file:
+      en: File
+      zh-CN: 文件
+    close_window:
+      en: Close Window
+      zh-CN: 关闭窗口
+    go:
+      en: Go
+      zh-CN: 前往
+    window:
+      en: Window
+      zh-CN: 窗口
+    minimize:
+      en: Minimize
+      zh-CN: 最小化
+    zoom:
+      en: Zoom
+      zh-CN: 缩放
+    toggle_fullscreen:
+      en: Toggle Full Screen
+      zh-CN: 切换全屏
+  page:
+    home:
+      title:
+        en: Home
+        zh-CN: 主页
+      subtitle:
+        en: Choose an instance and start playing.
+        zh-CN: 选择一个实例，立即开始游戏。
+    agent:
+      title:
+        en: AI Assistant
+        zh-CN: AI 助手
+      subtitle:
+        en: Manage instances, content, and tasks in natural language.
+        zh-CN: 用自然语言管理实例、内容和任务。
+    versions:
+      title:
+        en: Instances
+        zh-CN: 实例
+      subtitle:
+        en: Manage installed game instances and versions.
+        zh-CN: 管理已安装的游戏实例与版本。
+    worlds:
+      title:
+        en: Worlds
+        zh-CN: 地图
+      subtitle:
+        en: Manage world saves for the current instance.
+        zh-CN: 管理当前实例的地图存档。
+    skin:
+      title:
+        en: Skins
+        zh-CN: 皮肤
+      subtitle:
+        en: Browse the online skin library with live previews; Microsoft accounts can apply a skin in one click.
+        zh-CN: 浏览在线皮肤库，实时预览；正版账户可一键更换。
+    servers:
+      title:
+        en: Servers
+        zh-CN: 联机
+      subtitle:
+        en: ""
+        zh-CN: ""
+    instance:
+      title:
+        en: Instance Details
+        zh-CN: 实例详情
+      subtitle:
+        en: Manage mods, resource packs, and shader packs for this instance.
+        zh-CN: 管理该实例的 Mod、资源包和光影。
+    create_instance:
+      title:
+        en: New Instance
+        zh-CN: 新建实例
+      subtitle:
+        en: Choose a Minecraft version, loader, and instance directory.
+        zh-CN: 选择 Minecraft 版本、加载器和实例目录。
+    content_browser:
+      title:
+        en: Online Content
+        zh-CN: 在线内容
+      subtitle:
+        en: Search Modrinth and install content into the current instance.
+        zh-CN: 从 Modrinth 搜索并安装到当前实例。
+    downloads:
+      title:
+        en: Download Game
+        zh-CN: 下载游戏
+      subtitle:
+        en: Install new Vanilla versions from Mojang's official source.
+        zh-CN: 从 Mojang 官方源安装新的 Vanilla 版本。
+    logs:
+      title:
+        en: Logs
+        zh-CN: 日志
+      subtitle:
+        en: Review install, launch, and game output logs.
+        zh-CN: 查看安装、启动和游戏运行日志。
+    settings:
+      title:
+        en: Settings
+        zh-CN: 设置
+      subtitle:
+        en: Configure the game directory, appearance, and Java.
+        zh-CN: 配置游戏目录、外观与 Java。
+  skin:
+    refresh_profile:
+      en: Refresh Profile
+      zh-CN: 刷新资料
+    sync_failed:
+      en: Could not sync skin
+      zh-CN: 无法同步皮肤
+    preview_unavailable:
+      en: Skin preview unavailable
+      zh-CN: 皮肤预览不可用
+    notice_authlib:
+      en: Skins for external-login accounts are managed by the authentication server and authlib-injector. You can still browse and preview skins here, but you cannot upload them to the official service.
+      zh-CN: 外置登录账户的皮肤由认证服务器和 authlib-injector 管理。这里仍可浏览和预览皮肤，但不能上传到官方服务。
+    notice_offline:
+      en: Offline accounts do not have an official skin. You can still browse and preview online skins; sign in with a Microsoft account to change one in a click.
+      zh-CN: 离线账户没有官方皮肤。这里仍可浏览和预览在线皮肤；登录 Microsoft 账户后才能一键更换。
+    notice_no_account:
+      en: No account is selected. You can browse and preview online skins; sign in with a Microsoft account to change one in a click.
+      zh-CN: 未选择账户。在线皮肤可以浏览和预览；登录 Microsoft 账户后才能一键更换。
+    cannot_change:
+      en: This account cannot change the official skin
+      zh-CN: 当前账户不能更换官方皮肤
+    manage_accounts:
+      en: Manage Accounts…
+      zh-CN: 管理账户…
+    default_model:
+      en: Default Model
+      zh-CN: 默认模型
+    official_skin:
+      en: Official Skin
+      zh-CN: 官方皮肤
+    default_skin:
+      en: Default Skin
+      zh-CN: 默认皮肤
+    cape:
+      en: "Cape: %{cape}"
+      zh-CN: "披风：%{cape}"
+    catalog_page:
+      en: "LittleSkin · Page %{page}"
+      zh-CN: "LittleSkin · 第 %{page} 页"
+    catalog_load_failed:
+      en: Could not load online skins
+      zh-CN: 在线皮肤加载失败
+    cannot_preview:
+      en: Could not preview this skin
+      zh-CN: 无法预览这张皮肤
+    catalog_loading:
+      en: Loading skins from LittleSkin…
+      zh-CN: 正在从 LittleSkin 读取皮肤…
+    rendering:
+      en: Rendering
+      zh-CN: 渲染中
+    catalog_not_loaded:
+      en: Online skins have not been loaded
+      zh-CN: 在线皮肤还没有加载
+    catalog_not_loaded_description:
+      en: Load the skin library from LittleSkin; offline accounts can preview skins too.
+      zh-CN: 从 LittleSkin 读取皮肤库；离线账户也可以预览皮肤。
+    load_catalog:
+      en: Load Online Skins
+      zh-CN: 加载在线皮肤
+    catalog_error_with_loaded:
+      en: "%{error} Already loaded candidate skins are not affected."
+      zh-CN: "%{error} 已载入的候选皮肤不会受到影响。"
+    catalog_error_retry:
+      en: Check the network connection and retry; already loaded candidate skins are not affected.
+      zh-CN: 检查网络连接后重试；已载入的候选皮肤不会受到影响。
+    catalog_unavailable:
+      en: Online skins are temporarily unavailable
+      zh-CN: 暂时无法加载在线皮肤
+    reload:
+      en: Reload
+      zh-CN: 重新加载
+    retry_page:
+      en: Retry This Page
+      zh-CN: 重试本页
+    page_empty:
+      en: No standard skins on this page
+      zh-CN: 本页没有可用的标准皮肤
+    page_empty_description:
+      en: Load later pages from LittleSkin to find uploadable skins.
+      zh-CN: 继续加载 LittleSkin 的后续页面，可能会找到可上传的皮肤。
+    load_next_page:
+      en: Load Next Page
+      zh-CN: 加载下一页
+    no_results:
+      en: No skins found
+      zh-CN: 没有找到皮肤
+    no_results_description:
+      en: Try another keyword, or reload the LittleSkin library later.
+      zh-CN: 换一个关键词，或稍后重新加载 LittleSkin 皮肤库。
+    standard_only:
+      en: Only standard-resolution skins uploadable to Java Edition are shown
+      zh-CN: 仅显示可上传到 Java 版的标准分辨率皮肤
+    open_littleskin:
+      en: Open LittleSkin
+      zh-CN: 打开 LittleSkin
+    preview_skin:
+      en: "Preview skin %{name}"
+      zh-CN: "预览皮肤 %{name}"
+    upload_or_link:
+      en: Upload or Link
+      zh-CN: 上传或链接
+    upload_or_link_description:
+      en: Use a local PNG or direct image URL; after applying it to a Microsoft account it is saved to the local skin library.
+      zh-CN: 使用本地 PNG 或图片直链；应用到正版账户后会保存到本机皮肤库。
+    source:
+      en: "Source: %{url}"
+      zh-CN: "来源：%{url}"
+    local_or_link_import:
+      en: Local or linked import
+      zh-CN: 本地或链接导入
+    open_skin_page:
+      en: Open skin page in browser
+      zh-CN: 在浏览器中打开皮肤页
+    model:
+      en: Model
+      zh-CN: 模型
+    classic:
+      en: Classic
+      zh-CN: 经典
+    slim:
+      en: Slim
+      zh-CN: 纤细
+    applying:
+      en: Applying…
+      zh-CN: 正在应用…
+    cooldown:
+      en: Cooling Down
+      zh-CN: 冷却中
+    confirm_apply:
+      en: Confirm Skin Change
+      zh-CN: 确认更换皮肤
+    requires_microsoft:
+      en: Microsoft Account Required
+      zh-CN: 需要正版账户
+    cooldown_remaining:
+      en: "You can change it again in %{seconds} seconds"
+      zh-CN: "%{seconds} 秒后可再次更换"
+    login_to_change:
+      en: Sign in with a Microsoft account to change the official skin
+      zh-CN: 登录 Microsoft 账户后可更换官方皮肤
+    upload_png:
+      en: Upload PNG…
+      zh-CN: 上传 PNG…
+    png_requirements:
+      en: 64×64 or legacy 64×32, up to 24 KiB
+      zh-CN: 64×64 或旧版 64×32，最大 24 KiB
+    image_url:
+      en: Image URL
+      zh-CN: 图片链接
+    reading:
+      en: Reading…
+      zh-CN: 读取中…
+    read:
+      en: Read
+      zh-CN: 读取
+    link_read_failed:
+      en: Could not read the link
+      zh-CN: 无法读取链接
+    direct_png_hint:
+      en: Paste a direct PNG image URL, not a skin-site web page address.
+      zh-CN: 请粘贴 PNG 图片直链，而不是皮肤站网页地址。
+    recent:
+      en: Recently Used
+      zh-CN: 最近使用
+    recent_description:
+      en: Skins saved locally for quick reuse.
+      zh-CN: 保存在本机的皮肤，方便再次应用。
+    recent_load_failed:
+      en: Could not load recent skins
+      zh-CN: 无法读取最近皮肤
+    recent_empty:
+      en: No skins saved yet. A successfully applied skin appears here.
+      zh-CN: 还没有保存过皮肤。成功应用一次后，它会出现在这里。
+    use:
+      en: Use
+      zh-CN: 使用
+    choose_png:
+      en: Choose a PNG Skin
+      zh-CN: 选择 PNG 皮肤
+    choose_failed:
+      en: Skin Selection Failed
+      zh-CN: 选择皮肤失败
+    choose_png_warning:
+      en: Choose a PNG file.
+      zh-CN: 请选择 PNG 文件。
+    import_failed:
+      en: Cannot Import Skin
+      zh-CN: 无法导入皮肤
+    process_task_failed:
+      en: "Skin processing task failed: %{error}"
+      zh-CN: "皮肤处理任务失败：%{error}"
+    enter_image_url:
+      en: Enter a direct image URL.
+      zh-CN: 请输入图片直链。
+    read_task_failed:
+      en: "Read task failed: %{error}"
+      zh-CN: "读取任务失败：%{error}"
+    read_local_failed:
+      en: "Could not read the local skin: %{error}"
+      zh-CN: "无法读取本地皮肤：%{error}"
+    use_failed:
+      en: Cannot Use Skin
+      zh-CN: 无法使用皮肤
+    local_task_failed:
+      en: "Local skin task failed: %{error}"
+      zh-CN: "本地皮肤任务失败：%{error}"
+    select_microsoft_notice:
+      en: Select a Microsoft account first.
+      zh-CN: 请先选择一个正版账户。
+    apply_failed:
+      en: Cannot Apply Skin
+      zh-CN: 无法应用皮肤
+    applied_notice:
+      en: Skin changed; re-enter the game for it to take effect.
+      zh-CN: 皮肤已更换，重新进入游戏后生效。
+    applied:
+      en: Skin Applied
+      zh-CN: 皮肤已应用
+    change_failed:
+      en: Skin Change Failed
+      zh-CN: 更换皮肤失败
+    upload_task_failed:
+      en: "Skin upload task failed: %{error}"
+      zh-CN: "皮肤上传任务失败：%{error}"
+    classic_model:
+      en: Classic Model
+      zh-CN: 经典模型
+    slim_model:
+      en: Slim Model
+      zh-CN: 纤细模型
+    open_in_browser:
+      en: Open in browser
+      zh-CN: 在浏览器中打开
+    error_login_expired:
+      en: Your session has expired. Sign in again and retry.
+      zh-CN: 登录已过期，请重新登录后再试。
+    error_rate_limited:
+      en: The official service limits frequent skin changes. Try again later.
+      zh-CN: 官方限制了频繁更换皮肤，请稍后再试。
+    error_rejected:
+      en: "The official service rejected this skin: %{message}"
+      zh-CN: "官方拒绝了这张皮肤：%{message}"
+    error_forbidden:
+      en: This account is temporarily restricted from changing skins.
+      zh-CN: 当前账户暂时被限制更换皮肤。
+    error_network:
+      en: Network error. Try again later. If the request may have been sent, refresh the current skin first.
+      zh-CN: 网络错误，请稍后重试。若请求可能已发出，请先刷新当前皮肤确认结果。
+    error_https:
+      en: Use a direct HTTPS image URL.
+      zh-CN: 请使用 HTTPS 图片直链。
+    error_private_address:
+      en: The link points to a local or private address and cannot be read.
+      zh-CN: 该链接指向本地或私有地址，无法读取。
+    error_not_png:
+      en: The link is not a PNG image; use a direct image URL.
+      zh-CN: 该链接不是 PNG 图片，请使用图片直链。
+    error_http_status:
+      en: "Could not read the image (HTTP %{status})."
+      zh-CN: "读取图片失败（HTTP %{status}）。"
+    error_source_too_large:
+      en: The image exceeds 1 MiB and cannot be read.
+      zh-CN: 图片超过 1 MiB，无法读取。
+    error_dimensions:
+      en: "Official Java Edition skins must be 64×64 or 64×32; this image is %{width}×%{height}."
+      zh-CN: "Java 版官方皮肤必须是 64×64 或 64×32，这张图片是 %{width}×%{height}。"
+    error_upload_too_large:
+      en: The image exceeds the official 24 KiB upload limit; compress it and retry.
+      zh-CN: 图片超过官方 24 KiB 上传限制，请压缩后再试。
+    error_invalid_png:
+      en: The image is not a valid PNG skin.
+      zh-CN: 图片不是有效的 PNG 皮肤。
+    error_invalid_url:
+      en: The image URL is invalid.
+      zh-CN: 图片链接格式无效。
+    error_connect:
+      en: Could not connect to the image address; check the network or use a local file.
+      zh-CN: 无法连接图片地址，请检查网络或改用本地文件。
+    error_cancelled:
+      en: Reading was cancelled.
+      zh-CN: 读取已取消。
+    error_redirects:
+      en: The image URL has too many redirects or is invalid.
+      zh-CN: 图片链接重定向过多或无效。
+    error_encode:
+      en: Could not process this PNG image.
+      zh-CN: 无法处理这张 PNG 图片。
+    error_read_file:
+      en: Could not read the local file.
+      zh-CN: 无法读取本地文件。
+    task_failed:
+      en: "Skin catalog task failed: %{error}"
+      zh-CN: "皮肤目录任务失败: %{error}"
+    profile_task_failed:
+      en: "Skin profile request failed: %{error}"
+      zh-CN: "皮肤资料请求失败: %{error}"
+    default_preview_failed:
+      en: Could not generate the default skin preview.
+      zh-CN: 无法生成默认皮肤预览。
+    texture_task_failed:
+      en: "Skin texture task failed: %{error}"
+      zh-CN: "皮肤纹理任务失败: %{error}"
+    recent_read_failed:
+      en: "Could not read recent skins: %{error}"
+      zh-CN: "读取最近皮肤失败: %{error}"
+    recent_task_failed:
+      en: "Recent skins task failed: %{error}"
+      zh-CN: "最近皮肤任务失败: %{error}"
+    error_login_expired_short:
+      en: Your session has expired. Sign in again.
+      zh-CN: 登录已过期，请重新登录。
+    error_secret_store:
+      en: The system credential store is unavailable.
+      zh-CN: 系统凭据存储不可用。
+    error_minecraft_unreachable:
+      en: Could not connect to Minecraft services. Try again later.
+      zh-CN: 无法连接 Minecraft 服务，请稍后重试。
+    error_catalog_rate_limited:
+      en: The skin site is receiving too many requests. Try again later.
+      zh-CN: 皮肤站请求过于频繁，请稍后再试。
+    error_catalog_http:
+      en: "The skin site returned HTTP %{status}. Try again later."
+      zh-CN: "皮肤站返回 HTTP %{status}，请稍后再试。"
+    error_catalog_network:
+      en: Could not connect to the skin site. Check the network.
+      zh-CN: 无法连接皮肤站，请检查网络。
+    error_catalog_response:
+      en: The skin site returned unrecognized data.
+      zh-CN: 皮肤站返回了无法识别的数据。
+    error_catalog_too_large:
+      en: The skin site response was too large.
+      zh-CN: 皮肤站响应过大。
+    error_catalog_dimensions:
+      en: "This skin is %{width}×%{height}; Java Edition only accepts 64×64 or 64×32."
+      zh-CN: "这张皮肤是 %{width}×%{height}，Java 版只能上传 64×64 或 64×32。"
+    error_catalog_upload_too_large:
+      en: This skin exceeds the official 24 KiB upload limit.
+      zh-CN: 这张皮肤超过官方 24 KiB 上传限制。
+    error_catalog_texture:
+      en: Could not download or verify the skin texture.
+      zh-CN: 皮肤纹理下载或校验失败。
+    error_catalog_url:
+      en: The skin site address is invalid.
+      zh-CN: 皮肤站地址无效。
+    error_catalog_render:
+      en: Could not render the skin preview.
+      zh-CN: 皮肤预览渲染失败。
+    error_texture_url:
+      en: The official skin address is invalid.
+      zh-CN: 官方皮肤地址无效。
+    error_texture_download:
+      en: Could not download the skin texture.
+      zh-CN: 皮肤纹理下载失败。
+    error_texture_format:
+      en: The skin texture format is invalid.
+      zh-CN: 皮肤纹理格式无效。
+    error_texture_process:
+      en: Could not process the skin texture.
+      zh-CN: 皮肤纹理处理失败。
+    tab_online:
+      en: Online Skins
+      zh-CN: 在线皮肤
+    tab_local:
+      en: Local & Imported
+      zh-CN: 本机与导入
+    sort_popular:
+      en: Popular
+      zh-CN: 热门
+    sort_newest:
+      en: Newest
+      zh-CN: 最新
+  version_filter:
+    all:
+      en: All
+      zh-CN: 全部
+    release:
+      en: Release
+      zh-CN: 正式版
+    snapshot:
+      en: Snapshot
+      zh-CN: 快照
+    old:
+      en: Legacy
+      zh-CN: 旧版
+    old_beta:
+      en: Legacy Beta
+      zh-CN: 旧版 Beta
+    old_alpha:
+      en: Legacy Alpha
+      zh-CN: 旧版 Alpha
+    other:
+      en: Other
+      zh-CN: 其他
+    unknown:
+      en: Unknown
+      zh-CN: 未知
+  content_kind:
+    mod:
+      en: Mod
+      zh-CN: Mod
+    resource_pack:
+      en: Resource Packs
+      zh-CN: 资源包
+    shader_pack:
+      en: Shader Packs
+      zh-CN: 光影包
+  remote_sort:
+    relevance:
+      en: Relevance
+      zh-CN: 相关度
+    downloads:
+      en: Downloads
+      zh-CN: 下载量
+    follows:
+      en: Followers
+      zh-CN: 关注数
+    newest:
+      en: Newest
+      zh-CN: 最新发布
+    updated:
+      en: Recently Updated
+      zh-CN: 最近更新
+  worlds:
+    copy:
+      en: Copy
+      zh-CN: 复制
+    move:
+      en: Move
+      zh-CN: 移动
+    select_instance_title:
+      en: Select an instance first
+      zh-CN: 先选择一个实例
+    select_instance_description:
+      en: Select an instance before managing its worlds.
+      zh-CN: 先选择一个实例，再管理它的地图。
+    go_home:
+      en: Go to Home
+      zh-CN: 前往主页
+    open_folder:
+      en: Open saves folder
+      zh-CN: 打开存档目录
+    restore_backup:
+      en: Restore Backup
+      zh-CN: 恢复备份
+    rescan:
+      en: Rescan worlds
+      zh-CN: 重新扫描地图
+    import:
+      en: Import World
+      zh-CN: 导入地图
+    scan_failed:
+      en: World scan failed
+      zh-CN: 地图扫描失败
+    target_data_version_failed:
+      en: Could not read the target game data version
+      zh-CN: 无法读取目标游戏的数据版本
+    scan_warnings:
+      en: "Scan warnings (%{count})"
+      zh-CN: "扫描警告（%{count}）"
+    world_count:
+      en: "%{count} worlds · %{size}"
+      zh-CN: "%{count} 个地图 · %{size}"
+    scanning:
+      en: Scanning worlds…
+      zh-CN: 正在扫描地图…
+    no_match_title:
+      en: No matching worlds
+      zh-CN: 没有匹配的地图
+    empty_title:
+      en: No worlds yet
+      zh-CN: 还没有地图
+    no_match_description:
+      en: Try a different search term.
+      zh-CN: 试试更换搜索词。
+    empty_description:
+      en: Copy a world from another instance, or import a ZIP.
+      zh-CN: 把旧实例的地图复制过来，或导入一个 ZIP。
+    data_version_unknown:
+      en: DataVersion unknown
+      zh-CN: DataVersion 未知
+    stat_worlds:
+      en: Worlds
+      zh-CN: 地图
+    stat_size:
+      en: Size
+      zh-CN: 占用
+    stat_target:
+      en: Target
+      zh-CN: 目标
+    switch_on_home:
+      en: Switch instances on Home
+      zh-CN: 在主页切换实例
+    processing:
+      en: Processing world…
+      zh-CN: 正在处理地图…
+    progress:
+      en: "%{completed_files} / %{total_files} files · %{completed_bytes} / %{total_bytes}"
+      zh-CN: "%{completed_files} / %{total_files} 个文件 · %{completed_bytes} / %{total_bytes}"
+    enter:
+      en: Enter
+      zh-CN: 进入
+    enter_locked:
+      en: The world is in use
+      zh-CN: 地图正在使用中
+    enter_needs_newer:
+      en: A newer game version is required
+      zh-CN: 需要更新的游戏版本
+    enter_quick_play_unsupported:
+      en: This version does not support Quick Play
+      zh-CN: 当前版本不支持快速进入
+    enter_hint:
+      en: Launch the instance and enter this world
+      zh-CN: 启动实例并进入地图
+    version_unknown:
+      en: Version unknown
+      zh-CN: 版本未知
+    last_played_unknown:
+      en: Never recorded
+      zh-CN: 未记录
+    meta:
+      en: "Minecraft %{version} · %{data_version} · %{last_played} · %{size}"
+      zh-CN: "Minecraft %{version} · %{data_version} · %{last_played} · %{size}"
+    in_use:
+      en: In Use
+      zh-CN: 使用中
+    mods:
+      en: Mods
+      zh-CN: 模组
+    mods_required:
+      en: Mods Required
+      zh-CN: 需要模组
+    data_packs:
+      en: Data Packs
+      zh-CN: 数据包
+    experimental:
+      en: Experimental
+      zh-CN: 实验性
+    copy_tooltip:
+      en: Copy to another instance and keep the source world
+      zh-CN: 复制到其他实例，源地图保留
+    move_tooltip:
+      en: Move to another instance and delete the source world
+      zh-CN: 移动到其他实例，源地图删除
+    export_zip:
+      en: Export ZIP
+      zh-CN: 导出 ZIP
+    backup:
+      en: Back Up
+      zh-CN: 备份
+    transfer_title:
+      en: "%{mode} World"
+      zh-CN: "%{mode}地图"
+    transfer_move_hint:
+      en: The current instance will no longer keep this world after moving; it is backed up automatically before any upgrade.
+      zh-CN: 移动后当前实例不再保留这张地图；升级前自动备份。
+    transfer_copy_hint:
+      en: The target instance receives an independent copy; it is backed up automatically before any upgrade.
+      zh-CN: 目标实例会得到一份独立地图；升级前自动备份。
+    overwrite_hint:
+      en: A world with the same name is backed up before being overwritten.
+      zh-CN: 覆盖同名地图前会先备份。
+    no_other_instances:
+      en: There are no other instances. Create one first.
+      zh-CN: 没有其他实例。先创建一个实例。
+    overwrite:
+      en: Overwrite
+      zh-CN: 覆盖
+    target_older_tooltip:
+      en: The target version is older, so it cannot be moved.
+      zh-CN: 目标版本更低，不能移动。
+    loader_mismatch:
+      en: Loader Mismatch
+      zh-CN: 加载器不同
+    missing_mods:
+      en: Missing Mods
+      zh-CN: 缺少模组
+    copy_as:
+      en: Create a Copy
+      zh-CN: "%{mode}为副本"
+    transferred:
+      en: "%{action} to %{target} (%{world})."
+      zh-CN: "已%{action}到 %{target}（%{world}）。"
+    copied_action:
+      en: Copied
+      zh-CN: 复制
+    moved_action:
+      en: Moved
+      zh-CN: 移动
+    transferred_title:
+      en: World Processed
+      zh-CN: 地图已处理
+    transfer_failed:
+      en: "%{mode} World Failed"
+      zh-CN: "%{mode}地图失败"
+    enter_locked_notice:
+      en: This world is currently in use.
+      zh-CN: 该地图正在使用中。
+    cannot_enter:
+      en: Cannot Enter World
+      zh-CN: 无法进入地图
+    enter_downgrade_notice:
+      en: The target game version is lower than the world's data version.
+      zh-CN: 目标游戏版本低于地图数据版本。
+    quick_play_unsupported:
+      en: The current game version does not support Quick Play into a world.
+      zh-CN: 当前游戏版本不支持快速进入地图。
+    cannot_quick_play:
+      en: Cannot Quick Play
+      zh-CN: 无法快速进入
+    cancelling:
+      en: Cancelling the world operation.
+      zh-CN: 正在取消地图操作。
+    open_folder_failed:
+      en: "Could not open the saves folder: %{error}"
+      zh-CN: "无法打开存档目录: %{error}"
+    choose_zip:
+      en: Choose a World ZIP
+      zh-CN: 选择地图 ZIP
+    choose_backup_zip:
+      en: Choose a Backup ZIP
+      zh-CN: 选择备份 ZIP
+    restore_failed:
+      en: Restore Backup Failed
+      zh-CN: 恢复备份失败
+    import_failed:
+      en: Import World Failed
+      zh-CN: 导入地图失败
+    imported:
+      en: "Imported “%{world}”."
+      zh-CN: "已导入「%{world}」。"
+    backup_restored:
+      en: Backup Restored
+      zh-CN: 备份已恢复
+    imported_title:
+      en: World Imported
+      zh-CN: 地图已导入
+    save_dialog_failed:
+      en: "Could not open the save dialog: %{error}"
+      zh-CN: "无法打开保存对话框: %{error}"
+    exported:
+      en: "Exported to %{destination}."
+      zh-CN: "已导出到 %{destination}。"
+    exported_title:
+      en: World Exported
+      zh-CN: 地图已导出
+    export_failed:
+      en: Export World Failed
+      zh-CN: 导出地图失败
+    backed_up:
+      en: "“%{world}” was backed up to %{destination}."
+      zh-CN: "「%{world}」已备份到 %{destination}。"
+    backup_complete:
+      en: Backup Complete
+      zh-CN: 备份完成
+    backup_failed:
+      en: Back Up World Failed
+      zh-CN: 备份地图失败
+    delete_title:
+      en: "Delete world “%{name}”?"
+      zh-CN: "删除地图「%{name}」？"
+    delete_description:
+      en: Only this world folder is deleted. This cannot be undone.
+      zh-CN: 只删除该世界目录，无法撤销。
+    deleted:
+      en: World deleted.
+      zh-CN: 地图已删除。
+    delete_failed:
+      en: Delete World Failed
+      zh-CN: 删除地图失败
+    compat_same:
+      en: Version matches
+      zh-CN: 版本一致
+    compat_upgrade:
+      en: Will upgrade
+      zh-CN: 将升级
+    compat_downgrade:
+      en: Requires a newer version
+      zh-CN: 需要更高版本
+    compat_unknown:
+      en: Version unknown
+      zh-CN: 版本未知
+  settings:
+    config_save_failed:
+      en: "Could not save the configuration: %{error}"
+      zh-CN: "配置保存失败：%{error}"
+    game_section:
+      en: Game
+      zh-CN: 游戏
+    minecraft_dir:
+      en: Minecraft Directory
+      zh-CN: Minecraft 目录
+    choose_directory:
+      en: Choose Directory
+      zh-CN: 选择目录
+    minecraft_dir_help:
+      en: Versions are rescanned immediately after a change; existing files are not moved.
+      zh-CN: 更改后立即重新扫描版本，不移动现有文件。
+    java_dir:
+      en: Java Directory
+      zh-CN: Java 目录
+    restart_required:
+      en: Takes effect after restarting RMCL.
+      zh-CN: 重启 RMCL 后生效。
+    auto_java:
+      en: Automatic Java
+      zh-CN: 自动获取 Java
+    auto_java_help:
+      en: Download a compatible runtime automatically when one is missing; takes effect after restart.
+      zh-CN: 缺少兼容 runtime 时自动下载；重启后生效。
+    download_section:
+      en: Downloads
+      zh-CN: 下载
+    download_section_subtitle:
+      en: Choose where Minecraft files are downloaded from.
+      zh-CN: 选择 Minecraft 文件的下载来源。
+    download_source:
+      en: Download Source
+      zh-CN: 下载源
+    download_source_help:
+      en: Automatic probes the domestic mirror first and falls back to the official source.
+      zh-CN: 自动会先探测国内镜像，失败时使用官方源。
+    mirror_provided_by:
+      en: Domestic mirror provided by
+      zh-CN: 国内镜像由
+    mirror_provided_by_suffix:
+      en: .
+      zh-CN: 提供。
+    probe_mirror:
+      en: Probe domestic mirror again
+      zh-CN: 重新探测国内镜像
+    launch_behavior:
+      en: Launch Behavior
+      zh-CN: 启动行为
+    launch_behavior_subtitle:
+      en: Minimize the launcher while the game runs and restore it after exit or a crash.
+      zh-CN: 游戏运行时最小化启动器，退出或崩溃后自动恢复。
+    launcher_visibility:
+      en: Launcher Visibility
+      zh-CN: 启动器可见性
+    launcher_visibility_help:
+      en: Restored automatically after the game exits.
+      zh-CN: 游戏退出后自动恢复。
+    ai_section:
+      en: AI Assistant
+      zh-CN: AI 助手
+    ai_section_subtitle:
+      en: Use Kilo's free models without an API key, or provide your own key. Keys are stored only in the system keychain.
+      zh-CN: 可使用 Kilo 免费模型，无需 API Key；也可填写自己的 API Key。Key 只保存在系统钥匙串。
+    provider:
+      en: Provider
+      zh-CN: 服务商
+    provider_help:
+      en: The model ID is editable; defaults follow RMCL releases.
+      zh-CN: 模型 ID 可编辑；默认值会随 RMCL 版本更新。
+    ai_provider:
+      en: AI provider
+      zh-CN: AI 服务商
+    model_id:
+      en: Model ID
+      zh-CN: 模型 ID
+    free_tier:
+      en: Free Tier
+      zh-CN: 免费通道
+    no_key:
+      en: No key required
+      zh-CN: 无需 Key
+    free_tier_warning:
+      en: Free models may log conversations; do not send sensitive information.
+      zh-CN: 免费模型可能记录对话，请勿发送敏感信息。
+    key_saved:
+      en: Saved in the system keychain.
+      zh-CN: 已保存在系统钥匙串。
+    proxy_optional:
+      en: Proxy (optional)
+      zh-CN: 代理（可选）
+    agent_data_notice:
+      en: Conversation content and tool results, including instance names, paths, and player names, are sent to the selected provider.
+      zh-CN: 对话内容和工具结果（包括实例名、路径、玩家名）会发送给所选服务商。
+    save_ai:
+      en: Save AI Settings
+      zh-CN: 保存 AI 设置
+    updates_section:
+      en: Updates
+      zh-CN: 更新
+    updates_section_subtitle:
+      en: Checks GitHub Releases by default; downloads are verified with SHA-256 and the app restarts automatically.
+      zh-CN: 默认从 GitHub Release 检查；下载后校验 SHA-256 并自动重启。
+    current_version:
+      en: Current Version
+      zh-CN: 当前版本
+    check_on_start:
+      en: Check on Startup
+      zh-CN: 启动时检查更新
+    check_on_start_help:
+      en: Prompt when an automatic check finds a new version.
+      zh-CN: 自动检查发现新版本后提示。
+    checking:
+      en: Checking
+      zh-CN: 正在检查
+    up_to_date:
+      en: Up to Date
+      zh-CN: 已是最新版本
+    check_updates:
+      en: Check for Updates
+      zh-CN: 检查更新
+    recheck_updates:
+      en: Check again
+      zh-CN: 重新检查更新
+    update_to:
+      en: "Update to v%{version}"
+      zh-CN: "更新到 v%{version}"
+    release_notes:
+      en: Release Notes
+      zh-CN: 发布说明
+    downloading_progress:
+      en: "Downloading %{percent}% · %{downloaded} / %{total}"
+      zh-CN: "下载中 %{percent}% · %{downloaded} / %{total}"
+    downloading:
+      en: "Downloading · %{downloaded}"
+      zh-CN: "下载中 · %{downloaded}"
+    about_section:
+      en: About
+      zh-CN: 关于
+    about_section_subtitle:
+      en: Version and license.
+      zh-CN: 版本与许可。
+    tagline:
+      en: Native Rust Minecraft launcher
+      zh-CN: 原生 Rust Minecraft 启动器
+    config_file:
+      en: Configuration File
+      zh-CN: 配置文件
+    platform:
+      en: Platform
+      zh-CN: 运行平台
+    platform_line:
+      en: "%{platform} · Minecraft by Mojang Studios"
+      zh-CN: "%{platform} · Minecraft 由 Mojang Studios 提供"
+    gpui_docs:
+      en: GPUI Kit Docs
+      zh-CN: GPUI Kit 文档
+    disclaimer:
+      en: RMCL is not affiliated with Mojang Studios.
+      zh-CN: RMCL 与 Mojang Studios 无关联。
+    choose_minecraft_dir:
+      en: Choose Minecraft Directory
+      zh-CN: 选择 Minecraft 目录
+    choose_directory_failed:
+      en: Directory Selection Failed
+      zh-CN: 选择目录失败
+    directory_picker_failed:
+      en: "Could not open the directory picker: %{error}"
+      zh-CN: "无法打开目录选择器: %{error}"
+    directory_picker_cancelled:
+      en: The directory picker was cancelled or the window was closed.
+      zh-CN: 目录选择器已取消或窗口已关闭。
+    game_dir_updated:
+      en: Game directory updated.
+      zh-CN: 游戏目录已更新。
+    saved:
+      en: Settings Saved
+      zh-CN: 设置已保存
+    auto_java_saved:
+      en: The automatic Java setting takes effect the next time RMCL starts.
+      zh-CN: Java 自动获取设置将在下次启动 RMCL 时生效。
+    theme:
+      en: Theme
+      zh-CN: 主题
+    theme_help:
+      en: Follow the system, light, or dark.
+      zh-CN: 跟随系统、浅色或深色。
+    theme_system:
+      en: Follow System
+      zh-CN: 跟随系统
+    theme_light:
+      en: Light
+      zh-CN: 浅色
+    theme_dark:
+      en: Dark
+      zh-CN: 深色
+    accent:
+      en: Accent Color
+      zh-CN: 强调色
+    accent_help:
+      en: Color of primary buttons and selected states.
+      zh-CN: 主按钮和选中状态的颜色。
+    accent_emerald:
+      en: Emerald
+      zh-CN: 翡翠
+    accent_ocean:
+      en: Ocean
+      zh-CN: 海蓝
+    accent_violet:
+      en: Violet
+      zh-CN: 紫罗兰
+    accent_amber:
+      en: Amber
+      zh-CN: 琥珀
+    accent_rose:
+      en: Rose
+      zh-CN: 玫瑰
+    appearance_title:
+      en: Appearance & Language
+      zh-CN: 外观与语言
+    appearance_subtitle:
+      en: Changes apply immediately.
+      zh-CN: 修改后立即生效。
+    language:
+      en: Language
+      zh-CN: 语言
+    language_help:
+      en: Follow the system language, or choose a fixed language.
+      zh-CN: 跟随系统语言，或选择固定语言。
+    language_system:
+      en: Follow System
+      zh-CN: 跟随系统
+    language_chinese:
+      en: 简体中文
+      zh-CN: 简体中文
+    language_english:
+      en: English
+      zh-CN: English
+    visibility_keep:
+      en: Keep Visible
+      zh-CN: 保持显示
+    visibility_hide:
+      en: Hide While Game Runs
+      zh-CN: 游戏运行时隐藏
+    download_source_auto:
+      en: Automatic
+      zh-CN: 自动
+    download_source_official:
+      en: Official
+      zh-CN: 官方源
+    download_source_mirror:
+      en: Domestic Mirror
+      zh-CN: 国内镜像
+  create_instance:
+    add_loader_title:
+      en: Add Mod Loader
+      zh-CN: 添加 Mod 加载器
+    add_loader_subtitle:
+      en: Create a new loader instance from this instance and copy its content.
+      zh-CN: 为现有实例创建新的加载器实例，并复制当前内容。
+    base_fixed:
+      en: The base version comes from the existing instance and cannot be changed.
+      zh-CN: 基础版本来自现有实例，不能修改。
+    catalog_loading:
+      en: Loading Mojang's official version list…
+      zh-CN: 正在获取 Mojang 官方版本列表…
+    catalog_hint:
+      en: Choose from Mojang's official version list, or type a version ID to search.
+      zh-CN: 从 Mojang 官方版本列表中选择，可输入版本 ID 搜索。
+    catalog_failed_hint:
+      en: If the version list fails to load, enter a version ID manually, such as 1.21.1.
+      zh-CN: 版本列表加载失败时，可手动填写版本 ID，例如 1.21.1。
+    base_from_existing:
+      en: The base version comes from the existing instance.
+      zh-CN: 基础版本来自现有实例。
+    base_auto:
+      en: The base version is installed automatically or reused.
+      zh-CN: 基础版本会自动安装或复用。
+    back:
+      en: Back to instances
+      zh-CN: 返回实例列表
+    current_instance:
+      en: the current instance
+      zh-CN: 当前实例
+    copy_banner:
+      en: Adding a mod loader to “%{name}”. A new instance will be created and the current instance content copied; the original stays unchanged.
+      zh-CN: 正在为「%{name}」添加 Mod 加载器。将创建新实例并复制当前实例的内容；原实例不会被修改。
+    base_and_loader:
+      en: Base Version and Loader
+      zh-CN: 基础版本与加载器
+    minecraft_version:
+      en: Minecraft Version
+      zh-CN: Minecraft 版本
+    select_version:
+      en: Select a Minecraft version
+      zh-CN: 选择 Minecraft 版本
+    search_version:
+      en: Search version ID
+      zh-CN: 搜索版本 ID
+    loading_versions:
+      en: Loading version list…
+      zh-CN: 正在获取版本列表…
+    catalog_load_failed:
+      en: Could not load the version list
+      zh-CN: 无法获取版本列表
+    retry_catalog:
+      en: Fetch Again
+      zh-CN: 重新获取
+    loader:
+      en: Loader
+      zh-CN: 加载器
+    fetch_loader_versions:
+      en: Fetch Loader Versions
+      zh-CN: 获取加载器版本
+    loading_loader_versions:
+      en: Loading loader versions…
+      zh-CN: 正在获取加载器版本…
+    loader_load_failed:
+      en: Could not load loader versions
+      zh-CN: 加载器版本获取失败
+    loader_versions_hint:
+      en: Loader versions are fetched automatically after choosing a Minecraft version; retry if that fails.
+      zh-CN: 选择 Minecraft 版本后会自动获取加载器版本；失败时可重试。
+    stable_version:
+      en: "%{version} · Stable"
+      zh-CN: "%{version} · 稳定版"
+    instance_info:
+      en: Instance Information
+      zh-CN: 实例信息
+    instance_info_hint:
+      en: The name and ID can be left empty; the ID is generated from the base version and loader.
+      zh-CN: 名称和 ID 都可以留空；ID 会按基础版本和加载器自动生成。
+    display_name:
+      en: Display Name
+      zh-CN: 显示名称
+    instance_id:
+      en: Instance ID
+      zh-CN: 实例 ID
+    id_auto_hint:
+      en: Generated automatically after entering the base version.
+      zh-CN: 填写基础版本后自动生成。
+    generated_id:
+      en: "Generated ID: %{id}"
+      zh-CN: "自动生成的 ID：%{id}"
+    custom_id:
+      en: "Using custom ID: %{id}"
+      zh-CN: "将使用自定义 ID：%{id}"
+    create_loader_instance:
+      en: Create Loader Instance
+      zh-CN: 创建加载器实例
+    create_instance:
+      en: Create Instance
+      zh-CN: 创建实例
+    copy_notice:
+      en: A new instance is created with a copy of the current instance content; the original stays unchanged.
+      zh-CN: 会创建新实例并复制当前实例内容；原实例不会被修改。
+    loader_notice:
+      en: Fabric/Quilt write an instance profile that inherits the base version; Forge/NeoForge run the official installer processors.
+      zh-CN: Fabric/Quilt 会写入继承基础版本的实例 profile；Forge/NeoForge 会运行官方 installer 处理器。
+    version_required:
+      en: Choose a Minecraft version first.
+      zh-CN: 请先选择 Minecraft 版本。
+    loader_required:
+      en: Choose a mod loader.
+      zh-CN: 请选择一个 Mod 加载器。
+    id_required:
+      en: Instance ID cannot be empty.
+      zh-CN: 实例 ID 不能为空。
+    loader_version_required:
+      en: Fetch and select a loader version first.
+      zh-CN: 请先获取并选择加载器版本。
+    creating:
+      en: "Creating instance %{id}."
+      zh-CN: "正在创建实例 %{id}。"
+    started:
+      en: Creation Started
+      zh-CN: 已开始创建
+    cannot_create:
+      en: Cannot Create Instance
+      zh-CN: 无法创建实例
+  instance:
+    scan_warnings:
+      en: "Scan warnings (%{count})"
+      zh-CN: "扫描警告（%{count}）"
+    scan_failed:
+      en: Content scan failed
+      zh-CN: 内容扫描失败
+    download_content:
+      en: Download Content
+      zh-CN: 下载内容
+    import_kind:
+      en: "Import %{kind}"
+      zh-CN: "导入 %{kind}"
+    open_content_folder:
+      en: Open content folder
+      zh-CN: 打开内容目录
+    rescan_content:
+      en: Rescan content
+      zh-CN: 重新扫描内容
+    scanning:
+      en: Scanning instance content…
+      zh-CN: 正在扫描实例内容…
+    empty_kind:
+      en: "No %{kind} yet"
+      zh-CN: "还没有 %{kind}"
+    content_counts:
+      en: "%{total} total, %{enabled} enabled"
+      zh-CN: "共 %{total} 个，已启用 %{enabled} 个"
+    content_total:
+      en: "%{total} total"
+      zh-CN: "共 %{total} 个"
+    loader_legacy:
+      en: This legacy instance lacks an RMCL manifest; adding a loader is not supported yet.
+      zh-CN: 旧版实例缺少 RMCL 配置，暂不支持添加加载器
+    loader_manifest_invalid:
+      en: The instance configuration is invalid; repair or recreate it first.
+      zh-CN: 实例配置异常，请先修复或重新创建
+    busy:
+      en: A task or content operation is already running.
+      zh-CN: 已有任务或内容操作正在运行
+    loader_help:
+      en: Create a new loader instance and copy the current instance content.
+      zh-CN: 创建新的加载器实例并复制当前实例内容
+    open_instance_folder:
+      en: Open instance folder
+      zh-CN: 打开实例目录
+    open_folder_failed:
+      en: "Could not open the instance folder: %{error}"
+      zh-CN: "无法打开实例目录: %{error}"
+    open_game_folder_failed:
+      en: "Could not open the game folder: %{error}"
+      zh-CN: "无法打开游戏目录: %{error}"
+    content_busy:
+      en: A content operation is already running. Try again shortly.
+      zh-CN: 已有内容操作正在进行，请稍候。
+    cannot_open:
+      en: Cannot Open Instance
+      zh-CN: 无法打开实例
+    missing_notice:
+      en: The instance does not exist or has been deleted.
+      zh-CN: 实例不存在或已被删除。
+    rename_hint:
+      en: Leave empty to show the instance ID; the directory is not renamed.
+      zh-CN: 留空时显示实例 ID；不会重命名目录。
+    rename_failed:
+      en: Could Not Rename Instance
+      zh-CN: 无法重命名实例
+    renamed:
+      en: Instance renamed.
+      zh-CN: 实例已重命名
+    max_memory:
+      en: Maximum Memory (MiB)
+      zh-CN: 最大内存 (MiB)
+    max_memory_hint:
+      en: Leave empty to use the JVM default; 256–262144 is allowed.
+      zh-CN: 留空使用 JVM 默认值；允许 256–262144。
+    window_size:
+      en: Window Size
+      zh-CN: 窗口尺寸
+    window_size_hint:
+      en: Enter both width and height; 320–16384 is allowed, or leave empty for the game default.
+      zh-CN: 宽高需同时填写，允许 320–16384；留空使用游戏默认。
+    numeric_required:
+      en: Memory and window size must be integers.
+      zh-CN: 内存和窗口尺寸必须是整数。
+    save_launch_failed:
+      en: Could Not Save Launch Settings
+      zh-CN: 无法保存启动设置
+    launch_settings_updated:
+      en: Memory and window settings updated.
+      zh-CN: 内存和窗口设置已更新。
+    launch_settings_saved:
+      en: Launch Settings Saved
+      zh-CN: 启动设置已保存
+    missing_or_moved:
+      en: The instance does not exist or has been moved.
+      zh-CN: 实例不存在或已被移动。
+    rename:
+      en: Rename instance
+      zh-CN: 重命名实例
+    refresh:
+      en: Refresh instance information
+      zh-CN: 刷新实例信息
+    java_auto:
+      en: Automatically select a compatible runtime
+      zh-CN: 自动选择兼容 runtime
+    auto:
+      en: Automatic
+      zh-CN: 自动
+    game_dir:
+      en: Game Folder
+      zh-CN: 游戏目录
+    select_java:
+      en: Select Java
+      zh-CN: 选择 Java
+    java_reset:
+      en: Use Automatic
+      zh-CN: 改回自动
+    launch_settings:
+      en: Launch Settings
+      zh-CN: 启动设置
+    launch_summary:
+      en: "Memory %{memory} · Window %{resolution}"
+      zh-CN: "内存 %{memory} · 窗口 %{resolution}"
+    adjust:
+      en: Adjust
+      zh-CN: 调整
+    content_metadata:
+      en: Content Metadata
+      zh-CN: 内容元数据
+    no_description:
+      en: No description provided
+      zh-CN: 未提供描述
+    incompatible:
+      en: May be incompatible with the current game version
+      zh-CN: 可能与当前游戏版本不兼容
+    not_enabled:
+      en: Disabled
+      zh-CN: 未启用
+    raise_priority:
+      en: Raise priority
+      zh-CN: 提高优先级
+    lower_priority:
+      en: Lower priority
+      zh-CN: 降低优先级
+    disable:
+      en: Disable
+      zh-CN: 禁用
+    enable:
+      en: Enable
+      zh-CN: 启用
+    shader_loader_enabled:
+      en: "%{loader} enabled · takes effect on next launch"
+      zh-CN: "%{loader} 已启用 · 下次启动生效"
+    in_use:
+      en: In Use
+      zh-CN: 使用中
+    folder:
+      en: Folder
+      zh-CN: 文件夹
+    disable_shaders:
+      en: Disable Shaders
+      zh-CN: 关闭光影
+    set_current:
+      en: Set Current
+      zh-CN: 设为当前
+    shader_loader_missing:
+      en: No shader loader detected
+      zh-CN: 未检测到光影加载器
+    shader_loader_missing_help:
+      en: Iris, Oculus, or OptiFine is required for shaders to take effect.
+      zh-CN: 需要 Iris、Oculus 或 OptiFine 才能生效。
+    find_loader:
+      en: Find Loader
+      zh-CN: 查找加载器
+    disabled:
+      en: Disabled
+      zh-CN: 已禁用
+    format_unknown:
+      en: Format unknown
+      zh-CN: 格式未知
+    format:
+      en: "Format %{format}"
+      zh-CN: "格式 %{format}"
+    format_range:
+      en: "Format %{min}–%{max}"
+      zh-CN: "格式 %{min}–%{max}"
+    empty_mods:
+      en: Supports .jar, .zip, and .litemod files; duplicate names are renamed automatically and never overwritten.
+      zh-CN: 支持 .jar、.zip 和 .litemod 文件；同名文件会自动改名，不会覆盖。
+    empty_resource_packs:
+      en: Supports importing .zip resource packs; existing pack folders are shown too and can be enabled, disabled, and reordered.
+      zh-CN: 支持导入 .zip 资源包；已存在的资源包文件夹也会显示，可启用、禁用并调整覆盖优先级。
+    empty_shader_packs:
+      en: Supports importing .zip shader packs; existing folders are shown too, and can be selected after Iris, Oculus, or OptiFine is detected.
+      zh-CN: 支持导入 .zip 光影包；已存在的文件夹也会显示，检测到 Iris、Oculus 或 OptiFine 后可设为当前光影。
+  content:
+    no_file_for_kind:
+      en: This version has no file for the current content type.
+      zh-CN: 该版本没有适用于当前内容类型的文件。
+    missing_sha1:
+      en: This file has no SHA-1 checksum, so installation was refused.
+      zh-CN: 该文件没有 SHA-1 校验值，已拒绝安装。
+    cannot_install:
+      en: Cannot Install
+      zh-CN: 无法安装
+    preflight_failed:
+      en: Could Not Check Installation
+      zh-CN: 无法检查安装
+    incompatible_mods:
+      en: "Detected incompatible installed mods: %{names}"
+      zh-CN: "检测到不兼容的已安装 Mod：%{names}"
+    install_title:
+      en: "Install %{name}"
+      zh-CN: "安装 %{name}"
+    required_dependencies:
+      en: Required Dependencies
+      zh-CN: 必需前置
+    optional_dependencies:
+      en: "%{count} optional dependencies were not installed automatically."
+      zh-CN: "另有 %{count} 个可选前置未自动安装。"
+    choose_files:
+      en: "Choose %{kind} files"
+      zh-CN: "选择 %{kind} 文件"
+    file_selection_failed:
+      en: File Selection Failed
+      zh-CN: 选择文件失败
+    file_picker_cancelled:
+      en: The file picker was cancelled or the window was closed.
+      zh-CN: 文件选择器已取消或窗口已关闭。
+    imported:
+      en: "Imported %{count} %{kind} files."
+      zh-CN: "已导入 %{count} 个 %{kind} 文件。"
+    import_complete:
+      en: Import Complete
+      zh-CN: 导入完成
+    import_partial:
+      en: "Imported %{imported} files; %{failed} failed: %{errors}"
+      zh-CN: "已导入 %{imported} 个文件，%{failed} 个失败：%{errors}"
+    import_partial_title:
+      en: Some Imports Failed
+      zh-CN: 部分导入失败
+    import_failed:
+      en: Import Failed
+      zh-CN: 导入失败
+    update_failed:
+      en: Could Not Update Content
+      zh-CN: 更新内容失败
+    priority_failed:
+      en: Could Not Change Priority
+      zh-CN: 调整优先级失败
+    shader_failed:
+      en: Could Not Switch Shaders
+      zh-CN: 切换光影失败
+    delete_title:
+      en: "Delete %{name}?"
+      zh-CN: "删除 %{name}？"
+    delete_description:
+      en: This permanently removes the content entry from the instance.
+      zh-CN: 将从实例中永久删除该内容条目。
+    deleted:
+      en: "Deleted %{name}."
+      zh-CN: "已删除 %{name}。"
+    deleted_title:
+      en: Content Deleted
+      zh-CN: 内容已删除
+    delete_failed:
+      en: Delete Content Failed
+      zh-CN: 删除内容失败
+    open_folder_failed:
+      en: "Could not open the content folder: %{error}"
+      zh-CN: "无法打开内容目录: %{error}"
+    status_installed:
+      en: Installed
+      zh-CN: 已安装
+    status_installed_disabled:
+      en: Installed but Disabled
+      zh-CN: 已安装但禁用
+    status_other_version:
+      en: Other Version Installed
+      zh-CN: 已安装其他版本
+    status_other_version_disabled:
+      en: Other Version Installed (Disabled)
+      zh-CN: 已安装其他版本（禁用）
+    status_will_install:
+      en: Will Install
+      zh-CN: 将安装
+    status_conflict:
+      en: Conflict
+      zh-CN: 冲突
+  content_browser:
+    back_instances:
+      en: Back to instances
+      zh-CN: 返回实例列表
+    instance_missing:
+      en: Instance not found
+      zh-CN: 实例不存在
+    instance_missing_description:
+      en: This instance may have been deleted or moved. Return to the instance list and rescan.
+      zh-CN: 该实例可能已被删除或移动，请返回实例列表重新扫描。
+    online_kind:
+      en: "Online %{kind}"
+      zh-CN: "在线 %{kind}"
+    subtitle_with_loader:
+      en: "Modrinth · Minecraft %{minecraft} · %{loader}"
+      zh-CN: "Modrinth · Minecraft %{minecraft} · %{loader}"
+    subtitle:
+      en: "Modrinth · Minecraft %{minecraft}"
+      zh-CN: "Modrinth · Minecraft %{minecraft}"
+    back_instance:
+      en: Back to instance details
+      zh-CN: 返回实例详情
+    back_results:
+      en: Back to search results
+      zh-CN: 返回搜索结果
+    refresh_versions:
+      en: Refresh version list
+      zh-CN: 刷新版本列表
+    search_again:
+      en: Search Again
+      zh-CN: 重新搜索
+    no_mod_loader:
+      en: This instance has no mod loader
+      zh-CN: 当前实例没有 Mod 加载器
+    no_mod_loader_description:
+      en: Mods are downloaded into the instance mods folder, but they will not load in game until Forge, Fabric, Quilt, or NeoForge is installed.
+      zh-CN: Mod 会下载到实例的 mods 目录，但在安装 Forge、Fabric、Quilt 或 NeoForge 前不会在游戏中生效。
+    no_shader_loader:
+      en: This instance has no shader loader
+      zh-CN: 当前实例没有光影加载器
+    no_shader_loader_description:
+      en: Downloaded shaders need Iris, Oculus, or OptiFine to take effect.
+      zh-CN: 下载后需要 Iris、Oculus 或 OptiFine 才能生效。
+    searching:
+      en: Searching…
+      zh-CN: 正在搜索…
+    result_count:
+      en: "%{total} results · %{visible} loaded"
+      zh-CN: "共 %{total} 个结果 · 已加载 %{visible}"
+    search_failed:
+      en: Modrinth search failed
+      zh-CN: Modrinth 搜索失败
+    searching_modrinth:
+      en: Searching Modrinth…
+      zh-CN: 正在搜索 Modrinth…
+    no_projects:
+      en: No projects found
+      zh-CN: 没有找到项目
+    no_projects_description:
+      en: Try different keywords, or check the instance's game version and loader filters.
+      zh-CN: 尝试更换关键词，或确认当前实例的游戏版本和加载器过滤条件。
+    project_count_loading:
+      en: "%{count} projects · searching…"
+      zh-CN: "%{count} 个项目 · 正在搜索…"
+    project_count:
+      en: "%{count} projects"
+      zh-CN: "%{count} 个项目"
+    results:
+      en: Search Results
+      zh-CN: 搜索结果
+    loaded_projects_loading:
+      en: "%{count} projects loaded · searching…"
+      zh-CN: "已加载 %{count} 个项目 · 正在搜索…"
+    loaded_projects:
+      en: "%{count} projects loaded"
+      zh-CN: "已加载 %{count} 个项目"
+    by_author:
+      en: "By %{author}"
+      zh-CN: "作者：%{author}"
+    by_author_short:
+      en: "by %{author}"
+      zh-CN: "by %{author}"
+    downloads:
+      en: "%{count} downloads"
+      zh-CN: "%{count} 次下载"
+    view_versions:
+      en: View Versions
+      zh-CN: 查看版本
+    size_unknown:
+      en: Size unknown
+      zh-CN: 大小未知
+    updated_at:
+      en: "Updated %{date}"
+      zh-CN: "更新于 %{date}"
+    recommended_for_instance:
+      en: Recommended for this instance
+      zh-CN: 适配当前实例的推荐版本
+    install_recommended:
+      en: Install Recommended
+      zh-CN: 安装推荐版本
+    finding_compatible:
+      en: Finding a compatible version…
+      zh-CN: 正在查找兼容版本…
+    no_installable:
+      en: No installable version for this instance
+      zh-CN: 当前实例没有可安装版本
+    view_on_modrinth:
+      en: View project on Modrinth
+      zh-CN: 在 Modrinth 查看项目
+    gallery_label:
+      en: "%{project} screenshots"
+      zh-CN: "%{project} 的项目截图"
+    previous_slide:
+      en: Previous screenshot
+      zh-CN: 上一张截图
+    next_slide:
+      en: Next screenshot
+      zh-CN: 下一张截图
+    choose_slide:
+      en: Choose project screenshot
+      zh-CN: 选择项目截图
+    view_slide:
+      en: "View screenshot %{index}"
+      zh-CN: "查看第 %{index} 张截图"
+    versions_load_failed:
+      en: Could not load Modrinth versions
+      zh-CN: Modrinth 版本加载失败
+    loading_versions:
+      en: Loading version list…
+      zh-CN: 正在加载版本列表…
+    no_matching_versions:
+      en: No matching versions
+      zh-CN: 没有匹配版本
+    no_matching_versions_description:
+      en: This project may not support the current instance's Minecraft version or loader.
+      zh-CN: 该项目的版本可能不支持当前实例的 Minecraft 版本或加载器。
+    available_versions:
+      en: Available Versions
+      zh-CN: 可用版本
+    version_count:
+      en: "%{count} versions"
+      zh-CN: "%{count} 个版本"
+    no_files:
+      en: No downloadable file
+      zh-CN: 没有可用文件
+    recommended:
+      en: Recommended
+      zh-CN: 推荐
+    game_version_unknown:
+      en: Game version unknown
+      zh-CN: 游戏版本未知
+    requires_dependencies:
+      en: "%{count} dependencies required"
+      zh-CN: "需要 %{count} 个前置"
+    cannot_open:
+      en: Cannot Open Online Content
+      zh-CN: 无法打开在线内容
+    loading_more:
+      en: Loading…
+      zh-CN: 正在加载…
+    load_more:
+      en: Load More
+      zh-CN: 加载更多
+  placeholder:
+    search_versions:
+      en: Search version ID, e.g. 1.21.1
+      zh-CN: 搜索版本 ID，例如 1.21.1
+    search_instances:
+      en: Search installed instances
+      zh-CN: 搜索已安装实例
+    search_local_content:
+      en: Search local content
+      zh-CN: 搜索本地内容
+    search_worlds:
+      en: Search worlds
+      zh-CN: 搜索地图
+    search_modrinth:
+      en: Search Modrinth projects
+      zh-CN: 搜索 Modrinth 项目
+    search_servers:
+      en: Search servers
+      zh-CN: 搜索服务器
+    search_featured:
+      en: Search featured servers
+      zh-CN: 搜索精选服务器
+    server_name:
+      en: Leave empty to use the server address
+      zh-CN: 留空使用服务器地址
+    server_address:
+      en: e.g. play.example.com:25565
+      zh-CN: 例如 play.example.com:25565
+    version_example:
+      en: e.g. 1.21.1
+      zh-CN: 例如 1.21.1
+    instance_name:
+      en: Leave empty to use the instance ID
+      zh-CN: 留空使用实例 ID
+    instance_id:
+      en: Leave empty to generate automatically
+      zh-CN: 留空自动生成
+    java_path:
+      en: e.g. /Library/Java/.../bin/java
+      zh-CN: 例如 /Library/Java/.../bin/java
+    jvm_default:
+      en: Leave empty to use the JVM default
+      zh-CN: 留空使用 JVM 默认值
+    offline_username:
+      en: Offline player name
+      zh-CN: 离线玩家名
+    email_or_username:
+      en: Email or username
+      zh-CN: 邮箱或用户名
+    password:
+      en: Password
+      zh-CN: 密码
+    png_url:
+      en: Paste a direct PNG image URL
+      zh-CN: 粘贴 PNG 图片直链
+    search_littleskin:
+      en: Search LittleSkin skins
+      zh-CN: 搜索 LittleSkin 皮肤
+  authlib:
+    custom_server:
+      en: Custom Server
+      zh-CN: 自定义服务器
+    login:
+      en: External Login
+      zh-CN: 外置登录
+    choose_profile:
+      en: "%{server} · Choose a profile"
+      zh-CN: "%{server} · 选择角色"
+    server:
+      en: Authentication Server
+      zh-CN: 认证服务器
+    server_address:
+      en: Server Address
+      zh-CN: 服务器地址
+    server_address_help:
+      en: Supports HTTP/HTTPS; HTTPS is used when the protocol is omitted.
+      zh-CN: 支持 HTTP/HTTPS；未填写协议时默认使用 HTTPS。
+    api_address:
+      en: "API address: %{address}"
+      zh-CN: "API 地址：%{address}"
+    email_or_username:
+      en: Email or Username
+      zh-CN: 邮箱或用户名
+    password:
+      en: Password
+      zh-CN: 密码
+    password_help:
+      en: The password is used only for this login and is not saved.
+      zh-CN: 密码只用于本次登录，不会保存。
+    logging_in:
+      en: Signing in…
+      zh-CN: 正在登录…
+    login_button:
+      en: Sign In
+      zh-CN: 登录
+    server_required:
+      en: Choose an authentication server or enter its address.
+      zh-CN: 请选择认证服务器或填写服务器地址。
+    username_required:
+      en: Email or username cannot be empty.
+      zh-CN: 邮箱或用户名不能为空。
+    password_required:
+      en: Password cannot be empty.
+      zh-CN: 密码不能为空。
+    login_failed:
+      en: Cannot Sign In
+      zh-CN: 无法登录
+    no_profiles:
+      en: This account has no available game profiles.
+      zh-CN: 该账户没有可用的游戏角色。
+    logged_in:
+      en: External account signed in.
+      zh-CN: 外置账户已登录。
+    error_bad_credentials:
+      en: "Sign-in failed: incorrect username or password."
+      zh-CN: "登录失败：用户名或密码错误。"
+    error_login:
+      en: "Sign-in failed: %{message}"
+      zh-CN: "登录失败：%{message}"
+    error_invalid_username:
+      en: Username cannot be empty.
+      zh-CN: 用户名不能为空。
+    error_invalid_password:
+      en: Password cannot be empty.
+      zh-CN: 密码不能为空。
+    error_invalid_server:
+      en: "Invalid authentication server address: %{message}"
+      zh-CN: "认证服务器地址无效：%{message}"
+    error_insecure_redirect:
+      en: The authentication server attempted to downgrade from HTTPS to HTTP, which was rejected.
+      zh-CN: 认证服务器尝试从 HTTPS 降级到 HTTP，已拒绝。
+    error_cancelled:
+      en: Sign-in was cancelled.
+      zh-CN: 登录已取消。
+    error_credentials_missing:
+      en: The external account session has expired. Sign in again.
+      zh-CN: 外置账户登录已失效，请重新登录。
+    error_profile_required:
+      en: This account has multiple profiles. Choose one first.
+      zh-CN: 该账户有多个角色，请先选择角色。
+    error_secret_store:
+      en: "The system credential store is unavailable: %{error}"
+      zh-CN: "系统凭据存储不可用：%{error}"
+    error_login_generic:
+      en: "External login failed: %{error}"
+      zh-CN: "外置登录失败：%{error}"
+    error_injector:
+      en: "Could not obtain authlib-injector: %{error}"
+      zh-CN: "无法获取 authlib-injector：%{error}"
+  chrome:
+    toggle_theme:
+      en: Toggle light and dark theme
+      zh-CN: 切换明暗主题
+    add_account:
+      en: Add Account
+      zh-CN: 添加账户
+    group_game:
+      en: Game
+      zh-CN: 游戏
+    group_app:
+      en: App
+      zh-CN: 应用
+  account:
+    title:
+      en: Account
+      zh-CN: 账户
+    add:
+      en: Add Account
+      zh-CN: 添加账户
+    none:
+      en: No account added
+      zh-CN: 尚未添加账户
+    not_added:
+      en: No account added
+      zh-CN: 还没有账户
+    kind_microsoft:
+      en: Microsoft Account
+      zh-CN: 正版账户
+    kind_offline:
+      en: Offline Account
+      zh-CN: 离线账户
+    kind_authlib:
+      en: External Account
+      zh-CN: 外置账户
+    authlib_subtitle:
+      en: "External Login · %{server}"
+      zh-CN: "外置登录 · %{server}"
+    external_server:
+      en: External Authentication Server
+      zh-CN: 外部认证服务器
+    edit_offline:
+      en: Edit Offline Account
+      zh-CN: 编辑离线账户
+    delete:
+      en: Delete Account
+      zh-CN: 删除账户
+    add_offline:
+      en: Add Offline Account
+      zh-CN: 添加离线账户
+    microsoft_login:
+      en: Microsoft Login
+      zh-CN: 正版登录
+    player_name:
+      en: Player Name
+      zh-CN: 玩家名
+    save_and_switch:
+      en: Save and Switch
+      zh-CN: 保存并切换
+    microsoft_logged_in:
+      en: Microsoft account signed in.
+      zh-CN: 正版账户已登录。
+    fetching_code:
+      en: Fetching sign-in code…
+      zh-CN: 正在获取登录代码…
+    open_and_enter_code:
+      en: Open %{site} in a browser and enter the code below.
+      zh-CN: 在浏览器中打开 %{site}，输入下方代码。
+    login_code:
+      en: Sign-in Code
+      zh-CN: 登录代码
+    copied:
+      en: Copied
+      zh-CN: 已复制
+    copy_code:
+      en: Copy sign-in code
+      zh-CN: 复制登录代码
+    open_browser:
+      en: Open Browser
+      zh-CN: 打开浏览器
+    waiting_for_login:
+      en: Waiting for sign-in to finish; it continues automatically.
+      zh-CN: 等待登录完成，完成后会自动继续。
+    fetching_profile:
+      en: Fetching Minecraft account…
+      zh-CN: 正在获取 Minecraft 账户…
+    delete_confirm:
+      en: "Delete account “%{name}”?"
+      zh-CN: "确定要删除账户「%{name}」吗？"
+    delete_microsoft_notice:
+      en: Deleting also signs out this Microsoft account.
+      zh-CN: 删除后会同时退出该正版账户。
+    delete_authlib_notice:
+      en: Deleting also signs out this external account.
+      zh-CN: 删除后会同时退出该外置账户。
+    delete_offline_notice:
+      en: This does not delete any game files.
+      zh-CN: 此操作不会删除游戏文件。
+    credential_delete_failed:
+      en: "Could not delete the sign-in credential from the system keychain: %{error}"
+      zh-CN: "无法删除系统钥匙串中的登录凭据: %{error}"
+    delete_failed:
+      en: Could Not Delete Account
+      zh-CN: 无法删除账户
+    deleted:
+      en: Account deleted.
+      zh-CN: 账户已删除。
+    username_required:
+      en: Player name cannot be empty.
+      zh-CN: 玩家名不能为空。
+    save_failed:
+      en: Could Not Save Account
+      zh-CN: 无法保存账户
+    offline_saved:
+      en: Offline account saved.
+      zh-CN: 离线账户已保存。
+    error_login_expired:
+      en: The Microsoft account session has expired. Sign in again.
+      zh-CN: 正版账户登录已失效，请重新登录。
+    error_no_entitlement:
+      en: "This Microsoft account does not own Minecraft: Java Edition."
+      zh-CN: "该 Microsoft 账户未拥有 Minecraft: Java Edition。"
+    error_profile_not_found:
+      en: This account does not have a Minecraft profile yet. Sign in with the official launcher first.
+      zh-CN: 该账户还没有 Minecraft 玩家档案，请先在官方启动器登录一次。
+    error_no_xbox_profile:
+      en: This account does not have an Xbox profile yet. Sign in at minecraft.net first.
+      zh-CN: 该账户还没有 Xbox 档案，请先在 minecraft.net 登录一次。
+    error_child_account:
+      en: This is a child account and must join a Microsoft family first.
+      zh-CN: 该账户是儿童账户，需要先加入 Microsoft 家庭组。
+    error_region:
+      en: Xbox Live is not available in this account's region.
+      zh-CN: 该账户所在地区不支持 Xbox Live。
+    error_banned:
+      en: This account has been banned from Xbox Live.
+      zh-CN: 该账户已被 Xbox Live 封禁。
+    error_code_expired:
+      en: The sign-in code expired. Start again.
+      zh-CN: 登录代码已过期，请重新开始。
+    error_cancelled:
+      en: Microsoft sign-in was cancelled.
+      zh-CN: Microsoft 登录已取消。
+    error_keychain:
+      en: "Could not access the system keychain: %{error}"
+      zh-CN: "无法访问系统钥匙串: %{error}"
+  status:
+    preparing:
+      en: Preparing
+      zh-CN: 准备中
+    installed_versions:
+      en: "%{count} installed versions"
+      zh-CN: "%{count} 个已安装版本"
+    view_logs:
+      en: View Logs
+      zh-CN: 查看日志
+  logs:
+    auto_scroll:
+      en: Auto-scroll
+      zh-CN: 自动滚动
+    copy:
+      en: Copy logs
+      zh-CN: 复制日志
+    export:
+      en: Export logs
+      zh-CN: 导出日志
+    open_folder:
+      en: Open logs folder
+      zh-CN: 打开日志目录
+    clear:
+      en: Clear current task record
+      zh-CN: 清除当前任务记录
+    empty_title:
+      en: No task records yet
+      zh-CN: 还没有任务记录
+    empty_description:
+      en: Records appear after installing or launching the game.
+      zh-CN: 安装或启动游戏后显示。
+    install_version:
+      en: Install a Version
+      zh-CN: 安装一个版本
+    output:
+      en: Log Output
+      zh-CN: 日志输出
+    line_count:
+      en: "%{count} lines"
+      zh-CN: "%{count} 行"
+    output_empty:
+      en: Game output appears after a task starts.
+      zh-CN: 任务开始后显示游戏输出。
+    task_title:
+      en: "%{kind} task #%{id}"
+      zh-CN: "%{kind}任务 #%{id}"
+    exit_code:
+      en: "Exit code %{code}"
+      zh-CN: "退出码 %{code}"
+    termination_signal:
+      en: "Termination signal %{signal}"
+      zh-CN: "终止信号 %{signal}"
+    nothing_to_copy:
+      en: There are no logs to copy.
+      zh-CN: 当前没有可复制的日志。
+    copied:
+      en: Logs copied to the clipboard.
+      zh-CN: 日志已复制到剪贴板。
+    no_task_logs:
+      en: There are no task logs.
+      zh-CN: 当前没有任务日志。
+    create_dir_failed:
+      en: "Could not create the log directory: %{error}"
+      zh-CN: "无法创建日志目录: %{error}"
+    export_failed:
+      en: Export Failed
+      zh-CN: 导出失败
+    exported:
+      en: "Exported to %{path}"
+      zh-CN: "已导出到 %{path}"
+    exported_title:
+      en: Logs Exported
+      zh-CN: 日志已导出
+    write_failed:
+      en: "Could not write the log: %{error}"
+      zh-CN: "无法写入日志: %{error}"
+    open_dir_failed:
+      en: "Could not open the log directory: %{error}"
+      zh-CN: "无法打开日志目录: %{error}"
+    stop_first:
+      en: Stop the running task first.
+      zh-CN: 请先停止正在运行的任务。
+    cannot_clear:
+      en: Cannot Clear Logs
+      zh-CN: 无法清除日志
+  downloads:
+    refresh:
+      en: Refresh Mojang version list
+      zh-CN: 刷新 Mojang 版本列表
+    manage_installed:
+      en: Manage Installed Versions
+      zh-CN: 管理已安装版本
+    official:
+      en: Mojang Official
+      zh-CN: Mojang 官方
+    official_count:
+      en: "Mojang Official · %{count} versions"
+      zh-CN: "Mojang 官方 · %{count} 个版本"
+    loading:
+      en: Loading Mojang's version list…
+      zh-CN: 正在获取 Mojang 版本列表…
+    load_failed:
+      en: Could not load the version list
+      zh-CN: 无法加载版本列表
+    not_loaded:
+      en: The version list has not been loaded
+      zh-CN: 版本列表尚未加载
+    not_loaded_description:
+      en: Refresh to fetch installable Vanilla versions from Mojang's official source.
+      zh-CN: 刷新后从 Mojang 官方源获取可安装的 Vanilla 版本。
+    load_list:
+      en: Load Version List
+      zh-CN: 加载版本列表
+    no_match:
+      en: No matching versions
+      zh-CN: 没有匹配的版本
+    no_match_description:
+      en: Try a different search term or filter.
+      zh-CN: 试试更换搜索词或筛选条件。
+    show_releases:
+      en: Show Releases
+      zh-CN: 查看正式版
+    column_version:
+      en: Version
+      zh-CN: 版本
+    column_released:
+      en: Released
+      zh-CN: 发布时间
+    column_status:
+      en: Status
+      zh-CN: 状态
+    column_action:
+      en: Action
+      zh-CN: 操作
+    latest_release:
+      en: Latest Release
+      zh-CN: 最新正式版
+    reinstall:
+      en: Reinstall
+      zh-CN: 重新安装
+  servers:
+    tab_favorites:
+      en: Favorites
+      zh-CN: 收藏
+    tab_discover:
+      en: Discover
+      zh-CN: 发现
+    launch_target:
+      en: Launch Target
+      zh-CN: 启动目标
+    launch_target_instance:
+      en: Launch target instance
+      zh-CN: 启动目标实例
+    add:
+      en: Add Server
+      zh-CN: 添加服务器
+    total:
+      en: "%{count} servers"
+      zh-CN: "共 %{count} 个服务器"
+    empty_title:
+      en: No servers yet
+      zh-CN: 还没有服务器
+    no_match_title:
+      en: No matching servers
+      zh-CN: 没有匹配的服务器
+    empty_description:
+      en: Add a Java Edition server to see its MOTD, player count, and latency.
+      zh-CN: 添加 Java 版服务器后可以查看 MOTD、在线人数和延迟。
+    featured_load_failed:
+      en: Could not load featured servers
+      zh-CN: 无法加载精选服务器
+    shown:
+      en: "Showing %{shown} of %{total} servers"
+      zh-CN: "显示 %{shown} / %{total} 个服务器"
+    featured_no_match:
+      en: No matching featured servers
+      zh-CN: 没有匹配的精选服务器
+    unfavorite_tooltip:
+      en: Favorited; click to remove
+      zh-CN: 已收藏；点击取消收藏
+    favorite_tooltip:
+      en: Favorite server
+      zh-CN: 收藏服务器
+    open_website:
+      en: Open website
+      zh-CN: 打开官网
+    requires_modpack:
+      en: Modpack Required
+      zh-CN: 需要整合包
+    join:
+      en: Join
+      zh-CN: 进入
+    requires_modpack_tooltip:
+      en: Prepare the matching mods or modpack first
+      zh-CN: 需要准备对应的 Mod 或整合包
+    requires_mods_tag:
+      en: Mods/Modpack required
+      zh-CN: 需要 Mod/整合包
+    version_unknown:
+      en: Version unknown
+      zh-CN: 版本未知
+    select_modpack_version:
+      en: Choose a version for the modpack
+      zh-CN: 按整合包选择版本
+    edit:
+      en: Edit server
+      zh-CN: 编辑服务器
+    delete:
+      en: Delete server
+      zh-CN: 删除服务器
+    players_of:
+      en: "%{online}/%{max} players"
+      zh-CN: "%{online}/%{max} 人"
+    players:
+      en: "%{online} players"
+      zh-CN: "%{online} 人"
+    querying:
+      en: Querying
+      zh-CN: 查询中
+    unreachable:
+      en: Unable to connect
+      zh-CN: 无法连接
+    join_requires_instance:
+      en: Select an instance first
+      zh-CN: 请先选择一个实例
+    join_requires_account:
+      en: Add an account first
+      zh-CN: 请先添加一个账户
+    join_busy:
+      en: A task or game is running; stop it first
+      zh-CN: 当前有任务或游戏正在运行，请先停止
+    join_ready:
+      en: Join with the current instance and account
+      zh-CN: 使用当前实例和账户进入服务器
+    invalid_address:
+      en: "Invalid address: %{error}"
+      zh-CN: "地址无效：%{error}"
+    unfavorited:
+      en: Removed from favorites.
+      zh-CN: 已取消收藏。
+    favorite_failed:
+      en: Could Not Favorite Server
+      zh-CN: 无法收藏服务器
+    favorited:
+      en: Added to server favorites.
+      zh-CN: 已加入服务器收藏。
+    modpack_required_notice:
+      en: This server requires client mods or a modpack. Prepare the matching instance first.
+      zh-CN: 该服务器需要客户端 Mod 或整合包，请先准备对应实例。
+    select_instance_notice:
+      en: Select an instance on Home or the Instances page first.
+      zh-CN: 请先在主页或实例页选择一个实例。
+    cannot_join:
+      en: Cannot Join Server
+      zh-CN: 无法进入服务器
+    add_account_notice:
+      en: Add an account first.
+      zh-CN: 请先添加一个账户。
+    busy_notice:
+      en: A task or content operation is already running. Wait for it to finish or stop it first.
+      zh-CN: 已有任务或内容操作正在运行，请等待完成或先停止它。
+    name:
+      en: Name
+      zh-CN: 名称
+    name_hint:
+      en: Leave empty to use the server address.
+      zh-CN: 留空时使用服务器地址。
+    address:
+      en: Address
+      zh-CN: 地址
+    address_hint:
+      en: Supports host, host:port, and [IPv6]:port; port 25565 is used when omitted.
+      zh-CN: 支持 host、host:port 和 [IPv6]:port；省略端口时使用 25565。
+    save_failed:
+      en: Could Not Save Server
+      zh-CN: 无法保存服务器
+    saved:
+      en: Server saved.
+      zh-CN: 服务器已保存。
+    delete_title:
+      en: "Delete server %{name}?"
+      zh-CN: "删除服务器 %{name}？"
+    delete_description:
+      en: Only the RMCL favorite is removed; the in-game servers.dat is not modified.
+      zh-CN: 只删除 RMCL 中的收藏，不会修改游戏内的 servers.dat。
+    deleted:
+      en: Server deleted.
+      zh-CN: 服务器已删除。
+  home:
+    first_instance_ready:
+      en: Ready to install your first instance
+      zh-CN: 准备安装你的第一个实例
+    first_instance_hint:
+      en: Start by choosing any Vanilla version on the Downloads page.
+      zh-CN: 从下载页选择任意 Vanilla 版本开始。
+    config_read_failed:
+      en: Could not read the configuration
+      zh-CN: 配置读取失败
+    config_save_failed:
+      en: Could not save the configuration
+      zh-CN: 配置保存失败
+    current_instance:
+      en: Current Instance
+      zh-CN: 当前实例
+    not_installed:
+      en: Not Installed
+      zh-CN: 尚未安装
+    account_required:
+      en: Add an offline account before launching the game.
+      zh-CN: 启动游戏前需要添加一个离线账户。
+    launch_config:
+      en: Launch Configuration
+      zh-CN: 启动配置
+    instance:
+      en: Instance
+      zh-CN: 实例
+    select_instance:
+      en: Select an instance
+      zh-CN: 选择实例
+    verifying_account:
+      en: Verifying account…
+      zh-CN: 正在验证账户…
+    launch_game:
+      en: Launch Game
+      zh-CN: 启动游戏
+    install_first:
+      en: Install First Instance
+      zh-CN: 安装第一个实例
+    view_all_servers:
+      en: View all %{count}
+      zh-CN: 查看全部 %{count} 个
+    manage_servers:
+      en: Manage Servers
+      zh-CN: 管理服务器
+    join_named:
+      en: Join %{name}
+      zh-CN: 进入 %{name}
+    quick_connect:
+      en: Quick Connect
+      zh-CN: 快速连接
+    no_favorite_servers:
+      en: No favorite servers yet
+      zh-CN: 还没有收藏的服务器
+    no_favorite_servers_hint:
+      en: Add a server or favorite a featured entry to join it from Home.
+      zh-CN: 添加服务器或收藏精选条目后，可以从首页直接进入。
+    browse_featured:
+      en: Browse Featured
+      zh-CN: 浏览精选
+    recent_instances:
+      en: Recent Instances
+      zh-CN: 最近实例
+    no_installed_instances:
+      en: No installed instances yet
+      zh-CN: 还没有已安装实例
+    launch:
+      en: Launch
+      zh-CN: 启动
+    quick_actions:
+      en: Quick Actions
+      zh-CN: 快速操作
+    install_new_instance:
+      en: Install New Instance
+      zh-CN: 安装新实例
+    open_game_folder:
+      en: Open Game Folder
+      zh-CN: 打开游戏目录
+  versions:
+    rescan:
+      en: Rescan installed instances
+      zh-CN: 重新扫描已安装实例
+    create:
+      en: New Instance
+      zh-CN: 新建实例
+    shared_banner:
+      en: "%{count} instances still share the game directory"
+      zh-CN: "%{count} 个实例仍在共享游戏目录"
+    shared_banner_hint:
+      en: Click the isolate button in a row to migrate. Global mods, resource packs, and shaders are copied into the instance; the originals stay in place.
+      zh-CN: 点击行内的隔离按钮迁移。全局 mods、资源包和光影会复制到实例，原内容保留。
+    empty_title:
+      en: No instances installed yet
+      zh-CN: 还没有安装实例
+    no_match_title:
+      en: No matching instances
+      zh-CN: 没有匹配的实例
+    empty_description:
+      en: Install your first Vanilla instance from Mojang's official source.
+      zh-CN: 从 Mojang 官方源安装第一个 Vanilla 实例。
+    browse_all:
+      en: Browse All Versions
+      zh-CN: 浏览全部版本
+    installed_title:
+      en: Installed Instances
+      zh-CN: 已安装实例
+    installed_count:
+      en: "%{count} instances"
+      zh-CN: "共 %{count} 个实例"
+    manifest_invalid:
+      en: Invalid Config
+      zh-CN: 配置异常
+    incomplete:
+      en: Incomplete Files
+      zh-CN: 文件不完整
+    game_dir:
+      en: "Game folder · %{path}"
+      zh-CN: "游戏目录 · %{path}"
+    manage_content:
+      en: Manage content
+      zh-CN: 管理内容
+    repair:
+      en: Check and repair
+      zh-CN: 检查并修复
+    enable_isolation:
+      en: Enable version isolation
+      zh-CN: 启用版本隔离
+    delete:
+      en: Delete instance
+      zh-CN: 删除实例
+    read_failed:
+      en: Could Not Read Version List
+      zh-CN: 无法读取版本列表
+    delete_isolated_description:
+      en: The whole instance directory is deleted, including mods, resource packs, shaders, and worlds; shared libraries and assets are unaffected.
+      zh-CN: 将删除整个实例目录，包括 mods、资源包、光影和存档；共享 libraries 和 assets 不受影响。
+    delete_shared_description:
+      en: The whole version directory is deleted; shared libraries and assets are unaffected.
+      zh-CN: 将删除整个版本目录；共享 libraries 和 assets 不受影响。
+    delete_title:
+      en: "Delete instance %{version}?"
+      zh-CN: "删除实例 %{version}？"
+    wait_for_task:
+      en: Wait for the current task or content operation to finish.
+      zh-CN: 请先等待当前任务或内容操作结束。
+    cannot_delete:
+      en: Cannot Delete Instance
+      zh-CN: 无法删除实例
+    deleted:
+      en: "Deleted version %{version}."
+      zh-CN: "已删除版本 %{version}。"
+    deleted_title:
+      en: Version Deleted
+      zh-CN: 版本已删除
+    delete_failed:
+      en: Delete Version Failed
+      zh-CN: 删除版本失败
+    isolation_title:
+      en: "Enable version isolation for %{name}?"
+      zh-CN: "为 %{name} 启用版本隔离？"
+    isolation_description:
+      en: The game will use the instance directory as its working directory. Global mods, resource packs, and shaders are copied into the instance without overwriting existing files; the global originals remain.
+      zh-CN: 游戏将使用实例目录作为工作目录。全局 mods、资源包和光影会复制到该实例，不覆盖已有文件，原全局内容保留。
+    enable_isolation_confirm:
+      en: Enable Isolation
+      zh-CN: 启用隔离
+    cannot_enable_isolation:
+      en: Cannot Enable Isolation
+      zh-CN: 无法启用隔离
+    isolation_enabled:
+      en: "Version isolation enabled for %{version}; global content was copied into the instance."
+      zh-CN: "已为 %{version} 启用版本隔离，全局内容已复制到实例。"
+    isolation_enabled_title:
+      en: Version Isolation Enabled
+      zh-CN: 版本隔离已启用
+    isolation_failed:
+      en: Enable Isolation Failed
+      zh-CN: 启用隔离失败
+  install:
+    cannot_start:
+      en: Cannot Start Installation
+      zh-CN: 无法开始安装
+    checking:
+      en: "Checking and installing %{version}."
+      zh-CN: "正在检查并安装 %{version}。"
+    started:
+      en: Installation Started
+      zh-CN: 已开始安装
+    dialog_title:
+      en: Install Version
+      zh-CN: 安装版本
+    install_to:
+      en: Install to
+      zh-CN: 安装到
+    isolation_notice:
+      en: Each instance has independent mods, resource packs, shaders, and worlds.
+      zh-CN: 各实例的 mods、资源包、光影和存档互不影响。
+  content_install:
+    cannot_start:
+      en: Cannot Install Content
+      zh-CN: 无法安装内容
+    installing:
+      en: "Installing %{name}."
+      zh-CN: "正在安装 %{name}。"
+    started:
+      en: Download Started
+      zh-CN: 已开始下载
+  launch:
+    cannot_start:
+      en: Cannot Launch Game
+      zh-CN: 无法启动游戏
+    account_required:
+      en: Add an account first.
+      zh-CN: 请先添加一个账户。
+  task:
+    start_failed:
+      en: Task Start Failed
+      zh-CN: 任务启动失败
+    stop_requested:
+      en: Requested that the current task stop.
+      zh-CN: 已请求停止当前任务。
+    cancel_failed:
+      en: "Cancel command failed: %{error}"
+      zh-CN: "取消命令失败: %{error}"
+    cannot_stop:
+      en: Cannot Stop Task
+      zh-CN: 无法停止任务
+    loader_instance_created:
+      en: "Loader instance %{name} was created with a copy of the original content."
+      zh-CN: "加载器实例 %{name} 已创建，并复制了原实例内容。"
+    loader_install_complete:
+      en: Loader Installation Complete
+      zh-CN: 加载器安装完成
+    instance_created:
+      en: "Instance %{name} was created."
+      zh-CN: "实例 %{name} 已创建。"
+    instance_create_complete:
+      en: Instance Created
+      zh-CN: 实例创建完成
+    content:
+      en: content
+      zh-CN: 内容
+    content_installed:
+      en: "%{name} was installed into the instance."
+      zh-CN: "%{name} 已安装到实例。"
+    content_install_complete:
+      en: Content Installation Complete
+      zh-CN: 内容安装完成
+    install_complete_notice:
+      en: Minecraft installation is complete. You can start playing.
+      zh-CN: Minecraft 安装已完成，可以开始游戏了。
+    install_complete:
+      en: Installation Complete
+      zh-CN: 安装完成
+    game_exited_abnormally:
+      en: "The game exited abnormally (%{detail})."
+      zh-CN: "游戏异常退出（%{detail}）。"
+    game_abnormal_exit:
+      en: Game Exited Abnormally
+      zh-CN: 游戏异常退出
+    failed_check_logs:
+      en: The task failed. Check the logs.
+      zh-CN: 任务失败，请查看日志。
+    failed:
+      en: Task Failed
+      zh-CN: 任务失败
+    cancelled_notice:
+      en: The task was cancelled.
+      zh-CN: 任务已取消。
+    cancelled:
+      en: Cancelled
+      zh-CN: 已取消
+    ready:
+      en: Ready
+      zh-CN: 就绪
+    running:
+      en: Running
+      zh-CN: 运行中
+    game_exited:
+      en: Game Exited
+      zh-CN: 游戏已退出
+    kind_install:
+      en: Install
+      zh-CN: 安装
+    kind_instance_create:
+      en: Create Instance
+      zh-CN: 创建实例
+    kind_content_install:
+      en: Install Content
+      zh-CN: 安装内容
+    kind_launch:
+      en: Launch
+      zh-CN: 启动
+    kind_java_install:
+      en: Install Java
+      zh-CN: 安装 Java
+    progress_download:
+      en: "%{completed} / %{total} files · %{current}"
+      zh-CN: "%{completed} / %{total} 个文件 · %{current}"
+    progress_content_bytes:
+      en: "%{position}%{current} · %{downloaded} / %{total} bytes"
+      zh-CN: "%{position}%{current} · %{downloaded} / %{total} 字节"
+    progress_content:
+      en: "%{position}%{current} · %{downloaded} bytes"
+      zh-CN: "%{position}%{current} · %{downloaded} 字节"
+    progress_processors:
+      en: "%{completed} / %{total} loader processors · %{current}"
+      zh-CN: "%{completed} / %{total} 个加载器处理器 · %{current}"
+    progress_natives:
+      en: "%{completed} / %{total} native JARs · %{current}"
+      zh-CN: "%{completed} / %{total} 个 native JAR · %{current}"
+    phase_resolving_version:
+      en: Resolving version manifest
+      zh-CN: 解析版本 manifest
+    phase_reading_version:
+      en: Reading version JSON
+      zh-CN: 读取版本 JSON
+    phase_persisting_version:
+      en: Saving version JSON
+      zh-CN: 保存版本 JSON
+    phase_planning_base:
+      en: Planning game files
+      zh-CN: 规划游戏文件
+    phase_downloading_base:
+      en: Downloading game files
+      zh-CN: 下载游戏文件
+    phase_reading_assets:
+      en: Reading asset index
+      zh-CN: 读取资源索引
+    phase_planning_assets:
+      en: Planning asset objects
+      zh-CN: 规划资源对象
+    phase_downloading_assets:
+      en: Downloading asset objects
+      zh-CN: 下载资源对象
+    phase_materializing_assets:
+      en: Materializing legacy assets
+      zh-CN: 展开旧版资源
+    phase_downloading_loader:
+      en: Downloading loader files
+      zh-CN: 下载加载器文件
+    phase_merging_natives:
+      en: Merging natives
+      zh-CN: 合并 natives
+    phase_install_complete:
+      en: Installation complete
+      zh-CN: 安装已完成
+    phase_preparing_instance:
+      en: Preparing instance
+      zh-CN: 准备实例
+    phase_installing_base:
+      en: Installing base version
+      zh-CN: 安装基础版本
+    phase_fetching_loader:
+      en: Fetching loader metadata
+      zh-CN: 获取加载器元数据
+    phase_writing_instance:
+      en: Writing instance configuration
+      zh-CN: 写入实例配置
+    phase_copying_content:
+      en: Copying instance content
+      zh-CN: 复制实例内容
+    phase_installing_loader:
+      en: Installing instance files
+      zh-CN: 安装实例文件
+    phase_preparing_content:
+      en: Preparing content download
+      zh-CN: 准备内容下载
+    phase_downloading_content:
+      en: Downloading content files
+      zh-CN: 下载内容文件
+    phase_installing_content:
+      en: Writing instance content
+      zh-CN: 写入实例内容
+    phase_inspecting:
+      en: Checking version files
+      zh-CN: 检查版本文件
+    phase_checking_java:
+      en: Checking Java
+      zh-CN: 检查 Java
+    phase_installing_java:
+      en: Installing Java
+      zh-CN: 安装 Java
+    phase_preparing_launch:
+      en: Preparing launch arguments
+      zh-CN: 准备启动参数
+    phase_starting_game:
+      en: Starting game process
+      zh-CN: 创建游戏进程
+    phase_running_game:
+      en: Game running
+      zh-CN: 游戏运行中
+  java:
+    select:
+      en: Select Java
+      zh-CN: 选择 Java
+    auto:
+      en: Automatic
+      zh-CN: 自动选择
+    auto_description:
+      en: Pick a compatible runtime for the game version and fetch one automatically when missing
+      zh-CN: 按游戏版本选择兼容 runtime，缺失时自动获取
+    instance_only_notice:
+      en: Applies only to this instance. Automatic selection follows the game version and the automatic Java setting.
+      zh-CN: 仅影响当前实例。自动选择会跟随游戏版本和 Java 自动获取设置。
+    probing:
+      en: Probing local Java installations…
+      zh-CN: 正在探测本机 Java…
+    custom_executable:
+      en: Custom Executable
+      zh-CN: 自定义可执行文件
+    detecting:
+      en: Detecting…
+      zh-CN: 检测中…
+    use_path:
+      en: Use This Path
+      zh-CN: 使用此路径
+    path_hint:
+      en: Must point to java or java.exe; the version and platform are checked again at launch.
+      zh-CN: 必须指向 java 或 java.exe；启动时会重新校验版本与平台。
+    redetect:
+      en: Detect Again
+      zh-CN: 重新检测
+    not_found:
+      en: No Java found. Check JAVA_HOME, PATH, or the runtime managed by RMCL.
+      zh-CN: 没有找到 Java。请检查 JAVA_HOME、PATH 或 RMCL 管理的 runtime。
+    none_available:
+      en: "No usable Java; %{count} candidates failed probing."
+      zh-CN: "没有可用 Java；%{count} 个候选探测失败。"
+    probe_failed:
+      en: "Java discovery task failed: %{error}"
+      zh-CN: "Java 探测任务失败：%{error}"
+    cannot_use:
+      en: Cannot Use This Java
+      zh-CN: 无法使用该 Java
+    save_failed:
+      en: Could Not Save Java Settings
+      zh-CN: 无法保存 Java 设置
+    updated:
+      en: Instance Java Updated
+      zh-CN: 实例 Java 已更新
+    source_managed:
+      en: RMCL Managed
+      zh-CN: RMCL 管理
+    source_system:
+      en: System PATH
+      zh-CN: 系统 PATH
+    source_custom:
+      en: Custom
+      zh-CN: 自定义
+  loader:
+    cannot_add:
+      en: Cannot Add Loader
+      zh-CN: 无法添加加载器
+    already_installed:
+      en: "This instance already has %{kind} %{version}."
+      zh-CN: "当前实例已安装 %{kind} %{version}。"
+  mirror:
+    probing_auto:
+      en: Probing the domestic mirror…
+      zh-CN: 正在探测国内镜像…
+    official_only:
+      en: Using the official source only
+      zh-CN: 仅使用官方源
+    probing_mirror:
+      en: Preferring the domestic mirror; probing…
+      zh-CN: 国内镜像优先，正在探测…
+    available:
+      en: "Domestic mirror available (%{latency} ms)"
+      zh-CN: "国内镜像可用（%{latency} ms）"
+    unavailable:
+      en: Domestic mirror unavailable; using the official source
+      zh-CN: 国内镜像不可用，使用官方源
+    preferred:
+      en: "Preferring the domestic mirror (%{latency} ms)"
+      zh-CN: "国内镜像优先（%{latency} ms）"
+    preferred_fallback:
+      en: Preferring the domestic mirror; the current probe failed and requests will fall back to the official source
+      zh-CN: 国内镜像优先；当前探测失败，将回退官方源
+  updates:
+    title:
+      en: Updates
+      zh-CN: 更新
+    available_notice:
+      en: "Version v%{version} is available; download and install it in Settings."
+      zh-CN: "发现新版本 v%{version}，可在设置中下载并安装。"
+    dev_build:
+      en: Development builds do not run automatic updates; use a release build to verify the update flow.
+      zh-CN: 开发构建不执行自动更新；请使用发布包验证更新流程。
+    dialog_title:
+      en: "Update to RMCL %{version}"
+      zh-CN: "更新到 RMCL %{version}"
+    no_notes:
+      en: No release notes were provided for this version.
+      zh-CN: 该版本没有提供更新说明。
+    verify_notice:
+      en: The download is verified with SHA-256 before replacing the current program and restarting automatically.
+      zh-CN: 下载后会校验 SHA-256，替换当前程序并自动重启。
+    download_and_install:
+      en: Download and Install
+      zh-CN: 下载并安装
+    wait_for_task:
+      en: Wait for the current task to finish before updating the launcher.
+      zh-CN: 请等待当前任务结束后再更新启动器。
+    restarting:
+      en: RMCL will exit and complete the update.
+      zh-CN: RMCL 将退出并完成更新。
+    updating:
+      en: Updating
+      zh-CN: 正在更新
+  agent:
+    send:
+      en: Send
+      zh-CN: 发送
+    compose_busy:
+      en: The agent is working. Wait for it to finish · Shift+Enter for a new line
+      zh-CN: Agent 正在处理，完成后再发送 · Shift+Enter 换行
+    compose_idle:
+      en: Enter to send · Shift+Enter for a new line
+      zh-CN: Enter 发送 · Shift+Enter 换行
+    example_install:
+      en: Install a Fabric instance for Minecraft 26.3
+      zh-CN: 帮我安装一个 26.3 的 Fabric 实例
+    example_sodium:
+      en: Install Sodium for the current instance
+      zh-CN: 给当前实例安装 Sodium
+    example_list:
+      en: List installed instances and Java status
+      zh-CN: 列出已安装的实例和 Java 状态
+    clear:
+      en: Clear
+      zh-CN: 清空
+    settings_unavailable:
+      en: AI settings are unavailable
+      zh-CN: AI 设置不可用
+    empty_title:
+      en: Manage RMCL in natural language
+      zh-CN: 用自然语言管理 RMCL
+    empty_description:
+      en: The agent can look up versions, create instances, search and install content, and launch the game. Destructive operations ask for your confirmation first.
+      zh-CN: Agent 可以查询版本、创建实例、搜索并安装内容，也可以启动游戏。破坏性操作会先询问你。
+    free_tier_notice:
+      en: Kilo's free models do not require an API key and may log conversations; do not send sensitive information.
+      zh-CN: Kilo 免费模型无需 API Key，可能记录对话；请勿发送敏感信息
+    go_settings:
+      en: Set API Key in Settings
+      zh-CN: 去设置 API Key
+    jump_to_bottom:
+      en: Jump to bottom
+      zh-CN: 回到底部
+    input_label:
+      en: Send a message to the AI assistant
+      zh-CN: 给 AI 助手发送消息
+    connecting:
+      en: Connecting to the model
+      zh-CN: 正在连接模型
+    thinking:
+      en: Thinking
+      zh-CN: 正在思考
+    awaiting_confirmation:
+      en: Waiting for your confirmation
+      zh-CN: 等待你的确认
+    working:
+      en: Working
+      zh-CN: 正在处理
+    history_summary:
+      en: "%{summary} · %{action}"
+      zh-CN: "%{summary} · %{action}"
+    collapse:
+      en: Collapse
+      zh-CN: 收起
+    expand:
+      en: Expand
+      zh-CN: 展开
+    duration_minutes:
+      en: "%{minutes} min %{seconds} s"
+      zh-CN: "%{minutes} 分 %{seconds} 秒"
+    duration_seconds:
+      en: "%{seconds} s"
+      zh-CN: "%{seconds} 秒"
+    completed_steps_with_duration:
+      en: "Completed %{count} steps · %{duration}"
+      zh-CN: "已完成 %{count} 个步骤 · %{duration}"
+    completed_steps:
+      en: "Completed %{count} steps"
+      zh-CN: "已完成 %{count} 个步骤"
+    key_required:
+      en: Save an API key for the selected provider in Settings first.
+      zh-CN: 请先在设置中保存所选服务商的 API Key。
+    account_microsoft:
+      en: Microsoft
+      zh-CN: 正版
+    account_offline:
+      en: Offline
+      zh-CN: 离线
+    account_authlib:
+      en: External Login
+      zh-CN: 外置登录
+    account_none:
+      en: Not Signed In
+      zh-CN: 未登录
+    locale_name:
+      en: English
+      zh-CN: 简体中文
+    task_ended:
+      en: The AI background task ended unexpectedly. Try again.
+      zh-CN: AI 后台任务意外结束，请重试。
+    keychain_task_failed:
+      en: "Background keychain task failed: %{error}"
+      zh-CN: "后台钥匙串任务失败：%{error}"
+    key_empty:
+      en: API key cannot be empty.
+      zh-CN: API Key 不能为空。
+    provider_unsupported:
+      en: "Unsupported AI provider `%{provider}`; choose another one in Settings."
+      zh-CN: "不支持的 AI 服务商 `%{provider}`，请在设置中重新选择。"
+    proxy_placeholder:
+      en: Optional, e.g. socks5://127.0.0.1:7890
+      zh-CN: 可选，例如 socks5://127.0.0.1:7890
+    input_placeholder:
+      en: "Tell the agent what to do, e.g. install a Fabric instance for 26.3"
+      zh-CN: "告诉 Agent 你想做什么，例如：帮我安装一个 26.3 的 Fabric 实例"
+    stopped:
+      en: The current turn was stopped.
+      zh-CN: 已停止当前回合。

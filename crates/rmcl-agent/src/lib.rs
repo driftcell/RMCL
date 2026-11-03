@@ -1,5 +1,7 @@
 //! Built-in AI assistant runtime for RMCL.
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 pub mod events;
 mod mcp;
 mod model;

@@ -35,8 +35,8 @@ impl SkinCatalogSort {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Popular => "热门",
-            Self::Newest => "最新",
+            Self::Popular => "Popular",
+            Self::Newest => "Newest",
         }
     }
 
@@ -256,7 +256,7 @@ impl ListItem {
             return Ok(None);
         }
         let name = if self.name.trim().is_empty() {
-            "未命名皮肤".to_owned()
+            rust_i18n::t!("app.skin.untitled").to_string()
         } else {
             self.name.trim().to_owned()
         };

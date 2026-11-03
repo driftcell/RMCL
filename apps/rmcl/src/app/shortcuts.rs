@@ -3,6 +3,7 @@ use gpui_kit::{
 };
 
 use super::{LauncherApp, Page};
+use crate::i18n::tr;
 
 actions!(
     rmcl,
@@ -58,6 +59,12 @@ pub fn init(cx: &mut App) {
     cx.set_menus(menus());
 }
 
+/// Rebuilds native menus after the interface language changes.
+#[cfg(target_os = "macos")]
+pub fn refresh_menus(cx: &mut App) {
+    cx.set_menus(menus());
+}
+
 fn key_bindings() -> Vec<KeyBinding> {
     let mut bindings = vec![
         KeyBinding::new("cmd-q", Quit, None),
@@ -87,31 +94,32 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu::new("RMCL").items([
             MenuItem::action(
-                "设置…",
+                tr("app.menu.settings"),
                 SelectPage {
                     page: Page::Settings,
                 },
             ),
             MenuItem::separator(),
-            MenuItem::os_submenu("服务", SystemMenuType::Services),
+            MenuItem::os_submenu(tr("app.menu.services"), SystemMenuType::Services),
             MenuItem::separator(),
-            MenuItem::action("隐藏 RMCL", Hide),
-            MenuItem::action("隐藏其他程序", HideOthers),
-            MenuItem::action("全部显示", ShowAll),
+            MenuItem::action(tr("app.menu.hide_rmcl"), Hide),
+            MenuItem::action(tr("app.menu.hide_others"), HideOthers),
+            MenuItem::action(tr("app.menu.show_all"), ShowAll),
             MenuItem::separator(),
-            MenuItem::action("退出 RMCL", Quit),
+            MenuItem::action(tr("app.menu.quit_rmcl"), Quit),
         ]),
-        Menu::new("文件").items([MenuItem::action("关闭窗口", CloseWindow)]),
-        Menu::new("前往").items(
+        Menu::new(tr("app.menu.file"))
+            .items([MenuItem::action(tr("app.menu.close_window"), CloseWindow)]),
+        Menu::new(tr("app.menu.go")).items(
             Page::NAVIGATION
                 .into_iter()
                 .map(|page| MenuItem::action(page.title(), SelectPage { page })),
         ),
-        Menu::new("窗口").items([
-            MenuItem::action("最小化", MinimizeWindow),
-            MenuItem::action("缩放", ZoomWindow),
+        Menu::new(tr("app.menu.window")).items([
+            MenuItem::action(tr("app.menu.minimize"), MinimizeWindow),
+            MenuItem::action(tr("app.menu.zoom"), ZoomWindow),
             MenuItem::separator(),
-            MenuItem::action("切换全屏", ToggleFullscreen),
+            MenuItem::action(tr("app.menu.toggle_fullscreen"), ToggleFullscreen),
         ]),
     ]
 }
