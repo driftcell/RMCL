@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/driftcell/RMCL/compare/v0.15.0...v0.16.0) - 2026-11-03
+
+### Added
+
+- *(i18n)* add English and Simplified Chinese localization ([#135](https://github.com/driftcell/RMCL/pull/135))
+
 ## [0.15.0](https://github.com/driftcell/RMCL/compare/v0.14.0...v0.15.0) - 2026-11-01
 
 ### Added
