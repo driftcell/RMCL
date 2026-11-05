@@ -40,3 +40,11 @@
 - RMCL 未使用 release notes 中变更的按键、修饰键或滚动输入构造 API。日志页的 `on_scroll_wheel` 已按弃用提示改为 `on_scroll`。
 - `cargo check -p rmcl`、workspace Clippy、nextest（425 passed / 9 skipped）和 doctests 在 macOS 上通过。
 - macOS 对照 smoke 中，0.8.0 与 0.8.1 都能创建名为 RMCL 的 CGWindow，窗口边界和 accessibility 表现一致，未发现升级新增差异。当前宿主未授予屏幕录制权限，未能截图验证窗口内容；Windows/Linux 和完整交互仍需分别验收。
+
+## 0.9.0 升级（2026-11-05）
+
+- 来源：[GPUI Kit 0.9.0 release notes](https://github.com/longbridge/gpui-kit/releases/tag/v0.9.0)。
+- `gpui-kit` 从 0.8.1 升至 0.9.0，默认后端从 `gpui-pre 0.3.10` 升至 0.3.11；测试用 `gpui-pre` 精确依赖同步升级，默认 `component + assets` 和其他 feature 选择不变。
+- 上游将多类 Theme 配置结构标记为 `#[non_exhaustive]`。RMCL 只通过 `Theme::update` 修改现有主题字段，没有使用受影响结构的字面量，也没有直接使用变更的 `Window::text_system`、`WindowTextSystem` 或 `DisplayMap` API，因此不需要源码迁移。
+- macOS 上 `cargo check --workspace --all-targets --locked`、rustfmt、workspace Clippy、nextest（573 passed / 10 skipped）和 doctests 全部通过。
+- 使用独立临时配置、Minecraft 仓库和 Java store 完成 macOS 原生启动 smoke，成功创建名为 RMCL 的真实 CGWindow，随后用 SIGTERM 结束临时进程。此次只验证启动与窗口创建，未验证 Windows/Linux 窗口、完整页面交互或真实游戏启动。
