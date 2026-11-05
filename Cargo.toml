@@ -43,7 +43,7 @@ fastrand = "2"
 fastnbt = "2.6"
 flate2 = "1"
 futures = "0.3"
-gpui-kit = "0.8.1"
+gpui-kit = "0.9.0"
 hex = "0.4"
 hickory-resolver = "0.26"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
