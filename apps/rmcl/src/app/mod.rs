@@ -8808,10 +8808,10 @@ fn restore_macos_windows() {
 mod tests {
     use std::{io::Cursor, sync::Arc};
 
-    use gpui::{
-        ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, WindowOptions, point, px,
+    use gpui_kit::{
+        AppContext as _, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
+        WindowOptions, component::WindowExt as _, point, px,
     };
-    use gpui_kit::{AppContext as _, component::WindowExt as _};
     use image::{Rgba, RgbaImage};
     use rmcl_app::{ContentKind, SkinCatalogItem, VersionManifest, prepare_skin};
     use rmcl_auth::SkinVariant;
@@ -8830,7 +8830,7 @@ mod tests {
         }
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn macos_shortcuts_switch_pages_and_control_the_active_window(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
@@ -8916,7 +8916,7 @@ mod tests {
         assert!(cx.read(|cx| cx.windows().is_empty()));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn language_switch_updates_the_active_locale(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
@@ -8960,7 +8960,7 @@ mod tests {
         rust_i18n::set_locale("en");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn authlib_login_keeps_the_dialog_open(cx: &mut TestAppContext) {
         cx.update(gpui_kit::init);
         let temporary = TempDir::new().unwrap();
@@ -9004,7 +9004,7 @@ mod tests {
         assert!(cx.update(|window, cx| window.has_active_dialog(cx)));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn agent_wheel_reaches_the_transcript_tail(cx: &mut TestAppContext) {
         cx.update(gpui_kit::init);
         let temporary = TempDir::new().unwrap();
@@ -9085,7 +9085,7 @@ mod tests {
         assert!(!scrolled_up, "wheel stopped away from the tail");
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn skin_page_renders_online_library_surface(cx: &mut TestAppContext) {
         cx.update(gpui_kit::init);
         let temporary = TempDir::new().unwrap();
