@@ -71,7 +71,7 @@ rmcl-store = { path = "crates/rmcl-store" }
 rmcl-world = { path = "crates/rmcl-world" }
 reflink-copy = "0.1"
 rust-i18n = "4.2"
-rig = { version = "0.45", default-features = false, features = ["agent", "derive", "reqwest", "rmcp", "rustls", "socks"] }
+rig = { version = "0.46", default-features = false, features = ["agent", "derive", "reqwest", "rmcp", "rustls", "socks"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
