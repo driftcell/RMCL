@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rmcl_app::{
     ContentInstallPhase, ContentInstallPreflight, ContentPreflightItem, ContentPreflightStatus,
     DownloadStage, InstallDownloadProgress, InstallPhase, InstalledVersion, InstanceCreatePhase,
@@ -6,10 +8,22 @@ use rmcl_app::{
     TaskSnapshot as AppTaskSnapshot, TaskStatus as AppTaskStatus, TaskSubject as AppTaskSubject,
 };
 use rmcl_launch::{GameExit, GameLog, LogStream};
+use rmcp::{handler::server::tool::schema_for_type, model::JsonObject, schemars::JsonSchema};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::error::invalid_input;
+
+/// Builds the output schema for a union result type whose variants all serialize as objects.
+///
+/// Schemars describes untagged enums with a root `anyOf` and no root type. rmcp 3.11 omits such
+/// `outputSchema` values for peers before protocol revision 2026-07-28 (SEP-2106), so declare the
+/// object root that every variant already satisfies.
+pub fn object_output_schema<T: JsonSchema + std::any::Any>() -> Arc<JsonObject> {
+    let mut schema = schema_for_type::<T>();
+    Arc::make_mut(&mut schema).insert("type".into(), serde_json::json!("object"));
+    schema
+}
 
 #[derive(Debug, Serialize, rmcp::schemars::JsonSchema)]
 pub struct LoaderSummary {
@@ -1288,5 +1302,18 @@ mod tests {
             value["exit"],
             json!({"code":0,"signal":null,"success":true})
         );
+    }
+
+    #[test]
+    fn union_result_schemas_declare_object_roots() {
+        for schema in [
+            object_output_schema::<CreateInstanceResult>(),
+            object_output_schema::<InstanceDeleteResult>(),
+            object_output_schema::<ContentInstallResult>(),
+            object_output_schema::<ContentUpdateResult>(),
+        ] {
+            assert_eq!(schema.get("type"), Some(&json!("object")));
+            assert!(schema.contains_key("anyOf"));
+        }
     }
 }

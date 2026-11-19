@@ -55,7 +55,7 @@ use crate::{
         ServerPingResult, ServerWrite, SkinApplyResult, SkinDelete, SkinEntry, SkinList, SkinWrite,
         TaskList, TaskSnapshot, TaskStarted, TaskSubscription, TaskSubscriptionEnded,
         TaskWaitResult, content_entry, game_log, instance_revision, instance_summary, java_runtime,
-        log_page, task_snapshot,
+        log_page, object_output_schema, task_snapshot,
     },
 };
 
@@ -1467,7 +1467,7 @@ impl McpServer {
 
     #[tool(
         description = "Create a Vanilla or mod-loader instance and return its install task",
-        output_schema = schema_for_type::<CreateInstanceResult>(),
+        output_schema = object_output_schema::<CreateInstanceResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
     )]
     async fn instances_create(
@@ -1627,7 +1627,7 @@ impl McpServer {
 
     #[tool(
         description = "Delete an installed instance after checking its expected revision",
-        output_schema = schema_for_type::<InstanceDeleteResult>(),
+        output_schema = object_output_schema::<InstanceDeleteResult>(),
         annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
     )]
     async fn instances_delete(
@@ -1912,7 +1912,7 @@ impl McpServer {
 
     #[tool(
         description = "Install a Modrinth version with dependencies, or return preflight when dry_run is true",
-        output_schema = schema_for_type::<ContentInstallResult>(),
+        output_schema = object_output_schema::<ContentInstallResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false)
     )]
     async fn content_install(
@@ -2017,7 +2017,7 @@ impl McpServer {
 
     #[tool(
         description = "Replace an existing content file with a verified Modrinth version while preserving its path and enable state",
-        output_schema = schema_for_type::<ContentUpdateResult>(),
+        output_schema = object_output_schema::<ContentUpdateResult>(),
         annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false)
     )]
     async fn content_update(
