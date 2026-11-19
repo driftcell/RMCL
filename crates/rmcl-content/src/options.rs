@@ -274,10 +274,7 @@ pub(crate) fn modern_resource_pack_list(version: &str) -> bool {
         }
         return true;
     }
-    if version.starts_with('a') || version.starts_with('b') {
-        return false;
-    }
-    true
+    !(version.starts_with('a') || version.starts_with('b'))
 }
 
 #[cfg(test)]
